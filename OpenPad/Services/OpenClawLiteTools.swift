@@ -49,6 +49,16 @@ final class OpenClawLiteTools {
         }
     }
 
+    func recentMemories(limit: Int = 8) -> String {
+        do {
+            let items = try readMemoryLines(limit: max(1, min(50, limit)))
+            if items.isEmpty { return "(sin memoria guardada)" }
+            return items.joined(separator: "\n")
+        } catch {
+            return "(error leyendo memoria: \(error.localizedDescription))"
+        }
+    }
+
     private func documentsDirectory() throws -> URL {
         guard let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
             throw NSError(domain: "OpenClawLiteTools", code: 1, userInfo: [NSLocalizedDescriptionKey: "Documents directory unavailable"])

@@ -32,44 +32,50 @@ final class OpenClawLiteAgentService {
     }
 
     private func buildPlannerPrompt(userPrompt: String) -> String {
-        """
-        You are OpenClaw Lite on iPad.
-        Decide your next action and reply with JSON only.
+        let memoryContext = tools.recentMemories(limit: 8)
+        return """
+        Eres OpenClaw Lite en iPad.
+        Responde SIEMPRE en español, a menos que el usuario pida explícitamente otro idioma.
+        Decide tu siguiente acción y responde SOLO en JSON válido.
 
-        Available tools:
+        Memoria reciente persistida (sobrevive reinicios):
+        \(memoryContext)
+
+        Herramientas disponibles:
         1) get_time(arguments: {})
         2) save_memory(arguments: {"text":"..."})
         3) list_memories(arguments: {"limit":"10"})
 
-        Output schema:
-        - final answer:
+        Esquema de salida:
+        - respuesta final:
           {"type":"final","content":"..."}
-        - tool call:
+        - llamada de herramienta:
           {"type":"tool_call","name":"get_time|save_memory|list_memories","arguments":{"key":"value"}}
 
-        User message:
+        Mensaje del usuario:
         \(userPrompt)
         """
     }
 
     private func buildFinalizePrompt(userPrompt: String, toolName: String, toolResult: OpenClawToolResult) -> String {
         """
-        You are OpenClaw Lite on iPad.
-        You already called one tool. Provide final user-facing answer in JSON only.
+        Eres OpenClaw Lite en iPad.
+        Ya llamaste una herramienta. Da respuesta final al usuario en JSON válido.
+        Responde en español.
 
-        Output schema:
+        Esquema de salida:
         {"type":"final","content":"..."}
 
-        Original user message:
+        Mensaje original del usuario:
         \(userPrompt)
 
-        Tool called:
+        Herramienta llamada:
         \(toolName)
 
-        Tool success:
+        Éxito de herramienta:
         \(toolResult.ok)
 
-        Tool output:
+        Resultado de herramienta:
         \(toolResult.output)
         """
     }
