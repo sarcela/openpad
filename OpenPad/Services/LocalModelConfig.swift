@@ -15,7 +15,10 @@ struct LocalModelConfig {
     static let shared = LocalModelConfig()
 
     let appModelsDirectoryName = "Models"
+    let appEmbeddingModelsDirectoryName = "EmbeddingModels"
+
     private let selectedModelBookmarkKey = "local.selectedModelPath"
+    private let selectedEmbeddingModelBookmarkKey = "local.selectedEmbeddingModelPath"
 
     func documentsDirectory() throws -> URL {
         guard let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
@@ -28,42 +31,47 @@ struct LocalModelConfig {
         documentsDir.appendingPathComponent(appModelsDirectoryName, isDirectory: true)
     }
 
+    func embeddingModelsDirectory(in documentsDir: URL) -> URL {
+        documentsDir.appendingPathComponent(appEmbeddingModelsDirectoryName, isDirectory: true)
+    }
+
     func ensureModelsDirectoryExists(in documentsDir: URL) throws {
-        let dir = modelsDirectory(in: documentsDir)
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: modelsDirectory(in: documentsDir), withIntermediateDirectories: true)
+    }
+
+    func ensureEmbeddingModelsDirectoryExists(in documentsDir: URL) throws {
+        try FileManager.default.createDirectory(at: embeddingModelsDirectory(in: documentsDir), withIntermediateDirectories: true)
     }
 
     func availableModels(in documentsDir: URL) -> [URL] {
-        let fm = FileManager.default
-        let dir = modelsDirectory(in: documentsDir)
-        let contents = (try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles])) ?? []
+        availableGGUF(in: modelsDirectory(in: documentsDir))
+    }
 
-        return contents
-            .filter { $0.pathExtension.lowercased() == "gguf" }
-            .sorted { $0.lastPathComponent.localizedCaseInsensitiveCompare($1.lastPathComponent) == .orderedAscending }
+    func availableEmbeddingModels(in documentsDir: URL) -> [URL] {
+        availableGGUF(in: embeddingModelsDirectory(in: documentsDir))
     }
 
     func importModel(from sourceURL: URL, into documentsDir: URL) throws -> URL {
         try ensureModelsDirectoryExists(in: documentsDir)
+        return try copyModel(from: sourceURL, to: modelsDirectory(in: documentsDir))
+    }
 
-        let destination = modelsDirectory(in: documentsDir)
-            .appendingPathComponent(sourceURL.lastPathComponent, isDirectory: false)
-
-        let fm = FileManager.default
-        if fm.fileExists(atPath: destination.path) {
-            try fm.removeItem(at: destination)
-        }
-        try fm.copyItem(at: sourceURL, to: destination)
-        return destination
+    func importEmbeddingModel(from sourceURL: URL, into documentsDir: URL) throws -> URL {
+        try ensureEmbeddingModelsDirectoryExists(in: documentsDir)
+        return try copyModel(from: sourceURL, to: embeddingModelsDirectory(in: documentsDir))
     }
 
     func deleteModel(at modelURL: URL) throws {
-        let fm = FileManager.default
-        guard fm.fileExists(atPath: modelURL.path) else { return }
-        try fm.removeItem(at: modelURL)
-
+        try deleteFile(at: modelURL)
         if loadSelectedModelPath() == modelURL.path {
             saveSelectedModelPath(nil)
+        }
+    }
+
+    func deleteEmbeddingModel(at modelURL: URL) throws {
+        try deleteFile(at: modelURL)
+        if loadSelectedEmbeddingModelPath() == modelURL.path {
+            saveSelectedEmbeddingModelPath(nil)
         }
     }
 
@@ -72,26 +80,63 @@ struct LocalModelConfig {
     }
 
     func saveSelectedModelPath(_ path: String?) {
-        let defaults = UserDefaults.standard
-        if let path, !path.isEmpty {
-            defaults.set(path, forKey: selectedModelBookmarkKey)
-        } else {
-            defaults.removeObject(forKey: selectedModelBookmarkKey)
-        }
+        savePath(path, key: selectedModelBookmarkKey)
     }
 
     func loadSelectedModelPath() -> String? {
         UserDefaults.standard.string(forKey: selectedModelBookmarkKey)
     }
 
+    func saveSelectedEmbeddingModelPath(_ path: String?) {
+        savePath(path, key: selectedEmbeddingModelBookmarkKey)
+    }
+
+    func loadSelectedEmbeddingModelPath() -> String? {
+        UserDefaults.standard.string(forKey: selectedEmbeddingModelBookmarkKey)
+    }
+
     func firstExistingModelPath(in documentsDir: URL) -> URL? {
         let models = availableModels(in: documentsDir)
 
-        if let selected = loadSelectedModelPath(),
-           FileManager.default.fileExists(atPath: selected) {
+        if let selected = loadSelectedModelPath(), FileManager.default.fileExists(atPath: selected) {
             return URL(fileURLWithPath: selected)
         }
 
         return models.first
+    }
+
+    private func availableGGUF(in directory: URL) -> [URL] {
+        let fm = FileManager.default
+        let contents = (try? fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles])) ?? []
+
+        return contents
+            .filter { $0.pathExtension.lowercased() == "gguf" }
+            .sorted { $0.lastPathComponent.localizedCaseInsensitiveCompare($1.lastPathComponent) == .orderedAscending }
+    }
+
+    private func copyModel(from sourceURL: URL, to targetDirectory: URL) throws -> URL {
+        let destination = targetDirectory.appendingPathComponent(sourceURL.lastPathComponent, isDirectory: false)
+        let fm = FileManager.default
+
+        if fm.fileExists(atPath: destination.path) {
+            try fm.removeItem(at: destination)
+        }
+        try fm.copyItem(at: sourceURL, to: destination)
+        return destination
+    }
+
+    private func deleteFile(at url: URL) throws {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: url.path) else { return }
+        try fm.removeItem(at: url)
+    }
+
+    private func savePath(_ path: String?, key: String) {
+        let defaults = UserDefaults.standard
+        if let path, !path.isEmpty {
+            defaults.set(path, forKey: key)
+        } else {
+            defaults.removeObject(forKey: key)
+        }
     }
 }

@@ -1,13 +1,33 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+private enum ImportTarget {
+    case chat
+    case embedding
+}
+
 struct ChatView: View {
     @StateObject private var vm = ChatViewModel()
     @State private var showSettings = false
 
+    private let localConfig = LocalModelConfig.shared
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                HStack(spacing: 8) {
+                    Image(systemName: "cpu")
+                        .foregroundColor(.secondary)
+                    Text(selectedModelBannerText())
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                    Spacer()
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 10)
+                .background(Color(.secondarySystemBackground))
+
                 if vm.messages.isEmpty {
                     ContentUnavailableView("Sin mensajes aún", systemImage: "bubble.left.and.bubble.right")
                 } else {
@@ -47,6 +67,13 @@ struct ChatView: View {
             SettingsView(vm: vm)
         }
     }
+
+    private func selectedModelBannerText() -> String {
+        if let selectedPath = localConfig.loadSelectedModelPath(), !selectedPath.isEmpty {
+            return "Modelo: \(URL(fileURLWithPath: selectedPath).deletingPathExtension().lastPathComponent)"
+        }
+        return "Modelo: sin seleccionar"
+    }
 }
 
 private struct SettingsView: View {
@@ -59,9 +86,16 @@ private struct SettingsView: View {
 
     @State private var models: [URL] = []
     @State private var selectedModelPath: String = ""
+
+    @State private var embeddingModels: [URL] = []
+    @State private var selectedEmbeddingModelPath: String = ""
+
     @State private var showFileImporter = false
+    @State private var importTarget: ImportTarget = .chat
+
     @State private var importMessage = ""
     @State private var modelToDelete: URL?
+    @State private var embeddingModelToDelete: URL?
 
     private let remoteConfig = RemoteModelConfig.shared
     private let localConfig = LocalModelConfig.shared
@@ -80,55 +114,74 @@ private struct SettingsView: View {
                 if vm.routePreference == .local {
                     Section {
                         if models.isEmpty {
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text("No hay modelos en la carpeta de la app")
-                                    .foregroundColor(.secondary)
-                                Text("Toca “Añadir modelo (.gguf)” para importar uno.")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
+                            Text("No hay modelos locales para chat")
+                                .foregroundColor(.secondary)
                         } else {
-                            Picker("Modelo", selection: $selectedModelPath) {
+                            Picker("Modelo de chat", selection: $selectedModelPath) {
                                 ForEach(models, id: \.path) { url in
                                     Text(localConfig.displayName(for: url)).tag(url.path)
                                 }
                             }
                             .pickerStyle(.navigationLink)
+                        }
 
-                            if let selectedURL = models.first(where: { $0.path == selectedModelPath }) {
-                                HStack {
-                                    Label(localConfig.displayName(for: selectedURL), systemImage: "cpu")
-                                        .font(.subheadline)
-                                    Spacer()
-                                    Text(".gguf")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
+                        HStack {
+                            Button {
+                                importTarget = .chat
+                                showFileImporter = true
+                            } label: {
+                                Label("Añadir .gguf", systemImage: "plus.circle.fill")
+                            }
+
+                            Spacer()
+
+                            if !selectedModelPath.isEmpty,
+                               let selectedURL = models.first(where: { $0.path == selectedModelPath }) {
+                                Button(role: .destructive) {
+                                    modelToDelete = selectedURL
+                                } label: {
+                                    Label("Borrar", systemImage: "trash")
                                 }
                             }
                         }
+                    } header: {
+                        Text("Modelo local de chat")
+                    }
 
-                        Button {
-                            showFileImporter = true
-                        } label: {
-                            Label("Añadir modelo (.gguf)", systemImage: "plus.circle.fill")
+                    Section {
+                        if embeddingModels.isEmpty {
+                            Text("No hay modelos para embeddings/memoria")
+                                .foregroundColor(.secondary)
+                        } else {
+                            Picker("Modelo embeddings", selection: $selectedEmbeddingModelPath) {
+                                ForEach(embeddingModels, id: \.path) { url in
+                                    Text(localConfig.displayName(for: url)).tag(url.path)
+                                }
+                            }
+                            .pickerStyle(.navigationLink)
                         }
 
-                        if !selectedModelPath.isEmpty,
-                           let selectedURL = models.first(where: { $0.path == selectedModelPath }) {
-                            Button(role: .destructive) {
-                                modelToDelete = selectedURL
+                        HStack {
+                            Button {
+                                importTarget = .embedding
+                                showFileImporter = true
                             } label: {
-                                Label("Borrar modelo seleccionado", systemImage: "trash")
+                                Label("Añadir .gguf embeddings", systemImage: "plus.circle")
+                            }
+
+                            Spacer()
+
+                            if !selectedEmbeddingModelPath.isEmpty,
+                               let selectedURL = embeddingModels.first(where: { $0.path == selectedEmbeddingModelPath }) {
+                                Button(role: .destructive) {
+                                    embeddingModelToDelete = selectedURL
+                                } label: {
+                                    Label("Borrar", systemImage: "trash")
+                                }
                             }
                         }
-
-                        if !importMessage.isEmpty {
-                            Text(importMessage)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
                     } header: {
-                        Text("Modelos locales (.gguf)")
+                        Text("Embeddings y memoria")
                     }
                 }
 
@@ -143,6 +196,14 @@ private struct SettingsView: View {
                             .autocorrectionDisabled()
                     }
                 }
+
+                if !importMessage.isEmpty {
+                    Section("Estado") {
+                        Text(importMessage)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
             }
             .navigationTitle("Configuración")
             .toolbar {
@@ -153,6 +214,7 @@ private struct SettingsView: View {
                     Button("Guardar") {
                         remoteConfig.save(baseURL: baseURL, token: token, model: model)
                         localConfig.saveSelectedModelPath(selectedModelPath.isEmpty ? nil : selectedModelPath)
+                        localConfig.saveSelectedEmbeddingModelPath(selectedEmbeddingModelPath.isEmpty ? nil : selectedEmbeddingModelPath)
                         dismiss()
                     }
                 }
@@ -171,6 +233,14 @@ private struct SettingsView: View {
                 if selectedModelPath.isEmpty {
                     selectedModelPath = models.first?.path ?? ""
                 }
+
+                if selectedEmbeddingModelPath.isEmpty,
+                   let selectedEmbedding = localConfig.loadSelectedEmbeddingModelPath() {
+                    selectedEmbeddingModelPath = selectedEmbedding
+                }
+                if selectedEmbeddingModelPath.isEmpty {
+                    selectedEmbeddingModelPath = embeddingModels.first?.path ?? ""
+                }
             }
             .fileImporter(
                 isPresented: $showFileImporter,
@@ -187,9 +257,16 @@ private struct SettingsView: View {
 
                     do {
                         let docs = try localConfig.documentsDirectory()
-                        let copied = try localConfig.importModel(from: sourceURL, into: docs)
-                        selectedModelPath = copied.path
-                        importMessage = "Modelo añadido: \(localConfig.displayName(for: copied))"
+                        switch importTarget {
+                        case .chat:
+                            let copied = try localConfig.importModel(from: sourceURL, into: docs)
+                            selectedModelPath = copied.path
+                            importMessage = "Modelo chat añadido: \(localConfig.displayName(for: copied))"
+                        case .embedding:
+                            let copied = try localConfig.importEmbeddingModel(from: sourceURL, into: docs)
+                            selectedEmbeddingModelPath = copied.path
+                            importMessage = "Modelo embeddings añadido: \(localConfig.displayName(for: copied))"
+                        }
                         refreshModels()
                     } catch {
                         importMessage = "Error al importar: \(error.localizedDescription)"
@@ -227,6 +304,35 @@ private struct SettingsView: View {
                     Text("¿Seguro que quieres borrar \(localConfig.displayName(for: modelToDelete))?")
                 }
             }
+            .confirmationDialog(
+                "Borrar modelo de embeddings",
+                isPresented: Binding(
+                    get: { embeddingModelToDelete != nil },
+                    set: { isPresented in if !isPresented { embeddingModelToDelete = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button("Borrar", role: .destructive) {
+                    guard let url = embeddingModelToDelete else { return }
+                    do {
+                        try localConfig.deleteEmbeddingModel(at: url)
+                        importMessage = "Modelo embeddings eliminado: \(localConfig.displayName(for: url))"
+                        refreshModels()
+                        selectedEmbeddingModelPath = embeddingModels.first?.path ?? ""
+                    } catch {
+                        importMessage = "Error al borrar embeddings: \(error.localizedDescription)"
+                    }
+                    embeddingModelToDelete = nil
+                }
+
+                Button("Cancelar", role: .cancel) {
+                    embeddingModelToDelete = nil
+                }
+            } message: {
+                if let embeddingModelToDelete {
+                    Text("¿Seguro que quieres borrar \(localConfig.displayName(for: embeddingModelToDelete))?")
+                }
+            }
         }
     }
 
@@ -234,9 +340,12 @@ private struct SettingsView: View {
         do {
             let docs = try localConfig.documentsDirectory()
             try localConfig.ensureModelsDirectoryExists(in: docs)
+            try localConfig.ensureEmbeddingModelsDirectoryExists(in: docs)
             models = localConfig.availableModels(in: docs)
+            embeddingModels = localConfig.availableEmbeddingModels(in: docs)
         } catch {
             models = []
+            embeddingModels = []
             importMessage = "No pude leer modelos: \(error.localizedDescription)"
         }
     }
