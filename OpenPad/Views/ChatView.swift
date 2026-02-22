@@ -59,9 +59,30 @@ struct ChatView: View {
                     if vm.messages.isEmpty {
                         ContentUnavailableView("Sin mensajes aún", systemImage: "bubble.left.and.bubble.right")
                     } else {
-                        List(vm.messages) { msg in
-                            MessageRowView(msg: msg)
-                                .padding(.vertical, 4)
+                        ScrollViewReader { proxy in
+                            ScrollView {
+                                LazyVStack(alignment: .leading, spacing: 0) {
+                                    ForEach(vm.messages) { msg in
+                                        MessageRowView(msg: msg)
+                                            .padding(.vertical, 4)
+                                            .id(msg.id)
+                                    }
+                                }
+                                .padding(.horizontal)
+                            }
+                            .defaultScrollAnchor(.bottom)
+                            .onAppear {
+                                if let last = vm.messages.last {
+                                    proxy.scrollTo(last.id, anchor: .bottom)
+                                }
+                            }
+                            .onChange(of: vm.messages.count) { _, _ in
+                                if let last = vm.messages.last {
+                                    withAnimation(.easeOut(duration: 0.2)) {
+                                        proxy.scrollTo(last.id, anchor: .bottom)
+                                    }
+                                }
+                            }
                         }
                     }
 
