@@ -2,18 +2,25 @@ import Foundation
 
 final class LocalModelService {
     private let llama = LlamaLocalModelService()
+    private let ollama = OllamaLocalModelService()
+    private let mlx = MLXLocalModelService()
 
-    // Mantiene compatibilidad con el flujo actual del ChatViewModel.
-    // Si no existe modelo configurado, cae a stub para que la app no se rompa.
+    private let runtimeConfig = LocalRuntimeConfig.shared
+
     func runLocal(prompt: String) async throws -> String {
-        do {
-            try autoConfigureModelIfPresent()
-            return try await llama.runLocal(prompt: prompt)
-        } catch LlamaServiceError.modelNotConfigured {
-            try await Task.sleep(nanoseconds: 400_000_000)
-            return "Respuesta local (stub): \(prompt.prefix(120))\n\nTip: agrega un .gguf en Files > On My iPad > OpenClawPad > Models"
-        } catch {
-            throw error
+        switch runtimeConfig.loadProvider() {
+        case .llamaCpp:
+            do {
+                try autoConfigureModelIfPresent()
+                return try await llama.runLocal(prompt: prompt)
+            } catch LlamaServiceError.modelNotConfigured {
+                try await Task.sleep(nanoseconds: 300_000_000)
+                return "Sin modelo llama.cpp seleccionado. Agrega un .gguf en Models y selecciónalo en Configuración."
+            }
+        case .ollama:
+            return try await ollama.runLocal(prompt: prompt)
+        case .mlx:
+            return try await mlx.runLocal(prompt: prompt)
         }
     }
 

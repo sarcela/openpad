@@ -11,6 +11,7 @@ struct ChatView: View {
     @State private var showSettings = false
 
     private let localConfig = LocalModelConfig.shared
+    private let runtimeConfig = LocalRuntimeConfig.shared
 
     var body: some View {
         NavigationStack {
@@ -69,10 +70,19 @@ struct ChatView: View {
     }
 
     private func selectedModelBannerText() -> String {
-        if let selectedPath = localConfig.loadSelectedModelPath(), !selectedPath.isEmpty {
-            return "Modelo: \(URL(fileURLWithPath: selectedPath).deletingPathExtension().lastPathComponent)"
+        let provider = runtimeConfig.loadProvider()
+        switch provider {
+        case .llamaCpp:
+            if let selectedPath = localConfig.loadSelectedModelPath(), !selectedPath.isEmpty {
+                return "Local (llama.cpp): \(URL(fileURLWithPath: selectedPath).deletingPathExtension().lastPathComponent)"
+            }
+            return "Local (llama.cpp): sin seleccionar"
+        case .ollama:
+            let cfg = runtimeConfig.loadOllama()
+            return "Local (Ollama): \(cfg.model)"
+        case .mlx:
+            return "Local (MLX): \(runtimeConfig.loadMLXModelName())"
         }
-        return "Modelo: sin seleccionar"
     }
 }
 
@@ -93,12 +103,18 @@ private struct SettingsView: View {
     @State private var showFileImporter = false
     @State private var importTarget: ImportTarget = .chat
 
+    @State private var runtimeProvider: LocalRuntimeProvider = .llamaCpp
+    @State private var ollamaBaseURL = ""
+    @State private var ollamaModel = ""
+    @State private var mlxModelName = ""
+
     @State private var importMessage = ""
     @State private var modelToDelete: URL?
     @State private var embeddingModelToDelete: URL?
 
     private let remoteConfig = RemoteModelConfig.shared
     private let localConfig = LocalModelConfig.shared
+    private let runtimeConfig = LocalRuntimeConfig.shared
 
     var body: some View {
         NavigationStack {
@@ -112,6 +128,33 @@ private struct SettingsView: View {
                 }
 
                 if vm.routePreference == .local {
+                    Section("Motor local") {
+                        Picker("Proveedor", selection: $runtimeProvider) {
+                            ForEach(LocalRuntimeProvider.allCases) { provider in
+                                Text(provider.title).tag(provider)
+                            }
+                        }
+
+                        if runtimeProvider == .ollama {
+                            TextField("Ollama URL", text: $ollamaBaseURL)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                            TextField("Modelo Ollama", text: $ollamaModel)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                        }
+
+                        if runtimeProvider == .mlx {
+                            TextField("Modelo MLX", text: $mlxModelName)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                            Text("Requiere integrar mlx-swift en Xcode para inferencia real en iPad.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    if runtimeProvider == .llamaCpp {
                     Section {
                         if models.isEmpty {
                             Text("No hay modelos locales para chat")
@@ -183,6 +226,7 @@ private struct SettingsView: View {
                     } header: {
                         Text("Embeddings y memoria")
                     }
+                    }
                 }
 
                 if vm.routePreference != .local {
@@ -213,6 +257,9 @@ private struct SettingsView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Guardar") {
                         remoteConfig.save(baseURL: baseURL, token: token, model: model)
+                        runtimeConfig.saveProvider(runtimeProvider)
+                        runtimeConfig.saveOllama(baseURL: ollamaBaseURL, model: ollamaModel)
+                        runtimeConfig.saveMLXModelName(mlxModelName)
                         localConfig.saveSelectedModelPath(selectedModelPath.isEmpty ? nil : selectedModelPath)
                         localConfig.saveSelectedEmbeddingModelPath(selectedEmbeddingModelPath.isEmpty ? nil : selectedEmbeddingModelPath)
                         dismiss()
@@ -224,6 +271,13 @@ private struct SettingsView: View {
                 baseURL = savedRemote.baseURL
                 token = savedRemote.token
                 model = savedRemote.model
+
+                runtimeProvider = runtimeConfig.loadProvider()
+                let ollama = runtimeConfig.loadOllama()
+                ollamaBaseURL = ollama.baseURL
+                ollamaModel = ollama.model
+                mlxModelName = runtimeConfig.loadMLXModelName()
+
                 refreshModels()
 
                 if selectedModelPath.isEmpty,

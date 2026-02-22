@@ -1,0 +1,59 @@
+import Foundation
+
+enum LocalRuntimeProvider: String, CaseIterable, Identifiable {
+    case llamaCpp = "LLAMA_CPP"
+    case ollama = "OLLAMA"
+    case mlx = "MLX"
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .llamaCpp: return "llama.cpp"
+        case .ollama: return "Ollama"
+        case .mlx: return "MLX"
+        }
+    }
+}
+
+struct LocalRuntimeConfig {
+    static let shared = LocalRuntimeConfig()
+
+    private enum Keys {
+        static let provider = "local.runtime.provider"
+        static let ollamaBaseURL = "local.ollama.baseURL"
+        static let ollamaModel = "local.ollama.model"
+        static let mlxModel = "local.mlx.model"
+    }
+
+    func loadProvider() -> LocalRuntimeProvider {
+        let raw = UserDefaults.standard.string(forKey: Keys.provider) ?? LocalRuntimeProvider.llamaCpp.rawValue
+        return LocalRuntimeProvider(rawValue: raw) ?? .llamaCpp
+    }
+
+    func saveProvider(_ provider: LocalRuntimeProvider) {
+        UserDefaults.standard.set(provider.rawValue, forKey: Keys.provider)
+    }
+
+    func loadOllama() -> (baseURL: String, model: String) {
+        let d = UserDefaults.standard
+        return (
+            baseURL: d.string(forKey: Keys.ollamaBaseURL) ?? "http://127.0.0.1:11434",
+            model: d.string(forKey: Keys.ollamaModel) ?? "qwen2.5:3b"
+        )
+    }
+
+    func saveOllama(baseURL: String, model: String) {
+        let d = UserDefaults.standard
+        d.set(baseURL.trimmingCharacters(in: .whitespacesAndNewlines), forKey: Keys.ollamaBaseURL)
+        d.set(model.trimmingCharacters(in: .whitespacesAndNewlines), forKey: Keys.ollamaModel)
+    }
+
+    func loadMLXModelName() -> String {
+        UserDefaults.standard.string(forKey: Keys.mlxModel) ?? "mlx-community/Qwen2.5-1.5B-Instruct-4bit"
+    }
+
+    func saveMLXModelName(_ name: String) {
+        UserDefaults.standard.set(name.trimmingCharacters(in: .whitespacesAndNewlines), forKey: Keys.mlxModel)
+    }
+}
