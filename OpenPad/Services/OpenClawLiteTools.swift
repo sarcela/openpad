@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(PDFKit)
+import PDFKit
+#endif
 
 struct OpenClawLiteConfig {
     static let shared = OpenClawLiteConfig()
@@ -268,7 +271,9 @@ final class OpenClawLiteTools {
             return .init(ok: false, output: "Only https URLs are allowed")
         }
         let allowedHosts = Set(config.loadAllowlistHosts())
-        guard allowedHosts.contains(host) else {
+        let isKnownSafeHost = allowedHosts.contains(host)
+        let isDirectFileURL = url.pathExtension.lowercased() == "pdf"
+        guard isKnownSafeHost || isDirectFileURL else {
             return .init(ok: false, output: "Host not allowed: \(host)")
         }
 
@@ -277,8 +282,15 @@ final class OpenClawLiteTools {
             if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
                 return .init(ok: false, output: "HTTP status \(http.statusCode)")
             }
+
+            let contentType = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Type")?.lowercased() ?? ""
+            if contentType.contains("application/pdf") || url.pathExtension.lowercased() == "pdf" {
+                let text = extractPDFText(from: data)
+                return .init(ok: true, output: text)
+            }
+
             let text = String(data: data, encoding: .utf8) ?? ""
-            return .init(ok: true, output: String(text.prefix(2000)))
+            return .init(ok: true, output: String(text.prefix(4000)))
         } catch {
             return .init(ok: false, output: "http_get error: \(error.localizedDescription)")
         }
@@ -313,6 +325,23 @@ final class OpenClawLiteTools {
         } catch {
             return .init(ok: false, output: "brave_search error: \(error.localizedDescription)")
         }
+    }
+
+    private func extractPDFText(from data: Data) -> String {
+        #if canImport(PDFKit)
+        guard let doc = PDFDocument(data: data) else { return "PDF descargado, pero no pude leer su contenido." }
+        let maxPages = min(doc.pageCount, 8)
+        var chunks: [String] = []
+        for i in 0..<maxPages {
+            if let pageText = doc.page(at: i)?.string?.trimmingCharacters(in: .whitespacesAndNewlines), !pageText.isEmpty {
+                chunks.append("[Página \(i + 1)]\n\(pageText)")
+            }
+        }
+        if chunks.isEmpty { return "PDF descargado, sin texto extraíble." }
+        return String(chunks.joined(separator: "\n\n").prefix(5000))
+        #else
+        return "PDF descargado, pero este build no incluye PDFKit para extraer texto."
+        #endif
     }
 
     private func formatBraveResults(from data: Data) -> String {

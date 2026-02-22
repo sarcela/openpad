@@ -70,6 +70,25 @@ struct ChatView: View {
                                 }
                                 .padding(.horizontal)
                             }
+                            .overlay(alignment: .bottomTrailing) {
+                                if vm.messages.count > 6 {
+                                    Button {
+                                        if let last = vm.messages.last {
+                                            withAnimation(.easeOut(duration: 0.2)) {
+                                                proxy.scrollTo(last.id, anchor: .bottom)
+                                            }
+                                        }
+                                    } label: {
+                                        Image(systemName: "arrow.down.circle.fill")
+                                            .font(.system(size: 28))
+                                            .foregroundColor(.accentColor)
+                                            .padding(10)
+                                            .background(.ultraThinMaterial)
+                                            .clipShape(Circle())
+                                    }
+                                    .padding(14)
+                                }
+                            }
                             .defaultScrollAnchor(.bottom)
                             .onAppear {
                                 if let last = vm.messages.last {

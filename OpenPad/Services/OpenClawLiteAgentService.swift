@@ -38,10 +38,19 @@ final class OpenClawLiteAgentService {
             return .init(text: safeReply, trace: trace)
         }
 
-        let toolResult = await tools.execute(name: name, arguments: decision.arguments ?? [:])
+        var toolName = name
+        var toolArgs = decision.arguments ?? [:]
+
+        if name == "brave_search", let directURL = extractFirstURL(from: userPrompt)?.absoluteString {
+            toolName = "http_get"
+            toolArgs = ["url": directURL]
+            trace.append("Tool rewrite: brave_search -> http_get (URL directa)")
+        }
+
+        let toolResult = await tools.execute(name: toolName, arguments: toolArgs)
         trace.append("Tool result: \(toolResult.ok ? "ok" : "error")")
 
-        let secondPrompt = buildFinalizePrompt(userPrompt: userPrompt, toolName: name, toolResult: toolResult)
+        let secondPrompt = buildFinalizePrompt(userPrompt: userPrompt, toolName: toolName, toolResult: toolResult)
         let finalReply = try await localModelService.runLocal(prompt: secondPrompt)
 
         if let finalDecision = parseDecision(from: finalReply), let content = finalDecision.content, !content.isEmpty {
@@ -57,7 +66,8 @@ final class OpenClawLiteAgentService {
         Eres OpenClaw Lite en iPad.
         \(languageInstruction)
         Decide tu siguiente acción y responde SOLO en JSON válido.
-        Regla estricta: NO uses internet (`http_get` o `brave_search`) a menos que el usuario lo pida explícitamente (ej: "busca", "investiga", "en internet", "web").
+        Regla estricta: NO uses internet (`http_get` o `brave_search`) a menos que el usuario lo pida explícitamente (ej: "busca", "investiga", "en internet", "web") o te comparta una URL directa.
+        Si el usuario comparte una URL completa, usa `http_get` (NO `brave_search`) para leerla/resumirla.
 
         Memoria reciente persistida (sobrevive reinicios):
         \(memoryContext)
@@ -166,12 +176,19 @@ final class OpenClawLiteAgentService {
     }
 
     private func userExplicitlyAskedInternet(for prompt: String) -> Bool {
+        if extractFirstURL(from: prompt) != nil { return true }
         let p = prompt.lowercased()
         let triggers = [
             "busca", "buscar", "investiga", "investigar", "internet", "en la web", "en internet", "web",
             "search", "look up", "browse", "google"
         ]
         return triggers.contains { p.contains($0) }
+    }
+
+    private func extractFirstURL(from text: String) -> URL? {
+        guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else { return nil }
+        let range = NSRange(text.startIndex..., in: text)
+        return detector.matches(in: text, options: [], range: range).compactMap { $0.url }.first
     }
 
     private func preferredLanguageInstruction() -> String {
