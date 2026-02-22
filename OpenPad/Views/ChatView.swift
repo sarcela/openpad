@@ -201,6 +201,62 @@ private struct SidebarMenuView: View {
     }
 }
 
+private struct MemoryManagerView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var rows: [String] = []
+    @State private var status = ""
+
+    private let tools = OpenClawLiteTools()
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if rows.isEmpty {
+                    Text("Sin memoria guardada")
+                        .foregroundColor(.secondary)
+                } else {
+                    ForEach(rows, id: \.self) { row in
+                        Text(row)
+                            .font(.caption)
+                    }
+                }
+
+                if !status.isEmpty {
+                    Text(status)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .navigationTitle("Memoria")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cerrar") { dismiss() }
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Menu("Acciones") {
+                        Button("Recargar") {
+                            rows = tools.listAllMemories()
+                            status = "Memoria recargada"
+                        }
+                        Button("Borrar todo", role: .destructive) {
+                            do {
+                                try tools.clearAllMemoriesForUI()
+                                rows = []
+                                status = "Memoria borrada"
+                            } catch {
+                                status = "Error: \(error.localizedDescription)"
+                            }
+                        }
+                    }
+                }
+            }
+            .onAppear {
+                rows = tools.listAllMemories()
+            }
+        }
+    }
+}
+
 private struct SettingsView: View {
     @ObservedObject var vm: ChatViewModel
     @Environment(\.dismiss) private var dismiss
@@ -229,11 +285,15 @@ private struct SettingsView: View {
     @State private var importMessage = ""
     @State private var modelToDelete: URL?
     @State private var embeddingModelToDelete: URL?
+    @State private var allowlistHostsText = ""
+    @State private var braveApiKey = ""
+    @State private var showMemoryManager = false
 
     private let remoteConfig = RemoteModelConfig.shared
     private let localConfig = LocalModelConfig.shared
     private let runtimeConfig = LocalRuntimeConfig.shared
     private let mlxService = MLXLocalModelService()
+    private let openClawLiteConfig = OpenClawLiteConfig.shared
 
     private let mlxPresetModels = [
         "mlx-community/Qwen2.5-1.5B-Instruct-4bit",
@@ -400,6 +460,26 @@ private struct SettingsView: View {
                     }
                 }
 
+                Section("OpenClaw Lite") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Hosts permitidos para http_get (uno por línea)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        TextEditor(text: $allowlistHostsText)
+                            .frame(minHeight: 90)
+                            .font(.caption)
+                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.2)))
+                    }
+
+                    SecureField("Brave API Key", text: $braveApiKey)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+
+                    Button("Abrir gestor de memoria") {
+                        showMemoryManager = true
+                    }
+                }
+
                 if !importMessage.isEmpty {
                     Section("Estado") {
                         Text(importMessage)
@@ -419,6 +499,8 @@ private struct SettingsView: View {
                         runtimeConfig.saveProvider(runtimeProvider)
                         runtimeConfig.saveOllama(baseURL: ollamaBaseURL, model: ollamaModel)
                         runtimeConfig.saveMLXModelName(mlxModelName)
+                        openClawLiteConfig.saveAllowlistHosts(allowlistHostsText)
+                        openClawLiteConfig.saveBraveApiKey(braveApiKey)
                         localConfig.saveSelectedModelPath(selectedModelPath.isEmpty ? nil : selectedModelPath)
                         localConfig.saveSelectedEmbeddingModelPath(selectedEmbeddingModelPath.isEmpty ? nil : selectedEmbeddingModelPath)
                         dismiss()
@@ -437,6 +519,8 @@ private struct SettingsView: View {
                 ollamaModel = ollama.model
                 mlxModelName = runtimeConfig.loadMLXModelName()
                 mlxPresetModel = mlxPresetModels.contains(mlxModelName) ? mlxModelName : mlxPresetModels[0]
+                allowlistHostsText = openClawLiteConfig.allowlistHostsText()
+                braveApiKey = openClawLiteConfig.loadBraveApiKey()
 
                 refreshModels()
 
@@ -455,6 +539,9 @@ private struct SettingsView: View {
                 if selectedEmbeddingModelPath.isEmpty {
                     selectedEmbeddingModelPath = embeddingModels.first?.path ?? ""
                 }
+            }
+            .sheet(isPresented: $showMemoryManager) {
+                MemoryManagerView()
             }
             .fileImporter(
                 isPresented: $showFileImporter,

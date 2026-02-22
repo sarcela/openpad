@@ -59,14 +59,16 @@ final class OpenClawLiteAgentService {
         2) save_memory(arguments: {"text":"..."})
         3) list_memories(arguments: {"limit":"10"})
         4) search_memories(arguments: {"query":"...","limit":"5"})
-        5) read_file(arguments: {"path":"archivo.txt"}) [solo Documents/OpenClawFiles]
-        6) http_get(arguments: {"url":"https://..."}) [solo hosts permitidos]
+        5) clear_memories(arguments: {})
+        6) read_file(arguments: {"path":"archivo.txt"}) [solo Documents/OpenClawFiles]
+        7) http_get(arguments: {"url":"https://..."}) [solo hosts permitidos]
+        8) brave_search(arguments: {"query":"...","count":"5"}) [requiere API key]
 
         Esquema de salida:
         - respuesta final:
           {"type":"final","content":"..."}
         - llamada de herramienta:
-          {"type":"tool_call","name":"get_time|save_memory|list_memories|search_memories|read_file|http_get","arguments":{"key":"value"}}
+          {"type":"tool_call","name":"get_time|save_memory|list_memories|search_memories|clear_memories|read_file|http_get|brave_search","arguments":{"key":"value"}}
 
         Mensaje del usuario:
         \(userPrompt)
@@ -132,7 +134,7 @@ final class OpenClawLiteAgentService {
     private func heuristicDecision(from text: String) -> AgentDecision? {
         let lower = text.lowercased()
         if lower.contains("tool_call") {
-            for name in ["get_time", "save_memory", "list_memories", "search_memories", "read_file", "http_get"] {
+            for name in ["get_time", "save_memory", "list_memories", "search_memories", "clear_memories", "read_file", "http_get", "brave_search"] {
                 if lower.contains(name) {
                     return AgentDecision(type: "tool_call", content: nil, name: name, arguments: [:])
                 }

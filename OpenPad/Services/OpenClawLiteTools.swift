@@ -1,5 +1,41 @@
 import Foundation
 
+struct OpenClawLiteConfig {
+    static let shared = OpenClawLiteConfig()
+
+    private enum Keys {
+        static let httpAllowlistHosts = "openclawlite.http.allowlist.hosts"
+        static let braveApiKey = "openclawlite.brave.api.key"
+    }
+
+    private let defaultHosts = ["docs.openclaw.ai", "api.github.com", "wttr.in"]
+
+    func loadAllowlistHosts() -> [String] {
+        let raw = UserDefaults.standard.string(forKey: Keys.httpAllowlistHosts)
+        let source = (raw?.isEmpty == false) ? raw! : defaultHosts.joined(separator: "\n")
+        return source
+            .split(whereSeparator: { $0 == "\n" || $0 == "," || $0 == " " })
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            .filter { !$0.isEmpty }
+    }
+
+    func saveAllowlistHosts(_ hostsText: String) {
+        UserDefaults.standard.set(hostsText, forKey: Keys.httpAllowlistHosts)
+    }
+
+    func allowlistHostsText() -> String {
+        loadAllowlistHosts().joined(separator: "\n")
+    }
+
+    func loadBraveApiKey() -> String {
+        UserDefaults.standard.string(forKey: Keys.braveApiKey) ?? ""
+    }
+
+    func saveBraveApiKey(_ key: String) {
+        UserDefaults.standard.set(key.trimmingCharacters(in: .whitespacesAndNewlines), forKey: Keys.braveApiKey)
+    }
+}
+
 struct OpenClawToolResult {
     let ok: Bool
     let output: String
@@ -10,12 +46,7 @@ final class OpenClawLiteTools {
     private let memoryDirName = "OpenClawMemory"
     private let memoryFileName = "memory.log"
     private let filesDirName = "OpenClawFiles"
-
-    private let httpAllowlistHosts: Set<String> = [
-        "docs.openclaw.ai",
-        "api.github.com",
-        "wttr.in"
-    ]
+    private let config = OpenClawLiteConfig.shared
 
     func execute(name: String, arguments: [String: String]) -> OpenClawToolResult {
         switch name {
@@ -65,6 +96,14 @@ final class OpenClawLiteTools {
                 return .init(ok: false, output: "Error searching memories: \(error.localizedDescription)")
             }
 
+        case "clear_memories":
+            do {
+                try clearMemories()
+                return .init(ok: true, output: "Memories cleared")
+            } catch {
+                return .init(ok: false, output: "Error clearing memories: \(error.localizedDescription)")
+            }
+
         case "read_file":
             let relativePath = (arguments["path"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             guard !relativePath.isEmpty else { return .init(ok: false, output: "Missing argument: path") }
@@ -80,6 +119,12 @@ final class OpenClawLiteTools {
             guard !urlString.isEmpty else { return .init(ok: false, output: "Missing argument: url") }
             return fetchHTTP(urlString: urlString)
 
+        case "brave_search":
+            let query = (arguments["query"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !query.isEmpty else { return .init(ok: false, output: "Missing argument: query") }
+            let count = Int(arguments["count"] ?? "5") ?? 5
+            return braveSearch(query: query, count: max(1, min(10, count)))
+
         default:
             return .init(ok: false, output: "Unknown tool: \(name)")
         }
@@ -93,6 +138,14 @@ final class OpenClawLiteTools {
         } catch {
             return "(error leyendo memoria: \(error.localizedDescription))"
         }
+    }
+
+    func listAllMemories() -> [String] {
+        (try? readMemoryLines(limit: 500)) ?? []
+    }
+
+    func clearAllMemoriesForUI() throws {
+        try clearMemories()
     }
 
     private func documentsDirectory() throws -> URL {
@@ -134,6 +187,13 @@ final class OpenClawLiteTools {
         return Array(lines.suffix(limit))
     }
 
+    private func clearMemories() throws {
+        let fileURL = try memoryFileURL()
+        if FileManager.default.fileExists(atPath: fileURL.path) {
+            try FileManager.default.removeItem(at: fileURL)
+        }
+    }
+
     private func searchMemory(query: String, limit: Int) throws -> [String] {
         let rows = try readMemoryLines(limit: 200)
         let tokens = Set(query.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init))
@@ -163,10 +223,11 @@ final class OpenClawLiteTools {
     }
 
     private func fetchHTTP(urlString: String) -> OpenClawToolResult {
-        guard let url = URL(string: urlString), url.scheme == "https", let host = url.host else {
+        guard let url = URL(string: urlString), url.scheme == "https", let host = url.host?.lowercased() else {
             return .init(ok: false, output: "Only https URLs are allowed")
         }
-        guard httpAllowlistHosts.contains(host) else {
+        let allowedHosts = Set(config.loadAllowlistHosts())
+        guard allowedHosts.contains(host) else {
             return .init(ok: false, output: "Host not allowed: \(host)")
         }
 
@@ -188,6 +249,47 @@ final class OpenClawLiteTools {
         }.resume()
 
         _ = semaphore.wait(timeout: .now() + 12)
+        return result
+    }
+
+    private func braveSearch(query: String, count: Int) -> OpenClawToolResult {
+        let key = config.loadBraveApiKey()
+        guard !key.isEmpty else {
+            return .init(ok: false, output: "Brave API key no configurada")
+        }
+
+        var comp = URLComponents(string: "https://api.search.brave.com/res/v1/web/search")
+        comp?.queryItems = [
+            .init(name: "q", value: query),
+            .init(name: "count", value: String(count))
+        ]
+        guard let url = comp?.url else {
+            return .init(ok: false, output: "URL inválida para Brave")
+        }
+
+        var req = URLRequest(url: url)
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.setValue(key, forHTTPHeaderField: "X-Subscription-Token")
+
+        let semaphore = DispatchSemaphore(value: 0)
+        var result: OpenClawToolResult = .init(ok: false, output: "Brave request failed")
+
+        URLSession.shared.dataTask(with: req) { data, response, error in
+            defer { semaphore.signal() }
+            if let error {
+                result = .init(ok: false, output: "brave_search error: \(error.localizedDescription)")
+                return
+            }
+            if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+                let body = String(data: data ?? Data(), encoding: .utf8) ?? ""
+                result = .init(ok: false, output: "Brave HTTP \(http.statusCode): \(body.prefix(300))")
+                return
+            }
+            let body = String(data: data ?? Data(), encoding: .utf8) ?? ""
+            result = .init(ok: true, output: String(body.prefix(4000)))
+        }.resume()
+
+        _ = semaphore.wait(timeout: .now() + 15)
         return result
     }
 }
