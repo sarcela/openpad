@@ -109,6 +109,7 @@ private struct SettingsView: View {
     @State private var mlxModelName = ""
     @State private var mlxPresetModel = "mlx-community/Qwen2.5-1.5B-Instruct-4bit"
     @State private var isDownloadingMLXModel = false
+    @State private var mlxDownloadProgress: Double = 0
 
     @State private var importMessage = ""
     @State private var modelToDelete: URL?
@@ -178,6 +179,18 @@ private struct SettingsView: View {
                                 Label(isDownloadingMLXModel ? "Descargando..." : "Descargar modelo MLX seleccionado", systemImage: "arrow.down.circle")
                             }
                             .disabled(isDownloadingMLXModel || mlxModelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                            Text("Tamaño aprox: \(mlxEstimatedSizeText(for: mlxModelName))")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+
+                            if isDownloadingMLXModel {
+                                ProgressView(value: mlxDownloadProgress, total: 1.0)
+                                    .progressViewStyle(.linear)
+                                Text("Progreso estimado: \(Int(mlxDownloadProgress * 100))%")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
 
                             Text("Puedes elegir uno sugerido o escribir un ID manual si ya sabes cuál usar.")
                                 .font(.caption)
@@ -444,15 +457,47 @@ private struct SettingsView: View {
         }
 
         isDownloadingMLXModel = true
-        defer { isDownloadingMLXModel = false }
+        mlxDownloadProgress = 0.03
+
+        let progressTask = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 450_000_000)
+                await MainActor.run {
+                    if isDownloadingMLXModel {
+                        mlxDownloadProgress = min(0.92, mlxDownloadProgress + 0.04)
+                    }
+                }
+            }
+        }
+
+        defer {
+            progressTask.cancel()
+            isDownloadingMLXModel = false
+        }
 
         do {
             runtimeConfig.saveMLXModelName(cleanId)
             try await mlxService.prewarmModel(modelId: cleanId)
+            mlxDownloadProgress = 1.0
             importMessage = "Modelo MLX descargado/listo: \(cleanId)"
         } catch {
             importMessage = "No pude descargar el modelo MLX: \(error.localizedDescription)"
+            mlxDownloadProgress = 0
         }
+    }
+
+    private func mlxEstimatedSizeText(for modelId: String) -> String {
+        let knownSizesMB: [String: Int] = [
+            "mlx-community/Qwen2.5-1.5B-Instruct-4bit": 950,
+            "mlx-community/Qwen2.5-3B-Instruct-4bit": 1800,
+            "mlx-community/Llama-3.2-3B-Instruct-4bit": 1900,
+            "mlx-community/Phi-3.5-mini-instruct-4bit": 2200
+        ]
+        let clean = modelId.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let mb = knownSizesMB[clean] {
+            return "~\(mb) MB"
+        }
+        return "desconocido"
     }
 
     private func icon(for mode: RoutePreference) -> String {
