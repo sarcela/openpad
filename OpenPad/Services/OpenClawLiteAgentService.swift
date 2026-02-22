@@ -75,8 +75,61 @@ final class OpenClawLiteAgentService {
     }
 
     private func parseDecision(from text: String) -> AgentDecision? {
-        guard let data = extractFirstJSONObject(from: text)?.data(using: .utf8) else { return nil }
+        guard let raw = extractFirstJSONObject(from: text) else {
+            return heuristicDecision(from: text)
+        }
+
+        if let decoded = decodeDecision(from: raw) {
+            return normalize(decoded)
+        }
+
+        let repaired = repairLooselyFormattedJSON(raw)
+        if let decoded = decodeDecision(from: repaired) {
+            return normalize(decoded)
+        }
+
+        return heuristicDecision(from: text)
+    }
+
+    private func decodeDecision(from json: String) -> AgentDecision? {
+        guard let data = json.data(using: .utf8) else { return nil }
         return try? JSONDecoder().decode(AgentDecision.self, from: data)
+    }
+
+    private func repairLooselyFormattedJSON(_ text: String) -> String {
+        var s = text
+        s = s.replacingOccurrences(of: "\"tyoe\"", with: "\"type\"")
+        s = s.replacingOccurrences(of: "'", with: "\"")
+        s = s.replacingOccurrences(of: ",\"", with: ",\"")
+        s = s.replacingOccurrences(of: "\"name\":\"get_time:\"", with: "\"name\":\"get_time\"")
+        s = s.replacingOccurrences(of: "\"name\":\"save_memory:\"", with: "\"name\":\"save_memory\"")
+        s = s.replacingOccurrences(of: "\"name\":\"list_memories:\"", with: "\"name\":\"list_memories\"")
+        s = s.replacingOccurrences(of: "\"arguments\":{}", with: "\"arguments\":{}")
+        return s
+    }
+
+    private func heuristicDecision(from text: String) -> AgentDecision? {
+        let lower = text.lowercased()
+        if lower.contains("tool_call") {
+            if lower.contains("get_time") {
+                return AgentDecision(type: "tool_call", content: nil, name: "get_time", arguments: [:])
+            }
+            if lower.contains("save_memory") {
+                return AgentDecision(type: "tool_call", content: nil, name: "save_memory", arguments: [:])
+            }
+            if lower.contains("list_memories") {
+                return AgentDecision(type: "tool_call", content: nil, name: "list_memories", arguments: [:])
+            }
+        }
+        return nil
+    }
+
+    private func normalize(_ decision: AgentDecision) -> AgentDecision {
+        let normalizedName = decision.name?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: ":,;"))
+        let normalizedType = decision.type.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return AgentDecision(type: normalizedType, content: decision.content, name: normalizedName, arguments: decision.arguments)
     }
 
     private func extractFirstJSONObject(from text: String) -> String? {
