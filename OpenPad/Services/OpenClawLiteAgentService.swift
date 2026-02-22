@@ -186,9 +186,14 @@ final class OpenClawLiteAgentService {
     }
 
     private func extractFirstURL(from text: String) -> URL? {
-        guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else { return nil }
+        let pattern = #"https?://[^\s\)\]\>\"]+"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else { return nil }
         let range = NSRange(text.startIndex..., in: text)
-        return detector.matches(in: text, options: [], range: range).compactMap { $0.url }.first
+        guard let match = regex.firstMatch(in: text, options: [], range: range),
+              let matchRange = Range(match.range, in: text) else {
+            return nil
+        }
+        return URL(string: String(text[matchRange]))
     }
 
     private func preferredLanguageInstruction() -> String {
