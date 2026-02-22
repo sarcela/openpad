@@ -61,14 +61,16 @@ final class OpenClawLiteAgentService {
         4) search_memories(arguments: {"query":"...","limit":"5"})
         5) clear_memories(arguments: {})
         6) read_file(arguments: {"path":"archivo.txt"}) [solo Documents/OpenClawFiles]
-        7) http_get(arguments: {"url":"https://..."}) [solo hosts permitidos]
-        8) brave_search(arguments: {"query":"...","count":"5"}) [requiere API key]
+        7) write_file(arguments: {"path":"archivo.txt","text":"..."}) [solo Documents/OpenClawFiles]
+        8) list_files(arguments: {"path":"subcarpeta/opcional"}) [solo Documents/OpenClawFiles]
+        9) http_get(arguments: {"url":"https://..."}) [solo hosts permitidos]
+        10) brave_search(arguments: {"query":"...","count":"5"}) [requiere API key]
 
         Esquema de salida:
         - respuesta final:
           {"type":"final","content":"..."}
         - llamada de herramienta:
-          {"type":"tool_call","name":"get_time|save_memory|list_memories|search_memories|clear_memories|read_file|http_get|brave_search","arguments":{"key":"value"}}
+          {"type":"tool_call","name":"get_time|save_memory|list_memories|search_memories|clear_memories|read_file|write_file|list_files|http_get|brave_search","arguments":{"key":"value"}}
 
         Mensaje del usuario:
         \(userPrompt)
@@ -134,7 +136,7 @@ final class OpenClawLiteAgentService {
     private func heuristicDecision(from text: String) -> AgentDecision? {
         let lower = text.lowercased()
         if lower.contains("tool_call") {
-            for name in ["get_time", "save_memory", "list_memories", "search_memories", "clear_memories", "read_file", "http_get", "brave_search"] {
+            for name in ["get_time", "save_memory", "list_memories", "search_memories", "clear_memories", "read_file", "write_file", "list_files", "http_get", "brave_search"] {
                 if lower.contains(name) {
                     return AgentDecision(type: "tool_call", content: nil, name: name, arguments: [:])
                 }

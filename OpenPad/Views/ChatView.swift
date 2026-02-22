@@ -1,5 +1,8 @@
 import SwiftUI
 import UniformTypeIdentifiers
+#if canImport(UIKit)
+import UIKit
+#endif
 
 private enum ImportTarget {
     case chat
@@ -57,11 +60,8 @@ struct ChatView: View {
                         ContentUnavailableView("Sin mensajes aún", systemImage: "bubble.left.and.bubble.right")
                     } else {
                         List(vm.messages) { msg in
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(msg.role.uppercased()).font(.caption).foregroundColor(.secondary)
-                                Text(msg.text)
-                            }
-                            .padding(.vertical, 4)
+                            MessageRowView(msg: msg)
+                                .padding(.vertical, 4)
                         }
                     }
 
@@ -118,6 +118,55 @@ struct ChatView: View {
         case .mlx:
             return "Privado/offline • MLX • \(runtimeConfig.loadMLXModelName())"
         }
+    }
+}
+
+private struct MessageRowView: View {
+    let msg: ChatMessage
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(msg.role.uppercased()).font(.caption).foregroundColor(.secondary)
+            Text(msg.text)
+
+            if msg.role == "assistant" {
+                let urls = detectURLs(in: msg.text)
+                if !urls.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(urls, id: \.absoluteString) { url in
+                            HStack {
+                                Link(destination: url) {
+                                    Label("Abrir enlace", systemImage: "link")
+                                        .font(.caption)
+                                }
+                                Spacer()
+                                Button {
+                                    copyToClipboard(url.absoluteString)
+                                } label: {
+                                    Label("Copiar", systemImage: "doc.on.doc")
+                                        .font(.caption)
+                                }
+                            }
+                            .padding(8)
+                            .background(Color(.secondarySystemBackground))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func detectURLs(in text: String) -> [URL] {
+        guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else { return [] }
+        let range = NSRange(text.startIndex..., in: text)
+        return detector.matches(in: text, options: [], range: range).compactMap { $0.url }
+    }
+
+    private func copyToClipboard(_ text: String) {
+        #if canImport(UIKit)
+        UIPasteboard.general.string = text
+        #endif
     }
 }
 

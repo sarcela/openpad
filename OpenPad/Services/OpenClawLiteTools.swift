@@ -114,6 +114,26 @@ final class OpenClawLiteTools {
                 return .init(ok: false, output: "read_file error: \(error.localizedDescription)")
             }
 
+        case "write_file":
+            let relativePath = (arguments["path"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let text = arguments["text"] ?? ""
+            guard !relativePath.isEmpty else { return .init(ok: false, output: "Missing argument: path") }
+            do {
+                try writeAppFile(relativePath: relativePath, text: text)
+                return .init(ok: true, output: "Wrote file: \(relativePath)")
+            } catch {
+                return .init(ok: false, output: "write_file error: \(error.localizedDescription)")
+            }
+
+        case "list_files":
+            let subdir = (arguments["path"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            do {
+                let rows = try listAppFiles(relativePath: subdir)
+                return .init(ok: true, output: rows.isEmpty ? "No files" : rows.joined(separator: "\n"))
+            } catch {
+                return .init(ok: false, output: "list_files error: \(error.localizedDescription)")
+            }
+
         case "http_get":
             let urlString = (arguments["url"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             guard !urlString.isEmpty else { return .init(ok: false, output: "Missing argument: url") }
@@ -210,6 +230,27 @@ final class OpenClawLiteTools {
     }
 
     private func readAppFile(relativePath: String) throws -> String {
+        let candidate = try sandboxedFileURL(relativePath: relativePath)
+        return try String(contentsOf: candidate, encoding: .utf8)
+    }
+
+    private func writeAppFile(relativePath: String, text: String) throws {
+        let candidate = try sandboxedFileURL(relativePath: relativePath)
+        let parent = candidate.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+        try text.write(to: candidate, atomically: true, encoding: .utf8)
+    }
+
+    private func listAppFiles(relativePath: String) throws -> [String] {
+        let docs = try documentsDirectory()
+        let root = docs.appendingPathComponent(filesDirName, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let dir = relativePath.isEmpty ? root : try sandboxedFileURL(relativePath: relativePath)
+        let files = try FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
+        return files.map { $0.lastPathComponent }.sorted()
+    }
+
+    private func sandboxedFileURL(relativePath: String) throws -> URL {
         let docs = try documentsDirectory()
         let root = docs.appendingPathComponent(filesDirName, isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -219,7 +260,7 @@ final class OpenClawLiteTools {
         guard normalizedCandidate.hasPrefix(normalizedRoot) else {
             throw NSError(domain: "OpenClawLiteTools", code: 2, userInfo: [NSLocalizedDescriptionKey: "Path outside sandbox"])
         }
-        return try String(contentsOf: candidate, encoding: .utf8)
+        return candidate
     }
 
     private func fetchHTTP(urlString: String) -> OpenClawToolResult {
@@ -285,11 +326,44 @@ final class OpenClawLiteTools {
                 result = .init(ok: false, output: "Brave HTTP \(http.statusCode): \(body.prefix(300))")
                 return
             }
-            let body = String(data: data ?? Data(), encoding: .utf8) ?? ""
-            result = .init(ok: true, output: String(body.prefix(4000)))
+            guard let data else {
+                result = .init(ok: false, output: "Brave response vacía")
+                return
+            }
+            result = .init(ok: true, output: formatBraveResults(from: data))
         }.resume()
 
         _ = semaphore.wait(timeout: .now() + 15)
         return result
     }
+
+    private func formatBraveResults(from data: Data) -> String {
+        guard let decoded = try? JSONDecoder().decode(BraveSearchResponse.self, from: data) else {
+            return String(data: data, encoding: .utf8).map { String($0.prefix(3000)) } ?? "Sin resultados"
+        }
+
+        let items = decoded.web?.results ?? []
+        if items.isEmpty { return "Sin resultados" }
+
+        return items.prefix(8).enumerated().map { idx, row in
+            let title = row.title ?? "Sin título"
+            let url = row.url ?? ""
+            let desc = row.description ?? ""
+            return "\(idx + 1). \(title)\n\(url)\n\(desc)"
+        }.joined(separator: "\n\n")
+    }
+}
+
+private struct BraveSearchResponse: Codable {
+    let web: BraveWebResults?
+}
+
+private struct BraveWebResults: Codable {
+    let results: [BraveWebResult]?
+}
+
+private struct BraveWebResult: Codable {
+    let title: String?
+    let url: String?
+    let description: String?
 }
