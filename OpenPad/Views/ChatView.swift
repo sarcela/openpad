@@ -107,6 +107,8 @@ private struct SettingsView: View {
     @State private var ollamaBaseURL = ""
     @State private var ollamaModel = ""
     @State private var mlxModelName = ""
+    @State private var mlxPresetModel = "mlx-community/Qwen2.5-1.5B-Instruct-4bit"
+    @State private var isDownloadingMLXModel = false
 
     @State private var importMessage = ""
     @State private var modelToDelete: URL?
@@ -115,6 +117,14 @@ private struct SettingsView: View {
     private let remoteConfig = RemoteModelConfig.shared
     private let localConfig = LocalModelConfig.shared
     private let runtimeConfig = LocalRuntimeConfig.shared
+    private let mlxService = MLXLocalModelService()
+
+    private let mlxPresetModels = [
+        "mlx-community/Qwen2.5-1.5B-Instruct-4bit",
+        "mlx-community/Qwen2.5-3B-Instruct-4bit",
+        "mlx-community/Llama-3.2-3B-Instruct-4bit",
+        "mlx-community/Phi-3.5-mini-instruct-4bit"
+    ]
 
     var body: some View {
         NavigationStack {
@@ -145,10 +155,31 @@ private struct SettingsView: View {
                         }
 
                         if runtimeProvider == .mlx {
-                            TextField("Modelo MLX", text: $mlxModelName)
+                            Picker("Modelos sugeridos", selection: $mlxPresetModel) {
+                                ForEach(mlxPresetModels, id: \.self) { modelId in
+                                    Text(modelId).tag(modelId)
+                                }
+                            }
+
+                            Button("Usar modelo sugerido") {
+                                mlxModelName = mlxPresetModel
+                                importMessage = "Modelo MLX seleccionado: \(mlxPresetModel)"
+                            }
+
+                            TextField("Modelo MLX (manual)", text: $mlxModelName)
                                 .textInputAutocapitalization(.never)
                                 .autocorrectionDisabled()
-                            Text("Requiere integrar mlx-swift en Xcode para inferencia real en iPad.")
+
+                            Button {
+                                Task {
+                                    await downloadSelectedMLXModel()
+                                }
+                            } label: {
+                                Label(isDownloadingMLXModel ? "Descargando..." : "Descargar modelo MLX seleccionado", systemImage: "arrow.down.circle")
+                            }
+                            .disabled(isDownloadingMLXModel || mlxModelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                            Text("Puedes elegir uno sugerido o escribir un ID manual si ya sabes cuál usar.")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
@@ -277,6 +308,7 @@ private struct SettingsView: View {
                 ollamaBaseURL = ollama.baseURL
                 ollamaModel = ollama.model
                 mlxModelName = runtimeConfig.loadMLXModelName()
+                mlxPresetModel = mlxPresetModels.contains(mlxModelName) ? mlxModelName : mlxPresetModels[0]
 
                 refreshModels()
 
@@ -401,6 +433,25 @@ private struct SettingsView: View {
             models = []
             embeddingModels = []
             importMessage = "No pude leer modelos: \(error.localizedDescription)"
+        }
+    }
+
+    private func downloadSelectedMLXModel() async {
+        let cleanId = mlxModelName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanId.isEmpty else {
+            importMessage = "Escribe un ID de modelo MLX válido."
+            return
+        }
+
+        isDownloadingMLXModel = true
+        defer { isDownloadingMLXModel = false }
+
+        do {
+            runtimeConfig.saveMLXModelName(cleanId)
+            try await mlxService.prewarmModel(modelId: cleanId)
+            importMessage = "Modelo MLX descargado/listo: \(cleanId)"
+        } catch {
+            importMessage = "No pude descargar el modelo MLX: \(error.localizedDescription)"
         }
     }
 

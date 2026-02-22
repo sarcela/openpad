@@ -10,6 +10,7 @@ import MLXLMCommon
 enum MLXServiceError: LocalizedError {
     case backendUnavailable
     case emptyResponse
+    case invalidModelId
 
     var errorDescription: String? {
         switch self {
@@ -17,6 +18,8 @@ enum MLXServiceError: LocalizedError {
             return "MLX no está integrado en este build. Verifica que MLXLLM esté agregado al target."
         case .emptyResponse:
             return "MLX respondió vacío"
+        case .invalidModelId:
+            return "ID de modelo MLX inválido"
         }
     }
 }
@@ -41,6 +44,17 @@ final class MLXLocalModelService {
         return text
         #else
         _ = prompt
+        throw MLXServiceError.backendUnavailable
+        #endif
+    }
+
+    func prewarmModel(modelId: String) async throws {
+        #if canImport(MLXLLM)
+        let clean = modelId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { throw MLXServiceError.invalidModelId }
+        _ = try await getOrCreateSession(modelId: clean)
+        #else
+        _ = modelId
         throw MLXServiceError.backendUnavailable
         #endif
     }
