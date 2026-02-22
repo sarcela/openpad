@@ -112,9 +112,8 @@ final class ChatViewModel: ObservableObject {
 
     private func run(target: String, prompt: String, timeoutMs: Int) async throws -> String {
         if target == "LOCAL" {
-            return try await withTimeout(milliseconds: timeoutMs) { [self] in
-                try await self.openClawLite.respond(to: prompt)
-            }
+            // Evita choque de concurrencia estricta con @MainActor services dentro de clausuras @Sendable.
+            return try await openClawLite.respond(to: prompt)
         }
 
         return try await withTimeout(milliseconds: timeoutMs) { [self] in
