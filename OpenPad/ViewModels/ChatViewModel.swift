@@ -25,8 +25,8 @@ final class ChatViewModel: ObservableObject {
     private static let routePreferenceKey = "chat.routePreference"
 
     private let routing = RoutingService()
-    private let localService = LocalModelService()
     private let remoteService = RemoteModelService()
+    private let openClawLite = OpenClawLiteAgentService()
 
     init() {
         if let saved = UserDefaults.standard.string(forKey: Self.routePreferenceKey),
@@ -113,7 +113,7 @@ final class ChatViewModel: ObservableObject {
     private func run(target: String, prompt: String, timeoutMs: Int) async throws -> String {
         if target == "LOCAL" {
             return try await withTimeout(milliseconds: timeoutMs) { [self] in
-                try await self.localService.runLocal(prompt: prompt)
+                try await self.openClawLite.respond(to: prompt)
             }
         }
 
