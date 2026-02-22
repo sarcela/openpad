@@ -1,8 +1,10 @@
 import Foundation
 
-#if canImport(MLXLLM) && canImport(MLXLMCommon)
+#if canImport(MLXLLM)
 import MLXLLM
+#if canImport(MLXLMCommon)
 import MLXLMCommon
+#endif
 #endif
 
 enum MLXServiceError: LocalizedError {
@@ -23,13 +25,13 @@ enum MLXServiceError: LocalizedError {
 final class MLXLocalModelService {
     private let config = LocalRuntimeConfig.shared
 
-    #if canImport(MLXLLM) && canImport(MLXLMCommon)
+    #if canImport(MLXLLM)
     private var loadedModelId: String?
     private var session: ChatSession?
     #endif
 
     func runLocal(prompt: String) async throws -> String {
-        #if canImport(MLXLLM) && canImport(MLXLMCommon)
+        #if canImport(MLXLLM)
         let modelId = config.loadMLXModelName().trimmingCharacters(in: .whitespacesAndNewlines)
         let useModelId = modelId.isEmpty ? "mlx-community/Qwen2.5-1.5B-Instruct-4bit" : modelId
 
@@ -43,7 +45,7 @@ final class MLXLocalModelService {
         #endif
     }
 
-    #if canImport(MLXLLM) && canImport(MLXLMCommon)
+    #if canImport(MLXLLM)
     private func getOrCreateSession(modelId: String) async throws -> ChatSession {
         if let session, loadedModelId == modelId {
             return session
