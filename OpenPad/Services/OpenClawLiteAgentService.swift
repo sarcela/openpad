@@ -33,9 +33,10 @@ final class OpenClawLiteAgentService {
 
     private func buildPlannerPrompt(userPrompt: String) -> String {
         let memoryContext = tools.recentMemories(limit: 8)
+        let languageInstruction = preferredLanguageInstruction()
         return """
         Eres OpenClaw Lite en iPad.
-        Responde SIEMPRE en español, a menos que el usuario pida explícitamente otro idioma.
+        \(languageInstruction)
         Decide tu siguiente acción y responde SOLO en JSON válido.
 
         Memoria reciente persistida (sobrevive reinicios):
@@ -58,10 +59,11 @@ final class OpenClawLiteAgentService {
     }
 
     private func buildFinalizePrompt(userPrompt: String, toolName: String, toolResult: OpenClawToolResult) -> String {
-        """
+        let languageInstruction = preferredLanguageInstruction()
+        return """
         Eres OpenClaw Lite en iPad.
         Ya llamaste una herramienta. Da respuesta final al usuario en JSON válido.
-        Responde en español.
+        \(languageInstruction)
 
         Esquema de salida:
         {"type":"final","content":"..."}
@@ -136,6 +138,24 @@ final class OpenClawLiteAgentService {
             .trimmingCharacters(in: CharacterSet(charactersIn: ":,;"))
         let normalizedType = decision.type.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return AgentDecision(type: normalizedType, content: decision.content, name: normalizedName, arguments: decision.arguments)
+    }
+
+    private func preferredLanguageInstruction() -> String {
+        let preferred = Locale.preferredLanguages.first ?? "en"
+        let languageCode = Locale(identifier: preferred).language.languageCode?.identifier ?? "en"
+
+        switch languageCode {
+        case "es":
+            return "Responde por defecto en español, salvo que el usuario pida otro idioma."
+        case "en":
+            return "Respond in English by default, unless the user asks for another language."
+        case "pt":
+            return "Responda em português por padrão, a menos que o usuário peça outro idioma."
+        case "fr":
+            return "Réponds en français par défaut, sauf si l'utilisateur demande une autre langue."
+        default:
+            return "Respond in the iPad preferred language (\(languageCode)) by default, unless the user asks for another language."
+        }
     }
 
     private func extractFirstJSONObject(from text: String) -> String? {

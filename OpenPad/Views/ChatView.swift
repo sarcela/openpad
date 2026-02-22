@@ -9,51 +9,70 @@ private enum ImportTarget {
 struct ChatView: View {
     @StateObject private var vm = ChatViewModel()
     @State private var showSettings = false
+    @State private var showSidebar = true
 
     private let localConfig = LocalModelConfig.shared
     private let runtimeConfig = LocalRuntimeConfig.shared
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                HStack(spacing: 8) {
-                    Image(systemName: "cpu")
-                        .foregroundColor(.secondary)
-                    Text(selectedModelBannerText())
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                    Spacer()
+            HStack(spacing: 0) {
+                if showSidebar {
+                    SidebarMenuView()
+                        .frame(width: 260)
+                        .transition(.move(edge: .leading))
                 }
-                .padding(.horizontal)
-                .padding(.vertical, 10)
-                .background(Color(.secondarySystemBackground))
 
-                if vm.messages.isEmpty {
-                    ContentUnavailableView("Sin mensajes aún", systemImage: "bubble.left.and.bubble.right")
-                } else {
-                    List(vm.messages) { msg in
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(msg.role.uppercased()).font(.caption).foregroundColor(.secondary)
-                            Text(msg.text)
+                VStack(spacing: 0) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "cpu")
+                            .foregroundColor(.secondary)
+                        Text(selectedModelBannerText())
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                        Spacer()
+                    }
+                    .padding(.horizontal)
+                    .padding(.vertical, 10)
+                    .background(Color(.secondarySystemBackground))
+
+                    if vm.messages.isEmpty {
+                        ContentUnavailableView("Sin mensajes aún", systemImage: "bubble.left.and.bubble.right")
+                    } else {
+                        List(vm.messages) { msg in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(msg.role.uppercased()).font(.caption).foregroundColor(.secondary)
+                                Text(msg.text)
+                            }
+                            .padding(.vertical, 4)
                         }
-                        .padding(.vertical, 4)
                     }
-                }
 
-                HStack {
-                    TextField("Escribe un prompt...", text: $vm.inputText, axis: .vertical)
-                        .textFieldStyle(.roundedBorder)
+                    HStack {
+                        TextField("Escribe un prompt...", text: $vm.inputText, axis: .vertical)
+                            .textFieldStyle(.roundedBorder)
 
-                    Button(vm.isLoading ? "..." : "Enviar") {
-                        vm.send()
+                        Button(vm.isLoading ? "..." : "Enviar") {
+                            vm.send()
+                        }
+                        .disabled(vm.isLoading || vm.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
-                    .disabled(vm.isLoading || vm.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .padding()
                 }
-                .padding()
             }
+            .animation(.easeInOut(duration: 0.2), value: showSidebar)
             .navigationTitle("OpenPad")
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showSidebar.toggle()
+                    } label: {
+                        Image(systemName: "line.3.horizontal")
+                    }
+                    .accessibilityLabel(showSidebar ? "Ocultar menú" : "Mostrar menú")
+                }
+
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         showSettings = true
@@ -82,6 +101,86 @@ struct ChatView: View {
             return "Local (Ollama) • \(cfg.model)"
         case .mlx:
             return "Privado/offline • MLX • \(runtimeConfig.loadMLXModelName())"
+        }
+    }
+}
+
+private struct SidebarMenuView: View {
+    private struct Item: Identifiable {
+        let id = UUID()
+        let icon: String
+        let title: String
+    }
+
+    private let sections: [(String, [Item])] = [
+        ("Chat", [Item(icon: "message", title: "Chat")]),
+        ("Control", [
+            Item(icon: "chart.bar", title: "Overview"),
+            Item(icon: "link", title: "Channels"),
+            Item(icon: "dot.radiowaves.left.and.right", title: "Instances"),
+            Item(icon: "doc.text", title: "Sessions"),
+            Item(icon: "chart.xyaxis.line", title: "Usage"),
+            Item(icon: "clock.arrow.circlepath", title: "Cron Jobs")
+        ]),
+        ("Agent", [
+            Item(icon: "folder", title: "Agents"),
+            Item(icon: "bolt", title: "Skills"),
+            Item(icon: "desktopcomputer", title: "Nodes")
+        ]),
+        ("Settings", [])
+    ]
+
+    var body: some View {
+        ZStack {
+            LinearGradient(colors: [Color(red: 0.05, green: 0.07, blue: 0.14), Color(red: 0.02, green: 0.04, blue: 0.09)], startPoint: .top, endPoint: .bottom)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    HStack(spacing: 10) {
+                        Text("🐞")
+                            .font(.title2)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("OPENCLAW")
+                                .font(.headline)
+                                .foregroundColor(.white)
+                            Text("GATEWAY DASHBOARD")
+                                .font(.caption2)
+                                .foregroundColor(.white.opacity(0.7))
+                        }
+                    }
+                    .padding(.bottom, 8)
+
+                    ForEach(sections, id: \.0) { section in
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack {
+                                Text(section.0)
+                                    .font(.caption)
+                                    .foregroundColor(.white.opacity(0.6))
+                                Spacer()
+                                Text("-")
+                                    .foregroundColor(.white.opacity(0.3))
+                            }
+
+                            ForEach(section.1) { item in
+                                HStack(spacing: 12) {
+                                    Image(systemName: item.icon)
+                                        .frame(width: 18)
+                                        .foregroundColor(.white.opacity(0.75))
+                                    Text(item.title)
+                                        .foregroundColor(.white.opacity(0.9))
+                                    Spacer()
+                                }
+                                .font(.subheadline)
+                                .padding(.vertical, 10)
+                                .padding(.horizontal, 10)
+                                .background(item.title == "Chat" ? Color.red.opacity(0.22) : Color.clear)
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                            }
+                        }
+                    }
+                }
+                .padding(14)
+            }
         }
     }
 }
