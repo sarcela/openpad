@@ -7,11 +7,10 @@
 
 import SwiftUI
 
-@main
-struct OpenPadApp: App {
-    var body: some Scene {
-        WindowGroup {
-            ContentView()
-        }
+// Legacy template entrypoint kept only as reference.
+// Real app entrypoint lives in OpenClawPadApp.swift.
+struct OpenPadApp_Legacy {
+    static func makeRootView() -> some View {
+        ContentView()
     }
 }
