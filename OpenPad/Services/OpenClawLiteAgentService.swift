@@ -1,34 +1,46 @@
 import Foundation
 
+struct OpenClawAgentOutput {
+    let text: String
+    let trace: [String]
+}
+
 @MainActor
 final class OpenClawLiteAgentService {
     private let localModelService = LocalModelService()
     private let tools = OpenClawLiteTools()
 
-    func respond(to userPrompt: String) async throws -> String {
+    func respond(to userPrompt: String) async throws -> OpenClawAgentOutput {
+        var trace: [String] = []
         let firstPrompt = buildPlannerPrompt(userPrompt: userPrompt)
         let modelReply = try await localModelService.runLocal(prompt: firstPrompt)
 
         guard let decision = parseDecision(from: modelReply) else {
-            return modelReply
+            trace.append("Planner: sin JSON válido, respuesta directa")
+            return .init(text: modelReply, trace: trace)
         }
 
         if decision.type == "final" {
-            return decision.content ?? modelReply
+            trace.append("Planner: final sin herramientas")
+            return .init(text: decision.content ?? modelReply, trace: trace)
         }
 
         guard decision.type == "tool_call", let name = decision.name else {
-            return modelReply
+            trace.append("Planner: salida desconocida, respuesta directa")
+            return .init(text: modelReply, trace: trace)
         }
 
+        trace.append("Tool call: \(name)")
         let toolResult = tools.execute(name: name, arguments: decision.arguments ?? [:])
+        trace.append("Tool result: \(toolResult.ok ? "ok" : "error")")
+
         let secondPrompt = buildFinalizePrompt(userPrompt: userPrompt, toolName: name, toolResult: toolResult)
         let finalReply = try await localModelService.runLocal(prompt: secondPrompt)
 
         if let finalDecision = parseDecision(from: finalReply), let content = finalDecision.content, !content.isEmpty {
-            return content
+            return .init(text: content, trace: trace)
         }
-        return finalReply
+        return .init(text: finalReply, trace: trace)
     }
 
     private func buildPlannerPrompt(userPrompt: String) -> String {
@@ -46,12 +58,15 @@ final class OpenClawLiteAgentService {
         1) get_time(arguments: {})
         2) save_memory(arguments: {"text":"..."})
         3) list_memories(arguments: {"limit":"10"})
+        4) search_memories(arguments: {"query":"...","limit":"5"})
+        5) read_file(arguments: {"path":"archivo.txt"}) [solo Documents/OpenClawFiles]
+        6) http_get(arguments: {"url":"https://..."}) [solo hosts permitidos]
 
         Esquema de salida:
         - respuesta final:
           {"type":"final","content":"..."}
         - llamada de herramienta:
-          {"type":"tool_call","name":"get_time|save_memory|list_memories","arguments":{"key":"value"}}
+          {"type":"tool_call","name":"get_time|save_memory|list_memories|search_memories|read_file|http_get","arguments":{"key":"value"}}
 
         Mensaje del usuario:
         \(userPrompt)
@@ -108,25 +123,19 @@ final class OpenClawLiteAgentService {
         var s = text
         s = s.replacingOccurrences(of: "\"tyoe\"", with: "\"type\"")
         s = s.replacingOccurrences(of: "'", with: "\"")
-        s = s.replacingOccurrences(of: ",\"", with: ",\"")
         s = s.replacingOccurrences(of: "\"name\":\"get_time:\"", with: "\"name\":\"get_time\"")
         s = s.replacingOccurrences(of: "\"name\":\"save_memory:\"", with: "\"name\":\"save_memory\"")
         s = s.replacingOccurrences(of: "\"name\":\"list_memories:\"", with: "\"name\":\"list_memories\"")
-        s = s.replacingOccurrences(of: "\"arguments\":{}", with: "\"arguments\":{}")
         return s
     }
 
     private func heuristicDecision(from text: String) -> AgentDecision? {
         let lower = text.lowercased()
         if lower.contains("tool_call") {
-            if lower.contains("get_time") {
-                return AgentDecision(type: "tool_call", content: nil, name: "get_time", arguments: [:])
-            }
-            if lower.contains("save_memory") {
-                return AgentDecision(type: "tool_call", content: nil, name: "save_memory", arguments: [:])
-            }
-            if lower.contains("list_memories") {
-                return AgentDecision(type: "tool_call", content: nil, name: "list_memories", arguments: [:])
+            for name in ["get_time", "save_memory", "list_memories", "search_memories", "read_file", "http_get"] {
+                if lower.contains(name) {
+                    return AgentDecision(type: "tool_call", content: nil, name: name, arguments: [:])
+                }
             }
         }
         return nil

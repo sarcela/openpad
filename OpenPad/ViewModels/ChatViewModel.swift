@@ -21,6 +21,7 @@ final class ChatViewModel: ObservableObject {
     @Published var routePreference: RoutePreference = .auto {
         didSet { UserDefaults.standard.set(routePreference.rawValue, forKey: Self.routePreferenceKey) }
     }
+    @Published var toolTrace: [String] = []
 
     private static let routePreferenceKey = "chat.routePreference"
 
@@ -112,10 +113,12 @@ final class ChatViewModel: ObservableObject {
 
     private func run(target: String, prompt: String, timeoutMs: Int) async throws -> String {
         if target == "LOCAL" {
-            // Evita choque de concurrencia estricta con @MainActor services dentro de clausuras @Sendable.
-            return try await openClawLite.respond(to: prompt)
+            let output = try await openClawLite.respond(to: prompt)
+            self.toolTrace = output.trace
+            return output.text
         }
 
+        self.toolTrace = []
         return try await withTimeout(milliseconds: timeoutMs) { [self] in
             try await self.remoteService.runRemote(prompt: prompt)
         }

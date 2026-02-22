@@ -37,6 +37,22 @@ struct ChatView: View {
                     .padding(.vertical, 10)
                     .background(Color(.secondarySystemBackground))
 
+                    if !vm.toolTrace.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Tool Trace")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            ForEach(vm.toolTrace, id: \.self) { line in
+                                Text("• \(line)")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal)
+                        .padding(.top, 6)
+                    }
+
                     if vm.messages.isEmpty {
                         ContentUnavailableView("Sin mensajes aún", systemImage: "bubble.left.and.bubble.right")
                     } else {
