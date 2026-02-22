@@ -74,14 +74,14 @@ struct ChatView: View {
         switch provider {
         case .llamaCpp:
             if let selectedPath = localConfig.loadSelectedModelPath(), !selectedPath.isEmpty {
-                return "Local (llama.cpp): \(URL(fileURLWithPath: selectedPath).deletingPathExtension().lastPathComponent)"
+                return "Privado/offline • llama.cpp • \(URL(fileURLWithPath: selectedPath).deletingPathExtension().lastPathComponent)"
             }
-            return "Local (llama.cpp): sin seleccionar"
+            return "Privado/offline • llama.cpp • sin seleccionar"
         case .ollama:
             let cfg = runtimeConfig.loadOllama()
-            return "Local (Ollama): \(cfg.model)"
+            return "Local (Ollama) • \(cfg.model)"
         case .mlx:
-            return "Local (MLX): \(runtimeConfig.loadMLXModelName())"
+            return "Privado/offline • MLX • \(runtimeConfig.loadMLXModelName())"
         }
     }
 }
@@ -103,7 +103,7 @@ private struct SettingsView: View {
     @State private var showFileImporter = false
     @State private var importTarget: ImportTarget = .chat
 
-    @State private var runtimeProvider: LocalRuntimeProvider = .llamaCpp
+    @State private var runtimeProvider: LocalRuntimeProvider = .mlx
     @State private var ollamaBaseURL = ""
     @State private var ollamaModel = ""
     @State private var mlxModelName = ""

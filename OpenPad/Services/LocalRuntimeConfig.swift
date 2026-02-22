@@ -27,8 +27,8 @@ struct LocalRuntimeConfig {
     }
 
     func loadProvider() -> LocalRuntimeProvider {
-        let raw = UserDefaults.standard.string(forKey: Keys.provider) ?? LocalRuntimeProvider.llamaCpp.rawValue
-        return LocalRuntimeProvider(rawValue: raw) ?? .llamaCpp
+        let raw = UserDefaults.standard.string(forKey: Keys.provider) ?? LocalRuntimeProvider.mlx.rawValue
+        return LocalRuntimeProvider(rawValue: raw) ?? .mlx
     }
 
     func saveProvider(_ provider: LocalRuntimeProvider) {

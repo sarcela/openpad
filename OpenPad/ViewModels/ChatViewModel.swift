@@ -12,6 +12,7 @@ enum RoutePreference: String, CaseIterable, Identifiable {
 
 @MainActor
 final class ChatViewModel: ObservableObject {
+    private let runtimeConfig = LocalRuntimeConfig.shared
     @Published var messages: [ChatMessage] = []
     @Published var inputText: String = ""
     @Published var isLoading = false
@@ -31,6 +32,13 @@ final class ChatViewModel: ObservableObject {
         if let saved = UserDefaults.standard.string(forKey: Self.routePreferenceKey),
            let pref = RoutePreference(rawValue: saved) {
             routePreference = pref
+        } else {
+            routePreference = .local
+        }
+
+        // Default local provider: MLX (privado/offline).
+        if UserDefaults.standard.string(forKey: "local.runtime.provider") == nil {
+            runtimeConfig.saveProvider(.mlx)
         }
     }
 
