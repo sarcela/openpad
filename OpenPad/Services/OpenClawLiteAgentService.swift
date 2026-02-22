@@ -31,7 +31,7 @@ final class OpenClawLiteAgentService {
         }
 
         trace.append("Tool call: \(name)")
-        let toolResult = tools.execute(name: name, arguments: decision.arguments ?? [:])
+        let toolResult = await tools.execute(name: name, arguments: decision.arguments ?? [:])
         trace.append("Tool result: \(toolResult.ok ? "ok" : "error")")
 
         let secondPrompt = buildFinalizePrompt(userPrompt: userPrompt, toolName: name, toolResult: toolResult)

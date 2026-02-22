@@ -48,7 +48,7 @@ final class OpenClawLiteTools {
     private let filesDirName = "OpenClawFiles"
     private let config = OpenClawLiteConfig.shared
 
-    func execute(name: String, arguments: [String: String]) -> OpenClawToolResult {
+    func execute(name: String, arguments: [String: String]) async -> OpenClawToolResult {
         switch name {
         case "get_time":
             let now = Date()
@@ -137,13 +137,13 @@ final class OpenClawLiteTools {
         case "http_get":
             let urlString = (arguments["url"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             guard !urlString.isEmpty else { return .init(ok: false, output: "Missing argument: url") }
-            return fetchHTTP(urlString: urlString)
+            return await fetchHTTP(urlString: urlString)
 
         case "brave_search":
             let query = (arguments["query"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             guard !query.isEmpty else { return .init(ok: false, output: "Missing argument: query") }
             let count = Int(arguments["count"] ?? "5") ?? 5
-            return braveSearch(query: query, count: max(1, min(10, count)))
+            return await braveSearch(query: query, count: max(1, min(10, count)))
 
         default:
             return .init(ok: false, output: "Unknown tool: \(name)")
@@ -263,7 +263,7 @@ final class OpenClawLiteTools {
         return candidate
     }
 
-    private func fetchHTTP(urlString: String) -> OpenClawToolResult {
+    private func fetchHTTP(urlString: String) async -> OpenClawToolResult {
         guard let url = URL(string: urlString), url.scheme == "https", let host = url.host?.lowercased() else {
             return .init(ok: false, output: "Only https URLs are allowed")
         }
@@ -272,28 +272,19 @@ final class OpenClawLiteTools {
             return .init(ok: false, output: "Host not allowed: \(host)")
         }
 
-        let semaphore = DispatchSemaphore(value: 0)
-        var result: OpenClawToolResult = .init(ok: false, output: "Request failed")
-
-        URLSession.shared.dataTask(with: url) { data, response, error in
-            defer { semaphore.signal() }
-            if let error {
-                result = .init(ok: false, output: "http_get error: \(error.localizedDescription)")
-                return
-            }
+        do {
+            let (data, response) = try await URLSession.shared.data(from: url)
             if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-                result = .init(ok: false, output: "HTTP status \(http.statusCode)")
-                return
+                return .init(ok: false, output: "HTTP status \(http.statusCode)")
             }
-            let text = String(data: data ?? Data(), encoding: .utf8) ?? ""
-            result = .init(ok: true, output: String(text.prefix(2000)))
-        }.resume()
-
-        _ = semaphore.wait(timeout: .now() + 12)
-        return result
+            let text = String(data: data, encoding: .utf8) ?? ""
+            return .init(ok: true, output: String(text.prefix(2000)))
+        } catch {
+            return .init(ok: false, output: "http_get error: \(error.localizedDescription)")
+        }
     }
 
-    private func braveSearch(query: String, count: Int) -> OpenClawToolResult {
+    private func braveSearch(query: String, count: Int) async -> OpenClawToolResult {
         let key = config.loadBraveApiKey()
         guard !key.isEmpty else {
             return .init(ok: false, output: "Brave API key no configurada")
@@ -312,29 +303,16 @@ final class OpenClawLiteTools {
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         req.setValue(key, forHTTPHeaderField: "X-Subscription-Token")
 
-        let semaphore = DispatchSemaphore(value: 0)
-        var result: OpenClawToolResult = .init(ok: false, output: "Brave request failed")
-
-        URLSession.shared.dataTask(with: req) { data, response, error in
-            defer { semaphore.signal() }
-            if let error {
-                result = .init(ok: false, output: "brave_search error: \(error.localizedDescription)")
-                return
-            }
+        do {
+            let (data, response) = try await URLSession.shared.data(for: req)
             if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-                let body = String(data: data ?? Data(), encoding: .utf8) ?? ""
-                result = .init(ok: false, output: "Brave HTTP \(http.statusCode): \(body.prefix(300))")
-                return
+                let body = String(data: data, encoding: .utf8) ?? ""
+                return .init(ok: false, output: "Brave HTTP \(http.statusCode): \(body.prefix(300))")
             }
-            guard let data else {
-                result = .init(ok: false, output: "Brave response vacía")
-                return
-            }
-            result = .init(ok: true, output: formatBraveResults(from: data))
-        }.resume()
-
-        _ = semaphore.wait(timeout: .now() + 15)
-        return result
+            return .init(ok: true, output: formatBraveResults(from: data))
+        } catch {
+            return .init(ok: false, output: "brave_search error: \(error.localizedDescription)")
+        }
     }
 
     private func formatBraveResults(from data: Data) -> String {
