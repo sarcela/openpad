@@ -14,7 +14,7 @@ enum MLXServiceError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .backendUnavailable:
-            return "MLX no está integrado en este build. Verifica que MLXLLM y MLXLMCommon estén en el target."
+            return "MLX no está integrado en este build. Verifica que MLXLLM esté agregado al target."
         case .emptyResponse:
             return "MLX respondió vacío"
         }
