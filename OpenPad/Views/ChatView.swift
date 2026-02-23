@@ -30,7 +30,7 @@ struct ChatView: View {
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var vm = ChatViewModel()
     @State private var showSettings = false
-    @State private var showSidebar = true
+    @State private var showSidebar = false
     @State private var activePanel: SidebarPanel = .chat
     @State private var showToolTrace = false
     @StateObject private var cronRunner = OpenClawLiteCronRunner.shared
