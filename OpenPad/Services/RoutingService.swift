@@ -13,7 +13,7 @@ final class RoutingService {
     let runtimeThresholdSec = 25
 
     func estimateTokens(_ text: String) -> Int {
-        max(1, text.count / 4) // aproximación simple
+        max(1, text.count / 4) // simple approximation
     }
 
     func decide(prompt: String, plannedTools: Int = 0, estimatedRuntimeSec: Int = 5) -> RoutingDecision {

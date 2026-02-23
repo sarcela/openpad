@@ -15,11 +15,11 @@ enum MLXServiceError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .backendUnavailable:
-            return "MLX no está integrado en este build. Verifica que MLXLLM esté agregado al target."
+            return "MLX is not integrated in this build. Verify MLXLLM is added to the target."
         case .emptyResponse:
-            return "MLX respondió vacío"
+            return "MLX returned an empty response"
         case .invalidModelId:
-            return "ID de modelo MLX inválido"
+            return "Invalid MLX model ID"
         }
     }
 }
@@ -42,7 +42,7 @@ final class MLXLocalModelService {
         let session = try await getOrCreateSession(modelId: useModelId)
         let text = try await session.respond(to: prompt).trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // Modo estabilidad: liberar sesión/modelo entre turnos para evitar crecimiento de memoria (OOM en iPad).
+        // Stability mode: release session/model between turns to avoid memory growth (OOM on iPad).
         self.session = nil
         self.loadedModelId = nil
 

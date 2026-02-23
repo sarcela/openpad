@@ -187,7 +187,7 @@ final class ChatViewModel: ObservableObject {
                 self.lastErrorText = error.localizedDescription
                 self.errorCount += 1
                 refreshHealth()
-                return "Error remoto: \(error.localizedDescription)"
+                return "Remote error: \(error.localizedDescription)"
             }
 
             if routePreference == .local {
@@ -197,7 +197,7 @@ final class ChatViewModel: ObservableObject {
                 self.lastErrorText = error.localizedDescription
                 self.errorCount += 1
                 refreshHealth()
-                return "Error local: \(error.localizedDescription)"
+                return "Local error: \(error.localizedDescription)"
             }
 
             do {
@@ -216,7 +216,7 @@ final class ChatViewModel: ObservableObject {
                 self.lastErrorText = error.localizedDescription
                 self.errorCount += 1
                 refreshHealth()
-                return "No pude responder (falló local y fallback remoto): \(error.localizedDescription)"
+                return "I could not respond (local failed and remote fallback also failed): \(error.localizedDescription)"
             }
         }
     }

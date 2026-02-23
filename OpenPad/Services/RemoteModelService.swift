@@ -9,13 +9,13 @@ enum RemoteServiceError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidURL:
-            return "Remote URL inválida"
+            return "Remote Invalid URL"
         case .missingToken:
-            return "Falta token remoto"
+            return "Missing remote token"
         case .badStatus(let code, let body):
             return "Remote HTTP \(code): \(body.prefix(180))"
         case .emptyResponse:
-            return "Respuesta remota vacía"
+            return "Empty remote response"
         }
     }
 }

@@ -8,11 +8,11 @@ enum OllamaServiceError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidBaseURL:
-            return "URL de Ollama inválida"
+            return "Invalid Ollama URL"
         case .badStatus(let code, let body):
             return "Ollama HTTP \(code): \(body.prefix(180))"
         case .emptyResponse:
-            return "Ollama respondió vacío"
+            return "Ollama returned an empty response"
         }
     }
 }

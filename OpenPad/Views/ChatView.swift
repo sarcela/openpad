@@ -107,7 +107,7 @@ struct ChatView: View {
                             }
 
                             if vm.messages.isEmpty {
-                                ContentUnavailableView("Sin mensajes aún", systemImage: "bubble.left.and.bubble.right")
+                                ContentUnavailableView("No messages yet", systemImage: "bubble.left.and.bubble.right")
                             } else {
                                 ScrollViewReader { proxy in
                                     ScrollView {
@@ -218,7 +218,7 @@ struct ChatView: View {
                     } label: {
                         Image(systemName: "line.3.horizontal")
                     }
-                    .accessibilityLabel(showSidebar ? "Ocultar menú" : "Mostrar menú")
+                    .accessibilityLabel(showSidebar ? "Hide menu" : "Show menu")
                 }
 
                 ToolbarItem(placement: .topBarTrailing) {
@@ -227,7 +227,7 @@ struct ChatView: View {
                     } label: {
                         Image(systemName: "gearshape.fill")
                     }
-                    .accessibilityLabel("Configuración")
+                    .accessibilityLabel("Settings")
                 }
             }
         }
@@ -277,10 +277,10 @@ struct ChatView: View {
                 attachmentStatus = "Adjunto: \(saved.lastPathComponent)"
                 vm.inputText += " [adjunto: \(saved.lastPathComponent)]"
             } catch {
-                attachmentStatus = "Error adjuntando archivo: \(error.localizedDescription)"
+                attachmentStatus = "Error attaching file: \(error.localizedDescription)"
             }
         case .failure(let error):
-            attachmentStatus = "Adjuntar cancelado/error: \(error.localizedDescription)"
+            attachmentStatus = "Attach cancelled/error: \(error.localizedDescription)"
         }
     }
 
@@ -292,7 +292,7 @@ struct ChatView: View {
                 vm.inputText += " [foto: \(saved.lastPathComponent)]"
             }
         } catch {
-            attachmentStatus = "Error adjuntando foto: \(error.localizedDescription)"
+            attachmentStatus = "Error attaching photo: \(error.localizedDescription)"
         }
     }
 
@@ -303,7 +303,7 @@ struct ChatView: View {
             attachmentStatus = "Foto tomada: \(saved.lastPathComponent)"
             vm.inputText += " [foto-camara: \(saved.lastPathComponent)]"
         } catch {
-            attachmentStatus = "Error guardando foto: \(error.localizedDescription)"
+            attachmentStatus = "Error saving photo: \(error.localizedDescription)"
         }
     }
 
@@ -324,7 +324,7 @@ struct ChatView: View {
             if let selectedPath = localConfig.loadSelectedModelPath(), !selectedPath.isEmpty {
                 return "Privado/offline • llama.cpp • \(URL(fileURLWithPath: selectedPath).deletingPathExtension().lastPathComponent)"
             }
-            return "Privado/offline • llama.cpp • sin seleccionar"
+            return "Private/offline • llama.cpp • no model selected"
         case .ollama:
             let cfg = runtimeConfig.loadOllama()
             return "Local (Ollama) • \(cfg.model)"
@@ -700,11 +700,11 @@ private struct SidebarContentView: View {
             List {
                 switch panel {
                 case .overview:
-                    Section("Estado") {
+                    Section("Status") {
                         Label("Sesiones: \(vm.chatSessions.count)", systemImage: "bubble.left.and.bubble.right")
-                        Label("Mensajes en sesión activa: \(vm.messages.count)", systemImage: "text.bubble")
-                        Label("Última ruta: \(vm.lastRoute)", systemImage: "arrow.triangle.branch")
-                        Label("Razón: \(vm.lastReason)", systemImage: "info.circle")
+                        Label("Messages in active session: \(vm.messages.count)", systemImage: "text.bubble")
+                        Label("Last route: \(vm.lastRoute)", systemImage: "arrow.triangle.branch")
+                        Label("Reason: \(vm.lastReason)", systemImage: "info.circle")
                     }
 
                     Section("Salud") {
@@ -712,25 +712,25 @@ private struct SidebarContentView: View {
                             Text(health.message)
                                 .foregroundColor(health.level == "ok" ? .green : .orange)
                         } else {
-                            Text("Sin datos todavía")
+                            Text("No data yet")
                                 .foregroundColor(.secondary)
                         }
                     }
 
                 case .channels:
                     Section("Channels") {
-                        Text("Integraciones de canales (WhatsApp/Telegram/etc) próximamente.")
+                        Text("Channel integrations (WhatsApp/Telegram/etc) coming soon.")
                             .foregroundColor(.secondary)
                     }
 
                 case .instances:
                     Section("Instances") {
-                        Text("Runtime local activo: \(LocalRuntimeConfig.shared.loadProvider().title)")
+                        Text("Active local runtime: \(LocalRuntimeConfig.shared.loadProvider().title)")
                         Text("Perfil: \(LocalRuntimeConfig.shared.loadRunProfile().title)")
                     }
 
                 case .sessions:
-                    Section("Sesiones guardadas") {
+                    Section("Sesiones savedas") {
                         if vm.chatSessions.isEmpty {
                             Text("No hay sesiones")
                                 .foregroundColor(.secondary)
@@ -765,13 +765,13 @@ private struct SidebarContentView: View {
                     }
 
                 case .usage:
-                    Section("Métricas") {
-                        Label("Latencia última: \(vm.lastLatencyMs) ms", systemImage: "speedometer")
-                        Label("Éxitos: \(vm.successCount)", systemImage: "checkmark.circle")
+                    Section("Metrics") {
+                        Label("Last latency: \(vm.lastLatencyMs) ms", systemImage: "speedometer")
+                        Label("Successes: \(vm.successCount)", systemImage: "checkmark.circle")
                         Label("Errores: \(vm.errorCount)", systemImage: "xmark.circle")
                     }
 
-                    Section("Último error") {
+                    Section("Last error") {
                         Text(vm.lastErrorText.isEmpty ? "Sin errores recientes" : vm.lastErrorText)
                             .foregroundColor(vm.lastErrorText.isEmpty ? .secondary : .orange)
                     }
@@ -797,7 +797,7 @@ private struct SidebarContentView: View {
 
                 case .nodes:
                     Section("Nodes") {
-                        Text("Integración de nodos/dispositivos (roadmap)")
+                        Text("Node/device integration (roadmap)")
                             .foregroundColor(.secondary)
                     }
 
@@ -813,7 +813,7 @@ private struct SidebarContentView: View {
             .sheet(item: $renameTarget) { chat in
                 NavigationStack {
                     Form {
-                        TextField("Título", text: $renameText)
+                        TextField("Title", text: $renameText)
                     }
                     .navigationTitle("Renombrar chat")
                     .toolbar {
@@ -821,7 +821,7 @@ private struct SidebarContentView: View {
                             Button("Cancelar") { renameTarget = nil }
                         }
                         ToolbarItem(placement: .confirmationAction) {
-                            Button("Guardar") {
+                            Button("Save") {
                                 vm.renameChat(sessionId: chat.id, title: renameText)
                                 renameTarget = nil
                             }
@@ -840,7 +840,7 @@ private struct SidebarContentView: View {
                     .navigationTitle("Exportar Markdown")
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) {
-                            Button("Cerrar") { showExport = false }
+                            Button("Close") { showExport = false }
                         }
                         ToolbarItem(placement: .confirmationAction) {
                             Button("Copiar") {
@@ -874,7 +874,7 @@ private struct MemoryManagerView: View {
         NavigationStack {
             List {
                 if rows.isEmpty {
-                    Text("Sin memoria guardada")
+                    Text("No stored memory yet")
                         .foregroundColor(.secondary)
                 } else {
                     ForEach(rows, id: \.self) { row in
@@ -892,7 +892,7 @@ private struct MemoryManagerView: View {
             .navigationTitle("Memoria")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cerrar") { dismiss() }
+                    Button("Close") { dismiss() }
                 }
                 ToolbarItem(placement: .primaryAction) {
                     Menu("Acciones") {
@@ -952,7 +952,7 @@ private struct SkillsManagerView: View {
                 }
             }
             .navigationTitle("Skills")
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cerrar") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
         }
     }
 }
@@ -975,7 +975,7 @@ private struct CronsManagerView: View {
                 Section("Crons") {
                     ForEach($rows) { $cron in
                         VStack(alignment: .leading, spacing: 8) {
-                            TextField("Título", text: $cron.title)
+                            TextField("Title", text: $cron.title)
                             TextField("Schedule", text: $cron.schedule)
                                 .textInputAutocapitalization(.never)
                                 .autocorrectionDisabled()
@@ -996,7 +996,7 @@ private struct CronsManagerView: View {
 
                                 Spacer()
 
-                                Button("Guardar") {
+                                Button("Save") {
                                     saveCrons()
                                 }
                                 .buttonStyle(.borderedProminent)
@@ -1011,7 +1011,7 @@ private struct CronsManagerView: View {
 
                 Section("Historial") {
                     if logs.isEmpty {
-                        Text("Sin ejecuciones todavía")
+                        Text("No runs yet")
                             .foregroundColor(.secondary)
                     } else {
                         ForEach(logs) { log in
@@ -1032,7 +1032,7 @@ private struct CronsManagerView: View {
                 }
             }
             .navigationTitle("Crons")
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cerrar") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
         }
     }
 
@@ -1062,9 +1062,9 @@ private struct HeartbeatManagerView: View {
             }
             .navigationTitle("Heartbeat")
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cerrar") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Guardar") {
+                    Button("Save") {
                         try? OpenClawLiteAutomationStore.shared.saveHeartbeat(text)
                         dismiss()
                     }
@@ -1085,7 +1085,7 @@ private struct FilesManagerView: View {
         NavigationStack {
             VStack(spacing: 10) {
                 HStack {
-                    TextField("nuevo-archivo.txt", text: $newName)
+                    TextField("new-file.txt", text: $newName)
                     Button("Crear") {
                         let n = newName.trimmingCharacters(in: .whitespacesAndNewlines)
                         guard !n.isEmpty else { return }
@@ -1112,7 +1112,7 @@ private struct FilesManagerView: View {
                     .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.secondary.opacity(0.2)))
                     .padding(.horizontal)
 
-                Button("Guardar archivo") {
+                Button("Save file") {
                     guard !selected.isEmpty else { return }
                     try? OpenClawLiteAutomationStore.shared.saveWorkspaceFile(name: selected, content: content)
                     files = OpenClawLiteAutomationStore.shared.listWorkspaceFiles()
@@ -1120,7 +1120,7 @@ private struct FilesManagerView: View {
                 .buttonStyle(.borderedProminent)
             }
             .navigationTitle("Archivos")
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cerrar") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
         }
     }
 }
@@ -1189,7 +1189,7 @@ private struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Cómo quieres correr") {
+                Section("How do you want to run?") {
                     Picker("Modo", selection: $vm.routePreference) {
                         ForEach(RoutePreference.allCases) { option in
                             Label(option.title, systemImage: icon(for: option)).tag(option)
@@ -1198,7 +1198,7 @@ private struct SettingsView: View {
                 }
 
                 if vm.routePreference == .local {
-                    Section("Motor local") {
+                    Section("Local engine") {
                         Picker("Proveedor", selection: $runtimeProvider) {
                             ForEach(LocalRuntimeProvider.allCases) { provider in
                                 Text(provider.title).tag(provider)
@@ -1215,35 +1215,35 @@ private struct SettingsView: View {
                         }
 
                         if runtimeProvider == .mlx {
-                            Picker("Modelos sugeridos", selection: $mlxPresetModel) {
+                            Picker("Suggested models", selection: $mlxPresetModel) {
                                 ForEach(mlxPresetModels, id: \.self) { modelId in
                                     Text(modelId).tag(modelId)
                                 }
                             }
 
-                            Button("Usar modelo sugerido") {
+                            Button("Use suggested model") {
                                 mlxModelName = mlxPresetModel
                                 importMessage = "Modelo MLX seleccionado: \(mlxPresetModel)"
                             }
 
-                            TextField("Modelo MLX (manual)", text: $mlxModelName)
+                            TextField("MLX model (manual)", text: $mlxModelName)
                                 .textInputAutocapitalization(.never)
                                 .autocorrectionDisabled()
 
-                            Toggle("Usar modelo separado para tools", isOn: $separateToolsModelEnabled)
+                            Toggle("Use a separate model for tools", isOn: $separateToolsModelEnabled)
 
                             if separateToolsModelEnabled {
                                 TextField("Modelo MLX para tools", text: $mlxToolsModelName)
                                     .textInputAutocapitalization(.never)
                                     .autocorrectionDisabled()
-                                Text("Más RAM: puede causar cierres por memoria en iPad si ambos modelos son pesados.")
+                                Text("More RAM usage: may cause OOM/crashes on iPad if both models are heavy.")
                                     .font(.caption2)
                                     .foregroundColor(.orange)
-                                Text("Tools activo: \(mlxToolsModelName.isEmpty ? "(sin definir)" : mlxToolsModelName)")
+                                Text("Active tools model: \(mlxToolsModelName.isEmpty ? "(not set)" : mlxToolsModelName)")
                                     .font(.caption2)
                                     .foregroundColor(.secondary)
                             } else {
-                                Text("Tools activo: mismo modelo de chat")
+                                Text("Active tools model: same as chat model")
                                     .font(.caption2)
                                     .foregroundColor(.secondary)
                             }
@@ -1266,12 +1266,12 @@ private struct SettingsView: View {
                                         await downloadSelectedMLXModel()
                                     }
                                 } label: {
-                                    Label(isDownloadingMLXModel ? "Descargando..." : "Descargar modelo MLX seleccionado", systemImage: "arrow.down.circle")
+                                    Label(isDownloadingMLXModel ? "Downloading..." : "Download selected MLX model", systemImage: "arrow.down.circle")
                                 }
                                 .disabled(isDownloadingMLXModel || mlxModelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                             }
 
-                            Text("Tamaño aprox: \(mlxEstimatedSizeText(for: mlxModelName))")
+                            Text("Approx size: \(mlxEstimatedSizeText(for: mlxModelName))")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
 
@@ -1290,13 +1290,13 @@ private struct SettingsView: View {
                                 }
 
                                 if mlxDownloadPhase == "verifying" {
-                                    Text("Finalizando descarga y verificando modelo…")
+                                    Text("Finishing download and verifying model…")
                                         .font(.caption2)
                                         .foregroundColor(.secondary)
                                 }
                             }
 
-                            Text("Puedes elegir uno sugerido o escribir un ID manual si ya sabes cuál usar.")
+                            Text("You can pick a suggested model or enter a manual ID if you know what to use.")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
@@ -1310,7 +1310,7 @@ private struct SettingsView: View {
                         TextField("Modelo (opcional)", text: $llamaModel)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
-                        Text("Si dejas modelo vacío, se usa el nombre del .gguf seleccionado.")
+                        Text("If model is empty, the selected .gguf filename is used.")
                             .font(.caption2)
                             .foregroundColor(.secondary)
                     }
@@ -1333,7 +1333,7 @@ private struct SettingsView: View {
                                 importTarget = .chat
                                 showFileImporter = true
                             } label: {
-                                Label("Añadir .gguf", systemImage: "plus.circle.fill")
+                                Label("Add .gguf", systemImage: "plus.circle.fill")
                             }
 
                             Spacer()
@@ -1348,15 +1348,15 @@ private struct SettingsView: View {
                             }
                         }
                     } header: {
-                        Text("Modelo local de chat")
+                        Text("Local chat model")
                     }
 
                     Section {
                         if embeddingModels.isEmpty {
-                            Text("No hay modelos para embeddings/memoria")
+                            Text("No hay modelos para embeddings/memory")
                                 .foregroundColor(.secondary)
                         } else {
-                            Picker("Modelo embeddings", selection: $selectedEmbeddingModelPath) {
+                            Picker("Embedding model", selection: $selectedEmbeddingModelPath) {
                                 ForEach(embeddingModels, id: \.path) { url in
                                     Text(localConfig.displayName(for: url)).tag(url.path)
                                 }
@@ -1369,7 +1369,7 @@ private struct SettingsView: View {
                                 importTarget = .embedding
                                 showFileImporter = true
                             } label: {
-                                Label("Añadir .gguf embeddings", systemImage: "plus.circle")
+                                Label("Add .gguf embeddings", systemImage: "plus.circle")
                             }
 
                             Spacer()
@@ -1384,17 +1384,17 @@ private struct SettingsView: View {
                             }
                         }
                     } header: {
-                        Text("Embeddings y memoria")
+                        Text("Embeddings and memory")
                     }
                     }
                 }
 
                 if vm.routePreference != .local {
-                    Section("API remota") {
+                    Section("Remote API") {
                         TextField("URL del API", text: $baseURL)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
-                        SecureField("Token (opcional)", text: $token)
+                        SecureField("Token (optional)", text: $token)
                         TextField("Modelo", text: $model)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
@@ -1407,7 +1407,7 @@ private struct SettingsView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Hosts permitidos para http_get (uno por línea)")
+                        Text("Allowed hosts for http_get (one per line)")
                             .font(.caption)
                             .foregroundColor(.secondary)
                         TextEditor(text: $allowlistHostsText)
@@ -1436,15 +1436,15 @@ private struct SettingsView: View {
                     }
 
                     Toggle(isOn: $automationLoopEnabled) {
-                        Label("Automatización en segundo plano (cron loop)", systemImage: "clock.arrow.circlepath")
+                        Label("Background automation (cron loop)", systemImage: "clock.arrow.circlepath")
                     }
 
                     Toggle(isOn: $lowPowerModeEnabled) {
-                        Label("Modo ahorro (menos calor/batería)", systemImage: "bolt.horizontal.circle")
+                        Label("Low-power mode (less heat/battery use)", systemImage: "bolt.horizontal.circle")
                     }
 
                     if lowPowerModeEnabled {
-                        Text("Reduce contexto, OCR y reintentos de red para mejorar estabilidad térmica.")
+                        Text("Reduces context, OCR, and network retries for better thermal stability.")
                             .font(.caption2)
                             .foregroundColor(.secondary)
                     }
@@ -1456,7 +1456,7 @@ private struct SettingsView: View {
                     Button {
                         showMemoryManager = true
                     } label: {
-                        Label("Abrir gestor de memoria", systemImage: "brain.head.profile")
+                        Label("Abrir gestor de memory", systemImage: "brain.head.profile")
                     }
 
                     HStack {
@@ -1476,7 +1476,7 @@ private struct SettingsView: View {
                 }
 
 
-                Section("Permisos de herramientas") {
+                Section("Tool permissions") {
                     ForEach(openClawLiteConfig.availableToolNames(), id: \.self) { tool in
                         Toggle(tool, isOn: Binding(
                             get: { toolPermissions[tool, default: true] },
@@ -1489,20 +1489,20 @@ private struct SettingsView: View {
                 }
 
                 if !importMessage.isEmpty {
-                    Section("Estado") {
+                    Section("Status") {
                         Text(importMessage)
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
                 }
             }
-            .navigationTitle("Configuración")
+            .navigationTitle("Settings")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cerrar") { dismiss() }
+                    Button("Close") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Guardar") {
+                    Button("Save") {
                         remoteConfig.save(baseURL: baseURL, token: token, model: model)
                         runtimeConfig.saveProvider(runtimeProvider)
                         runtimeConfig.saveOllama(baseURL: ollamaBaseURL, model: ollamaModel)
@@ -1603,18 +1603,18 @@ private struct SettingsView: View {
                         case .chat:
                             let copied = try localConfig.importModel(from: sourceURL, into: docs)
                             selectedModelPath = copied.path
-                            importMessage = "Modelo chat añadido: \(localConfig.displayName(for: copied))"
+                            importMessage = "Chat model added: \(localConfig.displayName(for: copied))"
                         case .embedding:
                             let copied = try localConfig.importEmbeddingModel(from: sourceURL, into: docs)
                             selectedEmbeddingModelPath = copied.path
-                            importMessage = "Modelo embeddings añadido: \(localConfig.displayName(for: copied))"
+                            importMessage = "Embedding model added: \(localConfig.displayName(for: copied))"
                         }
                         refreshModels()
                     } catch {
                         importMessage = "Error al importar: \(error.localizedDescription)"
                     }
                 case .failure(let error):
-                    importMessage = "Importación cancelada/error: \(error.localizedDescription)"
+                    importMessage = "Import cancelled/error: \(error.localizedDescription)"
                 }
             }
             .confirmationDialog(
@@ -1658,7 +1658,7 @@ private struct SettingsView: View {
                     guard let url = embeddingModelToDelete else { return }
                     do {
                         try localConfig.deleteEmbeddingModel(at: url)
-                        importMessage = "Modelo embeddings eliminado: \(localConfig.displayName(for: url))"
+                        importMessage = "Embedding model eliminado: \(localConfig.displayName(for: url))"
                         refreshModels()
                         selectedEmbeddingModelPath = embeddingModels.first?.path ?? ""
                     } catch {
@@ -1695,7 +1695,7 @@ private struct SettingsView: View {
     private func downloadSelectedMLXModel() async {
         let cleanId = mlxModelName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanId.isEmpty else {
-            importMessage = "Escribe un ID de modelo MLX válido."
+            importMessage = "Enter a valid MLX model ID."
             return
         }
 

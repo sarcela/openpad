@@ -37,19 +37,19 @@ final class OpenClawLiteCronRunner: ObservableObject {
     func validate(schedule: String) -> (ok: Bool, message: String) {
         let parts = schedule.split(separator: " ").map(String.init)
         guard parts.count >= 2 else {
-            return (false, "Formato inválido. Usa al menos: minuto hora (ej: 0 9 * * *)")
+            return (false, "Invalid format. Use at least: minute hour (e.g., 0 9 * * *)")
         }
         let m = validateField(parts[0], range: 0...59, label: "minuto")
         if !m.ok { return m }
         let h = validateField(parts[1], range: 0...23, label: "hora")
         if !h.ok { return h }
-        return (true, "Cron válido")
+        return (true, "Valid cron")
     }
 
     private func validateField(_ field: String, range: ClosedRange<Int>, label: String) -> (ok: Bool, message: String) {
         if field == "*" { return (true, "") }
         guard let n = Int(field), range.contains(n) else {
-            return (false, "Valor inválido en \(label): \(field)")
+            return (false, "Invalid value in \(label): \(field)")
         }
         return (true, "")
     }

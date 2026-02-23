@@ -197,7 +197,7 @@ final class OpenClawLiteTools {
 
         case "clear_memories":
             guard isDestructiveConfirmed(arguments) else {
-                return .init(ok: false, output: "clear_memories requiere confirmación explícita: confirm=YES")
+                return .init(ok: false, output: "clear_memories requires explicit confirmation: confirm=YES")
             }
             do {
                 try clearMemories()
@@ -256,10 +256,10 @@ final class OpenClawLiteTools {
     func recentMemories(limit: Int = 8) -> String {
         do {
             let items = try readMemoryLines(limit: max(1, min(50, limit)))
-            if items.isEmpty { return "(sin memoria guardada)" }
+            if items.isEmpty { return "(no stored memory)" }
             return items.joined(separator: "\n")
         } catch {
-            return "(error leyendo memoria: \(error.localizedDescription))"
+            return "(error reading memory: \(error.localizedDescription))"
         }
     }
 
@@ -284,9 +284,9 @@ final class OpenClawLiteTools {
                     if !ocr.isEmpty {
                         return "[extractor:vision_ocr file:\(url.lastPathComponent)]\n" + String(ocr.prefix(maxChars))
                     }
-                    return "[extractor:vision_ocr file:\(url.lastPathComponent)] (Imagen sin texto OCR detectable)"
+                    return "[extractor:vision_ocr file:\(url.lastPathComponent)] (Image has no OCR-detectable text)"
                 }
-                return "[extractor:vision_ocr file:\(url.lastPathComponent)] (OCR omitido en modo ahorro de energía)"
+                return "[extractor:vision_ocr file:\(url.lastPathComponent)] (OCR skipped in low-power mode)"
             }
 
             if isPDF {
@@ -294,7 +294,7 @@ final class OpenClawLiteTools {
                 if !pdfText.isEmpty {
                     return "[extractor:pdfkit file:\(url.lastPathComponent)]\n" + String(pdfText.prefix(maxChars))
                 }
-                return "[extractor:pdfkit file:\(url.lastPathComponent)] (PDF sin texto extraíble; puede ser escaneado por imagen)"
+                return "[extractor:pdfkit file:\(url.lastPathComponent)] (PDF has no extractable text; it may be image-scanned)"
             }
 
             if let text = decodeTextData(data) {
@@ -449,7 +449,7 @@ final class OpenClawLiteTools {
             let denom = Double(max(1, qTokens.union(rTokens).count))
             let jaccard = overlap / denom
 
-            // Embedding semántico: query puede venir de backend real; filas usan vector local para costo estable.
+            // Semantic embedding: query may come from real backend; rows use local vectors for stable cost.
             let semantic = cosineSimilarity(qEmbedding, await embeddingVector(for: row, allowRemote: false))
 
             // Bonus por frase parcial.
@@ -502,7 +502,7 @@ final class OpenClawLiteTools {
 
     private func fetchHTTP(urlString: String, allowDirectHostBypass: Bool = false) async -> OpenClawToolResult {
         guard let url = normalizedURL(from: urlString) else {
-            return .init(ok: false, output: "URL inválida")
+            return .init(ok: false, output: "Invalid URL")
         }
 
         let openAccess = config.isInternetOpenAccessEnabled()
@@ -632,7 +632,7 @@ final class OpenClawLiteTools {
         for i in 0..<a.count {
             dot += a[i] * b[i]
         }
-        // Normaliza a rango 0...1 para combinar fácil con otras señales.
+        // Normalize to 0...1 range to combine with other signals.
         return max(0, min(1, (dot + 1.0) / 2.0))
     }
 
@@ -682,13 +682,13 @@ final class OpenClawLiteTools {
         if clean.count <= 900 { return clean }
         let start = String(clean.prefix(550))
         let end = String(clean.suffix(300))
-        return "Resumen rápido (extractivo):\n\n\(start)\n\n[...]\n\n\(end)"
+        return "Quick summary (extractive):\n\n\(start)\n\n[...]\n\n\(end)"
     }
 
     private func evaluateMath(_ expression: String) -> String {
         let allowed = CharacterSet(charactersIn: "0123456789+-*/(). ")
         if expression.rangeOfCharacter(from: allowed.inverted) != nil || expression.count > 120 {
-            return "Expresión inválida"
+            return "Invalid expression"
         }
         let exp = NSExpression(format: expression)
         if let value = exp.expressionValue(with: nil, context: nil) as? NSNumber {
@@ -698,20 +698,20 @@ final class OpenClawLiteTools {
     }
 
     private func jsonPrettyInfo(_ text: String) -> String {
-        guard let data = text.data(using: .utf8) else { return "Texto inválido" }
+        guard let data = text.data(using: .utf8) else { return "Invalid text" }
         do {
             let obj = try JSONSerialization.jsonObject(with: data)
             let pretty = try JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted])
             let out = String(data: pretty, encoding: .utf8) ?? ""
             return String(out.prefix(4000))
         } catch {
-            return "JSON inválido: \(error.localizedDescription)"
+            return "Invalid JSON: \(error.localizedDescription)"
         }
     }
 
     private func csvPreview(text: String, maxRows: Int) -> String {
         let rows = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-        guard !rows.isEmpty else { return "CSV vacío" }
+        guard !rows.isEmpty else { return "Empty CSV" }
         let shown = rows.prefix(maxRows)
         let cols = rows.first?.split(separator: ",").count ?? 0
         let header = "Filas: \(rows.count), columnas (estimadas): \(cols)"
@@ -739,16 +739,16 @@ final class OpenClawLiteTools {
         let newSet = Set(newLines)
         let removed = oldSet.subtracting(newSet).prefix(50).map { "- \($0)" }
         let added = newSet.subtracting(oldSet).prefix(50).map { "+ \($0)" }
-        if removed.isEmpty && added.isEmpty { return "Sin diferencias detectables por línea" }
+        if removed.isEmpty && added.isEmpty { return "No line-level differences detected" }
         return (["Cambios detectados:"] + removed + added).joined(separator: "\n")
     }
 
     private func extractCodeBlocks(_ text: String) -> String {
         let pattern = #"```([a-zA-Z0-9_-]*)\n([\s\S]*?)```"#
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return "Regex inválido" }
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return "Invalid regex" }
         let range = NSRange(text.startIndex..., in: text)
         let matches = regex.matches(in: text, options: [], range: range)
-        if matches.isEmpty { return "Sin bloques de código" }
+        if matches.isEmpty { return "No code blocks found" }
 
         let rows: [String] = matches.prefix(20).enumerated().compactMap { idx, m in
             guard let langR = Range(m.range(at: 1), in: text),
@@ -771,11 +771,11 @@ final class OpenClawLiteTools {
                 let lvl = trimmed.prefix { $0 == "#" }.count
                 headingLevels.append(lvl)
                 if lvl > 1, let prev = headingLevels.dropLast().last, lvl - prev > 1 {
-                    issues.append("Línea \(i + 1): salto abrupto de encabezado H\(prev) -> H\(lvl)")
+                    issues.append("Line \(i + 1): abrupt heading jump H\(prev) -> H\(lvl)")
                 }
             }
             if trimmed.contains("\\t") {
-                issues.append("Línea \(i + 1): contiene tabulaciones")
+                issues.append("Line \(i + 1): contains tabs")
             }
         }
 
@@ -788,12 +788,12 @@ final class OpenClawLiteTools {
 
     private func tableToBullets(_ text: String) -> String {
         let rows = text.split(separator: "\n").map(String.init).filter { $0.contains("|") }
-        guard rows.count >= 2 else { return "No detecté una tabla markdown" }
+        guard rows.count >= 2 else { return "No markdown table detected" }
 
         let parsed = rows.map { row in
             row.split(separator: "|").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         }
-        guard let header = parsed.first, header.count >= 2 else { return "Tabla inválida" }
+        guard let header = parsed.first, header.count >= 2 else { return "Invalid table" }
 
         let body = parsed.dropFirst().filter { !$0.allSatisfy { Set($0).isSubset(of: Set("-:")) } }
         if body.isEmpty { return "Sin filas de datos" }
@@ -818,10 +818,10 @@ final class OpenClawLiteTools {
     private func jsonPath(text: String, path: String) -> String {
         guard let data = text.data(using: .utf8),
               let obj = try? JSONSerialization.jsonObject(with: data) else {
-            return "JSON inválido"
+            return "Invalid JSON"
         }
         let cleanPath = path.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard cleanPath.hasPrefix("$.") else { return "Path inválido (usa formato $.campo.subcampo)" }
+        guard cleanPath.hasPrefix("$.") else { return "Invalid path (use format $.field.subfield)" }
         let parts = cleanPath.dropFirst(2).split(separator: ".").map(String.init)
         var current: Any = obj
         for part in parts {
@@ -840,7 +840,7 @@ final class OpenClawLiteTools {
 
     private func csvFilter(text: String, contains: String) -> String {
         let rows = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-        guard !rows.isEmpty else { return "CSV vacío" }
+        guard !rows.isEmpty else { return "Empty CSV" }
         guard !contains.isEmpty else { return rows.prefix(50).joined(separator: "\n") }
         let filtered = rows.filter { $0.localizedCaseInsensitiveContains(contains) }
         if filtered.isEmpty { return "Sin filas coincidentes" }
@@ -868,7 +868,7 @@ final class OpenClawLiteTools {
     }
 
     private func chunkText(text: String, size: Int) -> String {
-        if text.isEmpty { return "Texto vacío" }
+        if text.isEmpty { return "Empty text" }
         var out: [String] = []
         var idx = text.startIndex
         var i = 1
@@ -883,8 +883,8 @@ final class OpenClawLiteTools {
     }
 
     private func regexExtract(pattern: String, text: String) -> String {
-        guard !pattern.isEmpty else { return "Pattern vacío" }
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return "Regex inválido" }
+        guard !pattern.isEmpty else { return "Empty pattern" }
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return "Invalid regex" }
         let range = NSRange(text.startIndex..., in: text)
         let matches = regex.matches(in: text, options: [], range: range)
         if matches.isEmpty { return "Sin coincidencias" }
@@ -953,7 +953,7 @@ final class OpenClawLiteTools {
             .init(name: "count", value: String(count))
         ]
         guard let url = comp?.url else {
-            return .init(ok: false, output: "URL inválida para Brave")
+            return .init(ok: false, output: "Invalid URL para Brave")
         }
 
         var req = URLRequest(url: url)
@@ -1006,10 +1006,10 @@ final class OpenClawLiteTools {
         var chunks: [String] = []
         for i in 0..<maxPages {
             if let pageText = doc.page(at: i)?.string?.trimmingCharacters(in: .whitespacesAndNewlines), !pageText.isEmpty {
-                chunks.append("[Página \(i + 1)]\n\(pageText)")
+                chunks.append("[Page \(i + 1)]\n\(pageText)")
             }
         }
-        if chunks.isEmpty { return "PDF descargado, sin texto extraíble." }
+        if chunks.isEmpty { return "PDF downloaded, no extractable text." }
         return String(chunks.joined(separator: "\n\n").prefix(5000))
         #else
         return "PDF descargado, pero este build no incluye PDFKit para extraer texto."
@@ -1025,7 +1025,7 @@ final class OpenClawLiteTools {
         if items.isEmpty { return "Sin resultados" }
 
         return items.prefix(8).enumerated().map { idx, row in
-            let title = row.title ?? "Sin título"
+            let title = row.title ?? "Untitled"
             let url = row.url ?? ""
             let desc = row.description ?? ""
             return "\(idx + 1). \(title)\n\(url)\n\(desc)"

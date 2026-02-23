@@ -30,15 +30,15 @@ final class OpenClawLiteWorkflowService {
         Contexto reciente:
         \(context)
 
-        Salidas de ejecución:
+        Execution outputs:
         \(toolOutputs.joined(separator: "\n\n"))
 
-        Estado de verificación: \(verification ? "OK" : "WARN")
+        Verification status: \(verification ? "OK" : "WARN")
 
-        Responde en español con:
+        Respond in English with:
         1) Resultado final breve
-        2) Evidencia (máx 3 bullets)
-        3) Siguiente acción recomendada
+        2) Evidence (max 3 bullets)
+        3) Recommended next action
         """
 
         do {
@@ -90,7 +90,7 @@ final class OpenClawLiteWorkflowService {
     }
 
     private func verify(outputs: [String]) -> Bool {
-        !outputs.contains { $0.lowercased().contains("error") || $0.lowercased().contains("inválid") }
+        !outputs.contains { $0.lowercased().contains("error") || $0.lowercased().contains("invalid") }
     }
 
     private func containsURL(in text: String) -> Bool {

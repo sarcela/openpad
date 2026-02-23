@@ -19,17 +19,17 @@ final class OpenClawLiteAgentService {
         let modelReply = try await localModelService.runLocal(prompt: firstPrompt, purpose: .tools)
 
         guard let decision = parseDecision(from: modelReply) else {
-            trace.append("Planner: sin JSON válido, respuesta directa")
+            trace.append("Planner: no valid JSON, direct answer")
             return .init(text: modelReply, trace: trace)
         }
 
         if decision.type == "final" {
-            trace.append("Planner: final sin herramientas")
+            trace.append("Planner: final without tools")
             return .init(text: decision.content ?? modelReply, trace: trace)
         }
 
         guard decision.type == "tool_call", let name = decision.name else {
-            trace.append("Planner: salida desconocida, respuesta directa")
+            trace.append("Planner: unknown output, direct answer")
             return .init(text: modelReply, trace: trace)
         }
 
@@ -47,17 +47,17 @@ final class OpenClawLiteAgentService {
             } else if name == "http_get" {
                 toolArgs["url"] = toolArgs["url"] ?? directURL
                 toolArgs["allow_host"] = "true"
-                trace.append("Tool override: allow_host=true por solicitud explícita con URL directa")
+                trace.append("Tool override: allow_host=true due to explicit direct URL request")
             }
         } else if hasLocalAttachmentHint, ["http_get", "summarize_url", "brave_search"].contains(name) {
             toolName = "keyword_extract"
             toolArgs = ["text": userPrompt, "top": "12"]
-            trace.append("Tool guard: web tool bloqueada por contexto de adjunto local")
+            trace.append("Tool guard: web tool blocked due to local attachment context")
         }
 
         if toolName == "save_memory" && !userExplicitlyAskedMemorySave(in: userPrompt) {
-            trace.append("Tool blocked: save_memory no solicitado explícitamente")
-            return .init(text: "Entendido. No lo guardaré en memoria a menos que me lo pidas explícitamente.", trace: trace)
+            trace.append("Tool blocked: save_memory not explicitly requested")
+            return .init(text: "Understood. I will not save it to memory unless you ask explicitly.", trace: trace)
         }
 
         var toolResult = await tools.execute(name: toolName, arguments: toolArgs)
@@ -65,7 +65,7 @@ final class OpenClawLiteAgentService {
 
         // Persistencia: un intento adicional antes de rendirse.
         if !toolResult.ok {
-            trace.append("Retry policy: segundo intento de herramienta")
+            trace.append("Retry policy: second tool attempt")
             toolResult = await tools.execute(name: toolName, arguments: toolArgs)
             trace.append("Retry result: \(toolResult.ok ? "ok" : "error")")
         }
@@ -78,7 +78,7 @@ final class OpenClawLiteAgentService {
         }
 
         if let extracted = extractContentFromJsonLike(finalReply), !extracted.isEmpty {
-            trace.append("Finalize fallback: contenido extraído de JSON malformado")
+            trace.append("Finalize fallback: extracted content from malformed JSON")
             return .init(text: extracted, trace: trace)
         }
 
@@ -97,14 +97,14 @@ final class OpenClawLiteAgentService {
         return """
         Eres OpenClaw Lite en iPad.
         \(languageInstruction)
-        Decide tu siguiente acción y responde SOLO en JSON válido.
-        Política de ejecución: sé persistente. Antes de concluir que algo falló, intenta al menos un enfoque alterno o un reintento razonable.
-        Política de seguridad: para tools destructivas (`delete_file`, `clear_memories`) exige `confirm=YES`.
+        Decide your next action and respond ONLY in valid JSON.
+        Execution policy: be persistent. Before concluding something failed, attempt at least one alternative approach or a reasonable retry.
+        Safety policy: for destructive tools (`delete_file`, `clear_memories`) require `confirm=YES`.
         \(liteConfig.isAutodevEnabled() ? "AutoDev: al final sugiere una micro-mejora concreta, reversible y de bajo riesgo." : "AutoDev desactivado.")
-        Puedes usar internet cuando sea útil para responder mejor.
+        You may use the internet when it helps provide a better answer.
         Si el usuario comparte una URL completa, prioriza `http_get` para leerla/resumirla directamente.
-        Si el usuario menciona adjuntos locales (ej. [adjunto: ...], [foto: ...] o nombre de archivo), prioriza SIEMPRE el contexto de adjuntos ya inyectado y evita `http_get/summarize_url` salvo que también haya una URL explícita.
-        Regla de memoria: SOLO usa `save_memory` cuando el usuario lo pida explícitamente (ej: "guarda en memoria", "recuerda esto", "memoriza").
+        If the user mentions local attachments (e.g. [attachment: ...], [photo: ...], or filename), ALWAYS prioritize injected attachment context and avoid `http_get/summarize_url` unless an explicit URL is also present.
+        Memory rule: ONLY use `save_memory` when the user explicitly asks (e.g., "save to memory", "remember this").
 
         Memoria reciente persistida (sobrevive reinicios):
         \(memoryContext)
@@ -112,7 +112,7 @@ final class OpenClawLiteAgentService {
         Contexto de adjuntos detectados en este mensaje:
         \(attachmentContext)
 
-        Contexto reciente de conversación:
+        Recent conversation context:
         \(recentContext)
 
         Herramientas disponibles:
@@ -120,13 +120,13 @@ final class OpenClawLiteAgentService {
         2) save_memory(arguments: {"text":"..."})
         3) list_memories(arguments: {"limit":"10"})
         4) search_memories(arguments: {"query":"...","limit":"5"})
-        5) clear_memories(arguments: {"confirm":"YES"}) [destructiva]
-        6) read_file(arguments: {"path":"archivo.txt"}) [solo Documents/OpenClawFiles]
-        7) write_file(arguments: {"path":"archivo.txt","text":"..."}) [solo Documents/OpenClawFiles]
-        8) list_files(arguments: {"path":"subcarpeta/opcional"}) [solo Documents/OpenClawFiles]
+        5) clear_memories(arguments: {"confirm":"YES"}) [destructive]
+        6) read_file(arguments: {"path":"archivo.txt"}) [Documents/OpenClawFiles only]
+        7) write_file(arguments: {"path":"archivo.txt","text":"..."}) [Documents/OpenClawFiles only]
+        8) list_files(arguments: {"path":"subcarpeta/opcional"}) [Documents/OpenClawFiles only]
         9) file_exists(arguments: {"path":"archivo.txt"})
         10) append_file(arguments: {"path":"archivo.txt","text":"..."})
-        11) delete_file(arguments: {"path":"archivo.txt","confirm":"YES"}) [destructiva]
+        11) delete_file(arguments: {"path":"archivo.txt","confirm":"YES"}) [destructive]
         12) calendar_today(arguments: {})
         13) summarize_url(arguments: {"url":"https://..."})
         14) http_get(arguments: {"url":"https://..."})
@@ -167,7 +167,7 @@ final class OpenClawLiteAgentService {
         let languageInstruction = preferredLanguageInstruction()
         return """
         Eres OpenClaw Lite en iPad.
-        Ya llamaste una herramienta. Da respuesta final al usuario en JSON válido.
+        You already called a tool. Provide the final user answer in valid JSON.
         \(languageInstruction)
 
         Esquema de salida:
@@ -179,7 +179,7 @@ final class OpenClawLiteAgentService {
         Herramienta llamada:
         \(toolName)
 
-        Éxito de herramienta:
+        Tool success:
         \(toolResult.ok)
 
         Resultado de herramienta:
@@ -275,7 +275,7 @@ final class OpenClawLiteAgentService {
 
     private func buildAttachmentContext(from prompt: String) -> String {
         let names = extractAttachmentNames(from: prompt)
-        guard !names.isEmpty else { return "(sin adjuntos)" }
+        guard !names.isEmpty else { return "(no attachments)" }
 
         var chunks: [String] = []
         let lowPower = OpenClawLiteConfig.shared.isLowPowerModeEnabled()
@@ -286,7 +286,7 @@ final class OpenClawLiteAgentService {
         for name in names.prefix(attachmentLimit) {
             let snippet = tools.readAttachmentSnippet(fileName: name, maxChars: maxChars)
             if snippet.isEmpty {
-                chunks.append("[\(name)] (no pude leerlo automáticamente)")
+                chunks.append("[\(name)] (could not read it automatically)")
             } else {
                 chunks.append("[\(name)]\n\(snippet)")
             }
@@ -308,7 +308,7 @@ final class OpenClawLiteAgentService {
     private func extractAttachmentNames(from text: String) -> [String] {
         var out: [String] = []
 
-        // Formato explícito: [adjunto: archivo.pdf], [foto: x.jpg], etc.
+        // Explicit format: [attachment: file.pdf], [photo: x.jpg], etc.
         let bracketPattern = #"\[(?:adjunto|foto|foto-camara)\s*:\s*([^\]]+)\]"#
         if let regex = try? NSRegularExpression(pattern: bracketPattern, options: .caseInsensitive) {
             let range = NSRange(text.startIndex..., in: text)
@@ -341,7 +341,7 @@ final class OpenClawLiteAgentService {
     }
 
     private func buildRecentContext(from messages: [ChatMessage]) -> String {
-        guard !messages.isEmpty else { return "(sin historial reciente)" }
+        guard !messages.isEmpty else { return "(no recent history)" }
         let baseWindow = runtimeConfig.loadRecentContextWindow()
         let lowPower = LocalRuntimeConfig.shared.loadProvider() == .mlx && OpenClawLiteConfig.shared.isLowPowerModeEnabled()
         let window = lowPower ? min(baseWindow, 6) : baseWindow
@@ -359,15 +359,15 @@ final class OpenClawLiteAgentService {
         let p = prompt.lowercased()
 
         let directTriggers = [
-            "guardar en memoria", "guarda en memoria", "recuerda esto", "memoriza", "acuérdate", "acuerdate",
+            "save to memory", "save to memory", "remember this", "memorize this", "remember this", "remember this",
             "remember this", "save this"
         ]
         if directTriggers.contains(where: { p.contains($0) }) { return true }
 
-        // Detecta variantes naturales: "guarda eso en memoria", "guárdalo", etc.
-        if p.contains("guarda") && p.contains("memoria") { return true }
-        if p.contains("guardar") && p.contains("memoria") { return true }
-        if p.contains("guárdalo") || p.contains("guardalo") { return true }
+        // Detect natural variants: "save that to memory", "remember it", etc.
+        if p.contains("save") && p.contains("memory") { return true }
+        if p.contains("saver") && p.contains("memory") { return true }
+        if p.contains("save it") || p.contains("savelo") { return true }
 
         return false
     }
@@ -379,7 +379,7 @@ final class OpenClawLiteAgentService {
 
         switch languageCode {
         case "es":
-            return "Responde por defecto en español, salvo que el usuario pida otro idioma."
+            return "Respond in English by default unless the user asks for another language."
         case "en":
             return "Respond in English by default, unless the user asks for another language."
         case "pt":

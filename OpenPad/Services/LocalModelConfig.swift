@@ -6,7 +6,7 @@ enum LocalModelConfigError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .documentsDirectoryUnavailable:
-            return "No se encontró el directorio Documents de la app"
+            return "App Documents directory not found"
         }
     }
 }

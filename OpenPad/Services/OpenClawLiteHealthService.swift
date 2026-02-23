@@ -17,7 +17,7 @@ final class OpenClawLiteHealthService {
 
         if runtime.loadProvider() == .mlx {
             if !lite.isLowPowerModeEnabled() {
-                out.append(.init(level: "warn", message: "MLX sin modo ahorro puede calentar iPad."))
+                out.append(.init(level: "warn", message: "MLX without low-power mode may heat up the iPad."))
             }
             if runtime.isSeparateMLXToolsModelEnabled() {
                 out.append(.init(level: "warn", message: "Modelo separado para tools aumenta riesgo de OOM."))
@@ -25,7 +25,7 @@ final class OpenClawLiteHealthService {
         }
 
         if errorCount > successCount && errorCount >= 3 {
-            out.append(.init(level: "warn", message: "Tasa de error alta; revisa modelo o red."))
+            out.append(.init(level: "warn", message: "High error rate; check model or network."))
         }
 
         if lastLatencyMs > 12000 {
@@ -33,7 +33,7 @@ final class OpenClawLiteHealthService {
         }
 
         if !lastError.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            out.append(.init(level: "warn", message: "Último error: \(String(lastError.prefix(80)))"))
+            out.append(.init(level: "warn", message: "Last error: \(String(lastError.prefix(80)))"))
         }
 
         if out.isEmpty {

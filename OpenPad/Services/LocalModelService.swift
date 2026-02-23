@@ -20,7 +20,7 @@ final class LocalModelService {
                 return try await llama.runLocal(prompt: prompt)
             } catch LlamaServiceError.modelNotConfigured {
                 try await Task.sleep(nanoseconds: 300_000_000)
-                return "Sin modelo llama.cpp seleccionado. Agrega un .gguf en Models y selecciónalo en Configuración."
+                return "No llama.cpp model selected. Add a .gguf in Models and select it in Settings."
             }
         case .ollama:
             return try await ollama.runLocal(prompt: prompt)
@@ -31,7 +31,7 @@ final class LocalModelService {
             case .chat:
                 modelOverride = chatModel
             case .tools:
-                // Evita OOM por doble carga de modelos grandes en una misma interacción.
+                // Avoid OOM by preventing double-loading large models in the same interaction.
                 if runtimeConfig.isSeparateMLXToolsModelEnabled() {
                     modelOverride = runtimeConfig.loadMLXToolsModelName()
                 } else {

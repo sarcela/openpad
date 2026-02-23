@@ -11,17 +11,17 @@ enum LlamaServiceError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .modelNotConfigured:
-            return "No hay modelo configurado. Define un path .gguf primero."
+            return "No model configured. Set a .gguf path first."
         case .modelFileNotFound(let path):
-            return "No se encontró el modelo en: \(path)"
+            return "Model not found at: \(path)"
         case .backendUnavailable:
             return "Backend llama.cpp no disponible. Levanta llama-server o integra el paquete nativo."
         case .invalidBaseURL:
-            return "URL de llama.cpp inválida"
+            return "Invalid llama.cpp URL"
         case .badStatus(let code, let body):
             return "llama.cpp HTTP \(code): \(body.prefix(180))"
         case .emptyResponse:
-            return "llama.cpp respondió vacío"
+            return "llama.cpp returned an empty response"
         }
     }
 }
@@ -46,7 +46,7 @@ final class LlamaLocalModelService {
 
         // Siempre intentamos primero backend nativo (si existe en el build).
         #if canImport(LlamaCpp)
-        // Placeholder: integra aquí llamada real al package nativo de llama.cpp.
+        // Placeholder: integrate the real llama.cpp native package call here.
         // Mientras tanto, cae al llama-server HTTP para no bloquear el flujo.
         _ = modelPath
         #endif
@@ -71,7 +71,7 @@ final class LlamaLocalModelService {
         let payload = LlamaChatRequest(
             model: modelName,
             messages: [
-                .init(role: "system", content: "Eres OpenPad, asistente útil y conciso."),
+                .init(role: "system", content: "You are OpenPad, a helpful and concise assistant."),
                 .init(role: "user", content: prompt)
             ],
             temperature: 0.2,
