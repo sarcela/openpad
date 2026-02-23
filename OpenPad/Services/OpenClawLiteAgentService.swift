@@ -19,6 +19,30 @@ final class OpenClawLiteAgentService {
 
         if shouldBypassPlannerForCurrentModel() {
             trace.append("Planner bypass: thinking model compatibility mode")
+
+            if hasAttachmentHint(in: userPrompt) {
+                let attachmentContext = buildAttachmentContext(from: userPrompt)
+                if !attachmentContext.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                   attachmentContext != "(no attachments)" {
+                    trace.append("Compat attachment mode: using injected attachment context")
+                    let prompt = """
+                    You are OpenClaw Lite in compatibility mode.
+                    Use ONLY the attachment context below to answer the user's question precisely.
+                    If required info is missing in the attachment text, say exactly what is missing.
+                    Do not output JSON schemas.
+                    Do not include <think> blocks.
+
+                    Attachment context:
+                    \(attachmentContext)
+
+                    User question:
+                    \(userPrompt)
+                    """
+                    let reply = try await localModelService.runLocal(prompt: prompt, purpose: .chat)
+                    return .init(text: reply, trace: trace)
+                }
+            }
+
             let directPrompt = buildDirectCompatPrompt(userPrompt: userPrompt, recentMessages: recentMessages)
             let directReply = try await localModelService.runLocal(prompt: directPrompt, purpose: .chat)
             return .init(text: directReply, trace: trace)
