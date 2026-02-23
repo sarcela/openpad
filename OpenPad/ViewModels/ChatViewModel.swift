@@ -59,6 +59,7 @@ final class ChatViewModel: ObservableObject {
     private let openClawLite = OpenClawLiteAgentService()
     private let notificationService = OpenClawLiteNotificationService.shared
     private let appMemory = AppMemoryStore.shared
+    private let selfImprovement = SelfImprovementService.shared
 
     init() {
         if let saved = UserDefaults.standard.string(forKey: Self.routePreferenceKey),
@@ -176,6 +177,9 @@ final class ChatViewModel: ObservableObject {
             self.persistActiveSession()
             self.appMemory.appendInteraction(user: prompt, assistant: responseText)
             self.appMemory.appendToolTrace(self.toolTrace)
+            if self.runtimeConfig.isSelfImprovingAgentEnabled() {
+                self.selfImprovement.observeTurn(userPrompt: prompt, assistantReply: responseText, trace: self.toolTrace)
+            }
             self.notificationService.notifyAssistantReplyIfAppInBackground(responseText)
             self.isLoading = false
             self.inFlightPrompt = nil
@@ -483,6 +487,93 @@ final class AppMemoryStore {
             }
         } else {
             try text.write(to: file, atomically: true, encoding: .utf8)
+        }
+    }
+}
+
+@MainActor
+final class SelfImprovementService {
+    static let shared = SelfImprovementService()
+
+    private let fm = FileManager.default
+
+    func observeTurn(userPrompt: String, assistantReply: String, trace: [String]) {
+        let issues = detectIssues(userPrompt: userPrompt, assistantReply: assistantReply, trace: trace)
+        guard !issues.isEmpty else { return }
+
+        let ts = ISO8601DateFormatter().string(from: Date())
+        let shortPrompt = String(userPrompt.prefix(140)).replacingOccurrences(of: "\n", with: " ")
+        let shortReply = String(assistantReply.prefix(140)).replacingOccurrences(of: "\n", with: " ")
+        let line = "- [\(ts)] issues=\(issues.joined(separator: ",")) | prompt=\(shortPrompt) | reply=\(shortReply)\n"
+
+        append(line, to: "IMPROVEMENTS.md")
+        appendRuleHints(for: issues)
+    }
+
+    private func detectIssues(userPrompt: String, assistantReply: String, trace: [String]) -> [String] {
+        var out: [String] = []
+        let p = userPrompt.lowercased()
+        let r = assistantReply.lowercased()
+        let t = trace.joined(separator: " ").lowercased()
+
+        if t.contains("tool result: error") || t.contains("planner: no valid json") {
+            out.append("planner_or_tool_error")
+        }
+        if (p.contains("pdf") || p.contains("adjunto") || p.contains("attachment")) && !t.contains("analyze_attachment") {
+            out.append("attachment_tool_missing")
+        }
+        if r == "hola" || r == "hello" || r.count < 12 {
+            out.append("low_information_reply")
+        }
+        if r.contains("no encuentro evidencia suficiente") {
+            out.append("low_evidence")
+        }
+        return Array(Set(out))
+    }
+
+    private func appendRuleHints(for issues: [String]) {
+        guard !issues.isEmpty else { return }
+        let ts = ISO8601DateFormatter().string(from: Date())
+        var hints: [String] = []
+        if issues.contains("attachment_tool_missing") {
+            hints.append("For PDF/attachment follow-ups, force analyze_attachment with latest known file.")
+        }
+        if issues.contains("planner_or_tool_error") {
+            hints.append("If planner output is invalid JSON, trigger deterministic intent routes before direct answer.")
+        }
+        if issues.contains("low_information_reply") {
+            hints.append("Avoid low-information greetings when user asked a concrete question.")
+        }
+        if issues.contains("low_evidence") {
+            hints.append("When evidence is weak, ask for page/section and keep claims conservative.")
+        }
+        guard !hints.isEmpty else { return }
+        let payload = hints.map { "- [\(ts)] \($0)" }.joined(separator: "\n") + "\n"
+        append(payload, to: "TOOL_RULES.md")
+    }
+
+    private func appMemoryDirectory() throws -> URL {
+        let docs = try LocalModelConfig.shared.documentsDirectory()
+        return docs.appendingPathComponent("OpenClawMemory/AppMemory", isDirectory: true)
+    }
+
+    private func append(_ text: String, to fileName: String) {
+        do {
+            let dir = try appMemoryDirectory()
+            try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+            let file = dir.appendingPathComponent(fileName)
+            if fm.fileExists(atPath: file.path) {
+                let handle = try FileHandle(forWritingTo: file)
+                defer { try? handle.close() }
+                try handle.seekToEnd()
+                if let data = text.data(using: .utf8) {
+                    try handle.write(contentsOf: data)
+                }
+            } else {
+                try text.write(to: file, atomically: true, encoding: .utf8)
+            }
+        } catch {
+            // non-fatal
         }
     }
 }

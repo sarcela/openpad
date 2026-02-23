@@ -1715,6 +1715,7 @@ private struct SettingsView: View {
     @State private var emergencyMemoryModeEnabled = false
     @State private var autodevEnabled = false
     @State private var qualityGateStrictness = "balanced"
+    @State private var selfImprovingAgentEnabled = true
     @State private var toolPermissions: [String: Bool] = [:]
     @State private var settingsSearch = ""
     @State private var settingsCategory: SettingsCategory = .all
@@ -2092,6 +2093,8 @@ private struct SettingsView: View {
                         Text("Strict").tag("strict")
                     }
 
+                    Toggle("Self-improving agent", isOn: $selfImprovingAgentEnabled)
+
                     if lowPowerModeEnabled || emergencyMemoryModeEnabled {
                         Text("Reduces context, OCR, and retries. Emergency mode also enforces stricter prompt condensation and smaller context windows.")
                             .font(.caption2)
@@ -2211,6 +2214,7 @@ private struct SettingsView: View {
                         openClawLiteConfig.setLowPowerModeEnabled(lowPowerModeEnabled)
                         runtimeConfig.setEmergencyMemoryModeEnabled(emergencyMemoryModeEnabled)
                         runtimeConfig.saveQualityGateStrictness(qualityGateStrictness)
+                        runtimeConfig.setSelfImprovingAgentEnabled(selfImprovingAgentEnabled)
                         openClawLiteConfig.setAutodevEnabled(autodevEnabled)
                         for (tool, enabled) in toolPermissions {
                             openClawLiteConfig.setToolEnabled(tool, enabled: enabled)
@@ -2251,6 +2255,7 @@ private struct SettingsView: View {
                 lowPowerModeEnabled = openClawLiteConfig.isLowPowerModeEnabled()
                 emergencyMemoryModeEnabled = runtimeConfig.isEmergencyMemoryModeEnabled()
                 qualityGateStrictness = runtimeConfig.loadQualityGateStrictness()
+                selfImprovingAgentEnabled = runtimeConfig.isSelfImprovingAgentEnabled()
                 mlxDownloadedModels = openClawLiteConfig.loadDownloadedMLXModels()
 
                 refreshModels()

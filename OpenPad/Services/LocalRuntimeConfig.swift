@@ -58,6 +58,7 @@ struct LocalRuntimeConfig {
         static let intentRouteAttachmentEnabled = "agent.intent.route.attachment.enabled"
         static let intentRouteURLEnabled = "agent.intent.route.url.enabled"
         static let intentRouteListAttachmentsEnabled = "agent.intent.route.list_attachments.enabled"
+        static let selfImprovingAgentEnabled = "agent.self_improving.enabled"
     }
 
     func loadProvider() -> LocalRuntimeProvider {
@@ -246,5 +247,13 @@ struct LocalRuntimeConfig {
 
     func loadIntentRouteMetric(_ route: String) -> Int {
         UserDefaults.standard.integer(forKey: "agent.intent.metric.\(route)")
+    }
+
+    func isSelfImprovingAgentEnabled() -> Bool {
+        UserDefaults.standard.object(forKey: Keys.selfImprovingAgentEnabled) as? Bool ?? true
+    }
+
+    func setSelfImprovingAgentEnabled(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: Keys.selfImprovingAgentEnabled)
     }
 }
