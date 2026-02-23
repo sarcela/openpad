@@ -377,6 +377,7 @@ private struct SettingsView: View {
     @State private var allowlistHostsText = ""
     @State private var braveApiKey = ""
     @State private var showMemoryManager = false
+    @State private var internetOpenAccess = true
 
     private let remoteConfig = RemoteModelConfig.shared
     private let localConfig = LocalModelConfig.shared
@@ -549,7 +550,11 @@ private struct SettingsView: View {
                     }
                 }
 
-                Section("OpenClaw Lite") {
+                Section {
+                    Toggle(isOn: $internetOpenAccess) {
+                        Label("Acceso abierto a internet", systemImage: "globe")
+                    }
+
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Hosts permitidos para http_get (uno por línea)")
                             .font(.caption)
@@ -557,16 +562,30 @@ private struct SettingsView: View {
                         TextEditor(text: $allowlistHostsText)
                             .frame(minHeight: 90)
                             .font(.caption)
+                            .opacity(internetOpenAccess ? 0.45 : 1)
                             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.2)))
+                            .disabled(internetOpenAccess)
+                    }
+
+                    if internetOpenAccess {
+                        Text("Modo abierto: puede visitar cualquier dominio.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                     }
 
                     SecureField("Brave API Key", text: $braveApiKey)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
 
-                    Button("Abrir gestor de memoria") {
+                    Button {
                         showMemoryManager = true
+                    } label: {
+                        Label("Abrir gestor de memoria", systemImage: "brain.head.profile")
                     }
+                } header: {
+                    Text("OpenClaw Lite")
+                } footer: {
+                    Text("Puedes cambiar entre modo abierto y modo restringido por hosts permitidos.")
                 }
 
                 if !importMessage.isEmpty {
@@ -590,6 +609,7 @@ private struct SettingsView: View {
                         runtimeConfig.saveMLXModelName(mlxModelName)
                         openClawLiteConfig.saveAllowlistHosts(allowlistHostsText)
                         openClawLiteConfig.saveBraveApiKey(braveApiKey)
+                        openClawLiteConfig.setInternetOpenAccessEnabled(internetOpenAccess)
                         localConfig.saveSelectedModelPath(selectedModelPath.isEmpty ? nil : selectedModelPath)
                         localConfig.saveSelectedEmbeddingModelPath(selectedEmbeddingModelPath.isEmpty ? nil : selectedEmbeddingModelPath)
                         dismiss()
@@ -610,6 +630,7 @@ private struct SettingsView: View {
                 mlxPresetModel = mlxPresetModels.contains(mlxModelName) ? mlxModelName : mlxPresetModels[0]
                 allowlistHostsText = openClawLiteConfig.allowlistHostsText()
                 braveApiKey = openClawLiteConfig.loadBraveApiKey()
+                internetOpenAccess = openClawLiteConfig.isInternetOpenAccessEnabled()
 
                 refreshModels()
 

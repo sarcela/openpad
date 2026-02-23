@@ -9,6 +9,7 @@ struct OpenClawLiteConfig {
     private enum Keys {
         static let httpAllowlistHosts = "openclawlite.http.allowlist.hosts"
         static let braveApiKey = "openclawlite.brave.api.key"
+        static let internetOpenAccess = "openclawlite.internet.open.access"
     }
 
     private let defaultHosts = ["docs.openclaw.ai", "api.github.com", "wttr.in"]
@@ -36,6 +37,15 @@ struct OpenClawLiteConfig {
 
     func saveBraveApiKey(_ key: String) {
         UserDefaults.standard.set(key.trimmingCharacters(in: .whitespacesAndNewlines), forKey: Keys.braveApiKey)
+    }
+
+    func isInternetOpenAccessEnabled() -> Bool {
+        if UserDefaults.standard.object(forKey: Keys.internetOpenAccess) == nil { return true }
+        return UserDefaults.standard.bool(forKey: Keys.internetOpenAccess)
+    }
+
+    func setInternetOpenAccessEnabled(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: Keys.internetOpenAccess)
     }
 }
 
@@ -268,9 +278,15 @@ final class OpenClawLiteTools {
     }
 
     private func fetchHTTP(urlString: String, allowDirectHostBypass: Bool = false) async -> OpenClawToolResult {
-        _ = allowDirectHostBypass
         guard let url = URL(string: urlString), ["https", "http"].contains(url.scheme?.lowercased() ?? "") else {
             return .init(ok: false, output: "URL inválida")
+        }
+
+        let openAccess = config.isInternetOpenAccessEnabled()
+        let host = (url.host ?? "").lowercased()
+        let allowedHosts = Set(config.loadAllowlistHosts())
+        if !openAccess && !allowedHosts.contains(host) && !allowDirectHostBypass {
+            return .init(ok: false, output: "Host no permitido: \(host). Activa acceso abierto o agrega el dominio en Settings.")
         }
 
         do {
