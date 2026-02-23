@@ -79,7 +79,7 @@ final class OpenClawLiteAgentService {
     }
 
     private func buildPlannerPrompt(userPrompt: String, recentMessages: [ChatMessage]) -> String {
-        let memoryContext = String(tools.recentMemories(limit: 6).prefix(1600))
+        let memoryContext = String(tools.recentMemories(limit: OpenClawLiteConfig.shared.isLowPowerModeEnabled() ? 4 : 6).prefix(OpenClawLiteConfig.shared.isLowPowerModeEnabled() ? 900 : 1600))
         let attachmentContext = buildAttachmentContext(from: userPrompt)
         let recentContext = buildRecentContext(from: recentMessages)
         let languageInstruction = preferredLanguageInstruction()
@@ -239,8 +239,11 @@ final class OpenClawLiteAgentService {
         guard !names.isEmpty else { return "(sin adjuntos)" }
 
         var chunks: [String] = []
-        for name in names.prefix(2) {
-            let snippet = tools.readAttachmentSnippet(fileName: name, maxChars: 1200)
+        let lowPower = OpenClawLiteConfig.shared.isLowPowerModeEnabled()
+        let attachmentLimit = lowPower ? 1 : 2
+        let maxChars = lowPower ? 600 : 1200
+        for name in names.prefix(attachmentLimit) {
+            let snippet = tools.readAttachmentSnippet(fileName: name, maxChars: maxChars)
             if snippet.isEmpty {
                 chunks.append("[\(name)] (no pude leerlo automáticamente)")
             } else {
@@ -263,12 +266,17 @@ final class OpenClawLiteAgentService {
 
     private func buildRecentContext(from messages: [ChatMessage]) -> String {
         guard !messages.isEmpty else { return "(sin historial reciente)" }
-        let window = runtimeConfig.loadRecentContextWindow()
+        let baseWindow = runtimeConfig.loadRecentContextWindow()
+        let lowPower = LocalRuntimeConfig.shared.loadProvider() == .mlx && OpenClawLiteConfig.shared.isLowPowerModeEnabled()
+        let window = lowPower ? min(baseWindow, 6) : baseWindow
+        let perMsg = lowPower ? 220 : 380
+        let total = lowPower ? 1800 : 3500
+
         let rows = messages.suffix(window).map { msg in
-            let clipped = String(msg.text.prefix(380))
+            let clipped = String(msg.text.prefix(perMsg))
             return "\(msg.role.uppercased()): \(clipped)"
         }
-        return String(rows.joined(separator: "\n").prefix(3500))
+        return String(rows.joined(separator: "\n").prefix(total))
     }
 
     private func userExplicitlyAskedMemorySave(in prompt: String) -> Bool {

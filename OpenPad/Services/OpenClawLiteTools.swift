@@ -18,6 +18,7 @@ struct OpenClawLiteConfig {
         static let internetOpenAccess = "openclawlite.internet.open.access"
         static let mlxDownloadedModels = "openclawlite.mlx.downloaded.models"
         static let automationLoopEnabled = "openclawlite.automation.loop.enabled"
+        static let lowPowerMode = "openclawlite.low.power.mode"
     }
 
     private let defaultHosts = ["docs.openclaw.ai", "api.github.com", "wttr.in"]
@@ -66,6 +67,14 @@ struct OpenClawLiteConfig {
 
     func setAutomationLoopEnabled(_ enabled: Bool) {
         UserDefaults.standard.set(enabled, forKey: Keys.automationLoopEnabled)
+    }
+
+    func isLowPowerModeEnabled() -> Bool {
+        UserDefaults.standard.bool(forKey: Keys.lowPowerMode)
+    }
+
+    func setLowPowerModeEnabled(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: Keys.lowPowerMode)
     }
 
     func markMLXModelDownloaded(_ modelId: String) {
@@ -223,9 +232,13 @@ final class OpenClawLiteTools {
 
             if isImage {
                 let data = try Data(contentsOf: url)
-                let ocr = extractTextFromImageData(data)
-                if !ocr.isEmpty {
-                    return String(ocr.prefix(maxChars))
+                if !config.isLowPowerModeEnabled() {
+                    let ocr = extractTextFromImageData(data)
+                    if !ocr.isEmpty {
+                        return String(ocr.prefix(maxChars))
+                    }
+                } else {
+                    return "(OCR omitido en modo ahorro de energía)"
                 }
             }
 
@@ -401,7 +414,7 @@ final class OpenClawLiteTools {
     }
 
     private func fetchURLWithRetries(_ url: URL) async -> OpenClawToolResult {
-        await withNetworkRetries(attempts: 3, initialDelayMs: 500) {
+        await withNetworkRetries(attempts: config.isLowPowerModeEnabled() ? 2 : 3, initialDelayMs: 500) {
             do {
                 let (data, response) = try await URLSession.shared.data(from: url)
                 if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
@@ -441,7 +454,7 @@ final class OpenClawLiteTools {
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         req.setValue(key, forHTTPHeaderField: "X-Subscription-Token")
 
-        return await withNetworkRetries(attempts: 3, initialDelayMs: 500) {
+        return await withNetworkRetries(attempts: config.isLowPowerModeEnabled() ? 2 : 3, initialDelayMs: 500) {
             do {
                 let (data, response) = try await URLSession.shared.data(for: req)
                 if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {

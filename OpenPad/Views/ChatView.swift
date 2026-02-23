@@ -242,6 +242,9 @@ struct ChatView: View {
             }
             openClawLiteConfig.setAutomationLoopEnabled(enabled)
         }
+        .onChange(of: lowPowerModeEnabled) { enabled in
+            openClawLiteConfig.setLowPowerModeEnabled(enabled)
+        }
         .onDisappear {
             cronRunner.stop()
         }
@@ -855,6 +858,7 @@ private struct SettingsView: View {
     @State private var showFilesManager = false
     @State private var recentContextWindow: Double = 10
     @State private var automationLoopEnabled = false
+    @State private var lowPowerModeEnabled = false
 
     private let remoteConfig = RemoteModelConfig.shared
     private let localConfig = LocalModelConfig.shared
@@ -1103,6 +1107,16 @@ private struct SettingsView: View {
                         Label("Automatización en segundo plano (cron loop)", systemImage: "clock.arrow.circlepath")
                     }
 
+                    Toggle(isOn: $lowPowerModeEnabled) {
+                        Label("Modo ahorro (menos calor/batería)", systemImage: "bolt.horizontal.circle")
+                    }
+
+                    if lowPowerModeEnabled {
+                        Text("Reduce contexto, OCR y reintentos de red para mejorar estabilidad térmica.")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+
                     SecureField("Brave API Key", text: $braveApiKey)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
@@ -1155,6 +1169,7 @@ private struct SettingsView: View {
                         openClawLiteConfig.setInternetOpenAccessEnabled(internetOpenAccess)
                         runtimeConfig.saveRecentContextWindow(Int(recentContextWindow))
                         openClawLiteConfig.setAutomationLoopEnabled(automationLoopEnabled)
+                        openClawLiteConfig.setLowPowerModeEnabled(lowPowerModeEnabled)
                         localConfig.saveSelectedModelPath(selectedModelPath.isEmpty ? nil : selectedModelPath)
                         localConfig.saveSelectedEmbeddingModelPath(selectedEmbeddingModelPath.isEmpty ? nil : selectedEmbeddingModelPath)
                         dismiss()
@@ -1180,6 +1195,7 @@ private struct SettingsView: View {
                 internetOpenAccess = openClawLiteConfig.isInternetOpenAccessEnabled()
                 recentContextWindow = Double(runtimeConfig.loadRecentContextWindow())
                 automationLoopEnabled = openClawLiteConfig.isAutomationLoopEnabled()
+                lowPowerModeEnabled = openClawLiteConfig.isLowPowerModeEnabled()
                 mlxDownloadedModels = openClawLiteConfig.loadDownloadedMLXModels()
 
                 refreshModels()
