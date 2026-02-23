@@ -273,14 +273,17 @@ final class OpenClawLiteAgentService {
     }
 
     private func runDeterministicIntentRoute(userPrompt: String, recentMessages: [ChatMessage], trace: [String]) async throws -> OpenClawAgentOutput? {
+        guard runtimeConfig.isIntentRouterEnabled() else { return nil }
+
         let lower = userPrompt.lowercased()
         let attachmentFiles = attachmentCandidates(from: userPrompt, recentMessages: recentMessages)
         let directURL = extractFirstURL(from: userPrompt)?.absoluteString
 
         // Intent: current time/date style queries should be deterministic.
-        if shouldForceTimeTool(userPrompt) {
+        if runtimeConfig.isIntentRouteTimeEnabled(), shouldForceTimeTool(userPrompt) {
             var t = trace
             t.append("intent_router: intent=time_query confidence=high tool=get_time")
+            runtimeConfig.incrementIntentRouteMetric("time_query")
             let toolResult = await tools.execute(name: "get_time", arguments: [:])
             let secondPrompt = buildFinalizePrompt(userPrompt: userPrompt, toolName: "get_time", toolResult: toolResult)
             let finalReply = try await localModelService.runLocal(prompt: secondPrompt, purpose: .chat)
@@ -289,9 +292,10 @@ final class OpenClawLiteAgentService {
 
         // Intent: explicit local attachment questions should prioritize attachment tools.
         let asksAttachmentContent = lower.contains("pdf") || lower.contains("adjunto") || lower.contains("attachment") || lower.contains("archivo") || lower.contains("factura") || lower.contains("recibo") || lower.contains("invoice") || lower.contains("de que trata") || lower.contains("what does it say") || lower.contains("resumen") || lower.contains("summary")
-        if asksAttachmentContent, let file = attachmentFiles.first {
+        if runtimeConfig.isIntentRouteAttachmentEnabled(), asksAttachmentContent, let file = attachmentFiles.first {
             var t = trace
             t.append("intent_router: intent=attachment_query confidence=high tool=analyze_attachment file=\(file)")
+            runtimeConfig.incrementIntentRouteMetric("attachment_query")
             var toolResult = await tools.execute(name: "analyze_attachment", arguments: ["fileName": file, "maxChars": "9000"])
             if !toolResult.ok {
                 t.append("intent_router: corrective_pass=read_attachment")
@@ -303,9 +307,10 @@ final class OpenClawLiteAgentService {
         }
 
         // Intent: direct URL in prompt should use URL summarization without planner drift.
-        if let directURL {
+        if runtimeConfig.isIntentRouteURLEnabled(), let directURL {
             var t = trace
             t.append("intent_router: intent=url_query confidence=high tool=summarize_url")
+            runtimeConfig.incrementIntentRouteMetric("url_query")
             let toolResult = await tools.execute(name: "summarize_url", arguments: ["url": directURL])
             let secondPrompt = buildFinalizePrompt(userPrompt: userPrompt, toolName: "summarize_url", toolResult: toolResult)
             let finalReply = try await localModelService.runLocal(prompt: secondPrompt, purpose: .chat)
@@ -313,9 +318,10 @@ final class OpenClawLiteAgentService {
         }
 
         // Intent: explicit request to list attachments.
-        if lower.contains("lista adj") || lower.contains("list attachments") {
+        if runtimeConfig.isIntentRouteListAttachmentsEnabled(), (lower.contains("lista adj") || lower.contains("list attachments")) {
             var t = trace
             t.append("intent_router: intent=attachment_list confidence=high tool=list_attachments")
+            runtimeConfig.incrementIntentRouteMetric("attachment_list")
             let toolResult = await tools.execute(name: "list_attachments", arguments: [:])
             let secondPrompt = buildFinalizePrompt(userPrompt: userPrompt, toolName: "list_attachments", toolResult: toolResult)
             let finalReply = try await localModelService.runLocal(prompt: secondPrompt, purpose: .chat)

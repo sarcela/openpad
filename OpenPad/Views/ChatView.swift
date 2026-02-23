@@ -1391,6 +1391,71 @@ private struct DownloadsManagerView: View {
     }
 }
 
+private struct IntentRouterInspectorView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var routerEnabled = true
+    @State private var timeEnabled = true
+    @State private var attachmentEnabled = true
+    @State private var urlEnabled = true
+    @State private var listEnabled = true
+
+    private let runtime = LocalRuntimeConfig.shared
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Routing toggles") {
+                    Toggle("Enable intent router", isOn: $routerEnabled)
+                    Toggle("Time route", isOn: $timeEnabled)
+                    Toggle("Attachment route", isOn: $attachmentEnabled)
+                    Toggle("URL route", isOn: $urlEnabled)
+                    Toggle("List attachments route", isOn: $listEnabled)
+                }
+
+                Section("Usage metrics") {
+                    metricRow("time_query", runtime.loadIntentRouteMetric("time_query"))
+                    metricRow("attachment_query", runtime.loadIntentRouteMetric("attachment_query"))
+                    metricRow("url_query", runtime.loadIntentRouteMetric("url_query"))
+                    metricRow("attachment_list", runtime.loadIntentRouteMetric("attachment_list"))
+                }
+            }
+            .navigationTitle("Intent Router")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        runtime.setIntentRouterEnabled(routerEnabled)
+                        runtime.setIntentRouteTimeEnabled(timeEnabled)
+                        runtime.setIntentRouteAttachmentEnabled(attachmentEnabled)
+                        runtime.setIntentRouteURLEnabled(urlEnabled)
+                        runtime.setIntentRouteListAttachmentsEnabled(listEnabled)
+                        dismiss()
+                    }
+                }
+            }
+            .onAppear {
+                routerEnabled = runtime.isIntentRouterEnabled()
+                timeEnabled = runtime.isIntentRouteTimeEnabled()
+                attachmentEnabled = runtime.isIntentRouteAttachmentEnabled()
+                urlEnabled = runtime.isIntentRouteURLEnabled()
+                listEnabled = runtime.isIntentRouteListAttachmentsEnabled()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func metricRow(_ name: String, _ value: Int) -> some View {
+        HStack {
+            Text(name)
+            Spacer()
+            Text("\(value)")
+                .foregroundColor(.secondary)
+        }
+    }
+}
+
 private struct PolicyEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var selected = "POLICY.md"
@@ -1566,6 +1631,7 @@ private struct SettingsView: View {
     @State private var showToolsManager = false
     @State private var showDownloadsManager = false
     @State private var showPolicyEditor = false
+    @State private var showIntentRouterInspector = false
     @State private var showAdvancedModelIDs = false
     @State private var showAdvancedNetwork = false
     @State private var recentContextWindow: Double = 10
@@ -1977,6 +2043,12 @@ private struct SettingsView: View {
                         Label("Open policy editor", systemImage: "doc.text.magnifyingglass")
                     }
 
+                    Button {
+                        showIntentRouterInspector = true
+                    } label: {
+                        Label("Open intent router inspector", systemImage: "point.3.connected.trianglepath.dotted")
+                    }
+
                     VStack(alignment: .leading, spacing: 8) {
                         Button("Skills") { quickPanel = .skills }
                         Button("Crons") { quickPanel = .crons }
@@ -2134,6 +2206,9 @@ private struct SettingsView: View {
             }
             .sheet(isPresented: $showPolicyEditor) {
                 PolicyEditorView()
+            }
+            .sheet(isPresented: $showIntentRouterInspector) {
+                IntentRouterInspectorView()
             }
             .fileImporter(
                 isPresented: $showFileImporter,

@@ -53,6 +53,11 @@ struct LocalRuntimeConfig {
         static let dualPassReasoningEnabled = "agent.dualpass.reasoning.enabled"
         static let multimodalRoutingEnabled = "agent.multimodal.routing.enabled"
         static let qualityGateStrictness = "agent.qualitygate.strictness"
+        static let intentRouterEnabled = "agent.intent.router.enabled"
+        static let intentRouteTimeEnabled = "agent.intent.route.time.enabled"
+        static let intentRouteAttachmentEnabled = "agent.intent.route.attachment.enabled"
+        static let intentRouteURLEnabled = "agent.intent.route.url.enabled"
+        static let intentRouteListAttachmentsEnabled = "agent.intent.route.list_attachments.enabled"
     }
 
     func loadProvider() -> LocalRuntimeProvider {
@@ -191,5 +196,55 @@ struct LocalRuntimeConfig {
         let clean = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let allowed = ["relaxed", "balanced", "strict"]
         UserDefaults.standard.set(allowed.contains(clean) ? clean : "balanced", forKey: Keys.qualityGateStrictness)
+    }
+
+    func isIntentRouterEnabled() -> Bool {
+        UserDefaults.standard.object(forKey: Keys.intentRouterEnabled) as? Bool ?? true
+    }
+
+    func setIntentRouterEnabled(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: Keys.intentRouterEnabled)
+    }
+
+    func isIntentRouteTimeEnabled() -> Bool {
+        UserDefaults.standard.object(forKey: Keys.intentRouteTimeEnabled) as? Bool ?? true
+    }
+
+    func setIntentRouteTimeEnabled(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: Keys.intentRouteTimeEnabled)
+    }
+
+    func isIntentRouteAttachmentEnabled() -> Bool {
+        UserDefaults.standard.object(forKey: Keys.intentRouteAttachmentEnabled) as? Bool ?? true
+    }
+
+    func setIntentRouteAttachmentEnabled(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: Keys.intentRouteAttachmentEnabled)
+    }
+
+    func isIntentRouteURLEnabled() -> Bool {
+        UserDefaults.standard.object(forKey: Keys.intentRouteURLEnabled) as? Bool ?? true
+    }
+
+    func setIntentRouteURLEnabled(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: Keys.intentRouteURLEnabled)
+    }
+
+    func isIntentRouteListAttachmentsEnabled() -> Bool {
+        UserDefaults.standard.object(forKey: Keys.intentRouteListAttachmentsEnabled) as? Bool ?? true
+    }
+
+    func setIntentRouteListAttachmentsEnabled(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: Keys.intentRouteListAttachmentsEnabled)
+    }
+
+    func incrementIntentRouteMetric(_ route: String) {
+        let key = "agent.intent.metric.\(route)"
+        let current = UserDefaults.standard.integer(forKey: key)
+        UserDefaults.standard.set(current + 1, forKey: key)
+    }
+
+    func loadIntentRouteMetric(_ route: String) -> Int {
+        UserDefaults.standard.integer(forKey: "agent.intent.metric.\(route)")
     }
 }
