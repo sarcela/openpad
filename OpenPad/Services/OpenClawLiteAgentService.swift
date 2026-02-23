@@ -78,6 +78,17 @@ final class OpenClawLiteAgentService {
         }
 
         if decision.type == "final" {
+            if shouldForceAttachmentTool(userPrompt: userPrompt, recentMessages: recentMessages) {
+                trace.append("Planner override: force attachment tool for follow-up question")
+                let candidates = attachmentCandidates(from: userPrompt, recentMessages: recentMessages)
+                if let file = candidates.first {
+                    let toolResult = await tools.execute(name: "analyze_attachment", arguments: ["fileName": file, "maxChars": "8000"])
+                    trace.append("Tool result: \(toolResult.ok ? "ok" : "error")")
+                    let secondPrompt = buildFinalizePrompt(userPrompt: userPrompt, toolName: "analyze_attachment", toolResult: toolResult)
+                    let finalReply = try await localModelService.runLocal(prompt: secondPrompt, purpose: .chat)
+                    return .init(text: extractContentFromJsonLike(finalReply) ?? finalReply, trace: trace)
+                }
+            }
             trace.append("Planner: final without tools")
             return .init(text: decision.content ?? modelReply, trace: trace)
         }
@@ -92,7 +103,8 @@ final class OpenClawLiteAgentService {
         var toolName = name
         var toolArgs = decision.arguments ?? [:]
 
-        let hasLocalAttachmentHint = hasAttachmentHint(in: userPrompt)
+        let attachmentCandidatesAll = attachmentCandidates(from: userPrompt, recentMessages: recentMessages)
+        let hasLocalAttachmentHint = !attachmentCandidatesAll.isEmpty || hasAttachmentHint(in: userPrompt)
         if let directURL = extractFirstURL(from: userPrompt)?.absoluteString {
             if name == "brave_search" {
                 toolName = "http_get"
@@ -104,9 +116,15 @@ final class OpenClawLiteAgentService {
                 trace.append("Tool override: allow_host=true due to explicit direct URL request")
             }
         } else if hasLocalAttachmentHint, ["http_get", "summarize_url", "brave_search"].contains(name) {
-            toolName = "keyword_extract"
-            toolArgs = ["text": userPrompt, "top": "12"]
-            trace.append("Tool guard: web tool blocked due to local attachment context")
+            toolName = "analyze_attachment"
+            if let f = attachmentCandidatesAll.first {
+                toolArgs = ["fileName": f, "maxChars": "8000"]
+                trace.append("Tool guard: web tool replaced with analyze_attachment (\(f))")
+            } else {
+                toolName = "keyword_extract"
+                toolArgs = ["text": userPrompt, "top": "12"]
+                trace.append("Tool guard: web tool blocked due to local attachment context")
+            }
         }
 
         if toolName == "analyze_attachement" {
@@ -116,8 +134,7 @@ final class OpenClawLiteAgentService {
 
         if ["read_attachment", "analyze_attachment"].contains(toolName) {
             if (toolArgs["fileName"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                let candidates = extractAttachmentNames(from: userPrompt)
-                if let first = candidates.first {
+                if let first = attachmentCandidatesAll.first {
                     toolArgs["fileName"] = first
                     trace.append("Tool arg autofill: fileName=\(first)")
                 }
@@ -494,6 +511,23 @@ final class OpenClawLiteAgentService {
             if !names.isEmpty { return names }
         }
         return []
+    }
+
+    private func attachmentCandidates(from prompt: String, recentMessages: [ChatMessage]) -> [String] {
+        let direct = extractAttachmentNames(from: prompt)
+        if !direct.isEmpty { return direct }
+        return recentAttachmentNames(from: recentMessages)
+    }
+
+    private func shouldForceAttachmentTool(userPrompt: String, recentMessages: [ChatMessage]) -> Bool {
+        let candidates = attachmentCandidates(from: userPrompt, recentMessages: recentMessages)
+        guard !candidates.isEmpty else { return false }
+        let lower = userPrompt.lowercased()
+        if lower.contains("pdf") || lower.contains("adjunto") || lower.contains("attachment") || lower.contains("archivo") {
+            return true
+        }
+        // Follow-up questions like "what does it say?" should still use the latest attachment.
+        return lower.contains("de que") || lower.contains("qué") || lower.contains("what") || lower.contains("resume") || lower.contains("summary")
     }
 
     private func extractAttachmentNames(from text: String) -> [String] {
