@@ -307,10 +307,9 @@ final class OpenClawLiteAgentService {
         }
 
         // Intent: direct URL in prompt should use URL summarization without planner drift.
-        if runtimeConfig.isIntentRouteURLEnabled(), let directURL {
+        if let directURL {
             var t = trace
             t.append("intent_router: intent=url_query confidence=high tool=summarize_url")
-            runtimeConfig.incrementIntentRouteMetric("url_query")
             let toolResult = await tools.execute(name: "summarize_url", arguments: ["url": directURL])
             let secondPrompt = buildFinalizePrompt(userPrompt: userPrompt, toolName: "summarize_url", toolResult: toolResult)
             let finalReply = try await localModelService.runLocal(prompt: secondPrompt, purpose: .chat)
@@ -318,10 +317,9 @@ final class OpenClawLiteAgentService {
         }
 
         // Intent: explicit request to list attachments.
-        if runtimeConfig.isIntentRouteListAttachmentsEnabled(), (lower.contains("lista adj") || lower.contains("list attachments")) {
+        if lower.contains("lista adj") || lower.contains("list attachments") {
             var t = trace
             t.append("intent_router: intent=attachment_list confidence=high tool=list_attachments")
-            runtimeConfig.incrementIntentRouteMetric("attachment_list")
             let toolResult = await tools.execute(name: "list_attachments", arguments: [:])
             let secondPrompt = buildFinalizePrompt(userPrompt: userPrompt, toolName: "list_attachments", toolResult: toolResult)
             let finalReply = try await localModelService.runLocal(prompt: secondPrompt, purpose: .chat)
@@ -942,3 +940,4 @@ private struct AgentDecision: Codable {
     let name: String?
     let arguments: [String: String]?
 }
+
