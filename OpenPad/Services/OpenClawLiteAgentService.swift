@@ -673,6 +673,9 @@ final class OpenClawLiteAgentService {
             try ensureFile(named: "USER.md", in: dir, defaultText: "# USER\nName:\nPreferences:\n")
             try ensureFile(named: "TOOLS.md", in: dir, defaultText: "# TOOLS\nLocal notes and environment-specific details.\n")
             try ensureFile(named: "HEARTBEAT.md", in: dir, defaultText: "# HEARTBEAT\nKeep checks lightweight and avoid unnecessary background work.\n")
+            try ensureFile(named: "POLICY.md", in: dir, defaultText: "# POLICY\n- Prefer grounded answers with evidence from attachments/files.\n- If evidence is weak, say so explicitly.\n- Keep replies concise unless user asks for depth.\n")
+            try ensureFile(named: "ROUTING.md", in: dir, defaultText: "# ROUTING\n- Default: local model.\n- Use tools only when needed.\n- In compatibility mode, prioritize attachment context over web fetches.\n")
+            try ensureFile(named: "TOOL_RULES.md", in: dir, defaultText: "# TOOL_RULES\n- Destructive actions require explicit confirmation.\n- Prefer read/inspect before write/delete.\n- For attachment questions, use attachment tools/context first.\n")
         } catch {
             // Non-fatal.
         }
@@ -681,7 +684,7 @@ final class OpenClawLiteAgentService {
     private func appMemoryContext(maxChars: Int) -> String {
         do {
             let dir = try appMemoryDirectory()
-            let files = ["SOUL.md", "IDENTITY.md", "USER.md", "TOOLS.md", "HEARTBEAT.md"]
+            let files = ["SOUL.md", "IDENTITY.md", "USER.md", "TOOLS.md", "HEARTBEAT.md", "POLICY.md", "ROUTING.md", "TOOL_RULES.md"]
             var chunks: [String] = []
             for f in files {
                 let url = dir.appendingPathComponent(f)
