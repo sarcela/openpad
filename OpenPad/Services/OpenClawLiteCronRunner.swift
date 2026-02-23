@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 #if canImport(UserNotifications)
 import UserNotifications
 #endif
@@ -9,19 +10,22 @@ final class OpenClawLiteCronRunner: ObservableObject {
 
     @Published private(set) var lastRunSummary: String = ""
 
-    private var timer: Timer?
+    private var loopTask: Task<Void, Never>?
 
     func start() {
         stop()
         tick()
-        timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.tick() }
+        loopTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 60_000_000_000)
+                await self?.tick()
+            }
         }
     }
 
     func stop() {
-        timer?.invalidate()
-        timer = nil
+        loopTask?.cancel()
+        loopTask = nil
     }
 
     func runNow(cron: LocalCron) {
