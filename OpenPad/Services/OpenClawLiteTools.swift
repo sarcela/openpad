@@ -395,7 +395,7 @@ final class OpenClawLiteTools {
         return result
     }
 
-    private func braveSearch    private func normalizedURL(from input: String) -> URL? {
+    private func normalizedURL(from input: String) -> URL? {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
         if let u = URL(string: trimmed), ["http", "https"].contains(u.scheme?.lowercased() ?? "") {
             return u
@@ -466,6 +466,22 @@ final class OpenClawLiteTools {
                 return .init(ok: false, output: "brave_search error: \(error.localizedDescription)")
             }
         }
+    }
+
+    private func withNetworkRetries(attempts: Int, initialDelayMs: UInt64, operation: @escaping () async -> OpenClawToolResult) async -> OpenClawToolResult {
+        var delay = initialDelayMs
+        var last = OpenClawToolResult(ok: false, output: "Sin intento")
+
+        for i in 0..<max(1, attempts) {
+            let result = await operation()
+            last = result
+            if result.ok { return result }
+            if i < attempts - 1 {
+                try? await Task.sleep(nanoseconds: delay * 1_000_000)
+                delay = min(delay * 2, 2500)
+            }
+        }
+        return last
     }
 
     private func extractPDFText(from data: Data) -> String {
