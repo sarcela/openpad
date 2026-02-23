@@ -37,16 +37,26 @@ final class ChatViewModel: ObservableObject {
     @Published var successCount: Int = 0
     @Published var errorCount: Int = 0
     @Published var healthChecks: [OpenClawHealthCheck] = []
+    @Published var backgroundPaused = false
+    @Published var backgroundStatus = ""
+    @Published var autoResumeQueuedPrompt = true {
+        didSet { UserDefaults.standard.set(autoResumeQueuedPrompt, forKey: "chat.autoResumeQueuedPrompt") }
+    }
 
     @Published var chatSessions: [ChatSessionSummary] = []
     @Published var activeSessionId: UUID?
 
     private static let routePreferenceKey = "chat.routePreference"
 
+    private var activeTask: Task<Void, Never>?
+    private var inFlightPrompt: String?
+    private var queuedPrompt: String?
+
     private let routing = RoutingService()
     private let remoteService = RemoteModelService()
     private let openClawLite = OpenClawLiteAgentService()
     private let notificationService = OpenClawLiteNotificationService.shared
+    private let appMemory = AppMemoryStore.shared
 
     init() {
         if let saved = UserDefaults.standard.string(forKey: Self.routePreferenceKey),
@@ -59,6 +69,10 @@ final class ChatViewModel: ObservableObject {
         if UserDefaults.standard.string(forKey: "local.runtime.provider") == nil {
             runtimeConfig.saveProvider(.mlx)
         }
+
+        autoResumeQueuedPrompt = UserDefaults.standard.object(forKey: "chat.autoResumeQueuedPrompt") as? Bool ?? true
+        appMemory.ensureFiles()
+        appMemory.noteHeartbeat("session started")
 
         loadOrCreateInitialSession()
     }
@@ -125,19 +139,69 @@ final class ChatViewModel: ObservableObject {
         let prompt = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !prompt.isEmpty, !isLoading else { return }
 
+        #if canImport(UIKit)
+        if UIApplication.shared.applicationState != .active {
+            queuedPrompt = prompt
+            inputText = ""
+            backgroundPaused = true
+            backgroundStatus = "Queued while app is in background."
+            appMemory.noteHeartbeat("queued prompt while backgrounded")
+            return
+        }
+        #endif
+
+        startPrompt(prompt)
+    }
+
+    private func startPrompt(_ prompt: String) {
         inputText = ""
         messages.append(ChatMessage(role: "user", text: prompt))
         trimMessagesIfNeeded()
         persistActiveSession()
         isLoading = true
+        inFlightPrompt = prompt
 
-        Task {
+        activeTask?.cancel()
+        activeTask = Task { [weak self] in
+            guard let self else { return }
             let responseText = await runPipeline(prompt: prompt)
+            if Task.isCancelled {
+                isLoading = false
+                return
+            }
             messages.append(ChatMessage(role: "assistant", text: responseText))
             trimMessagesIfNeeded()
             persistActiveSession()
+            appMemory.appendInteraction(user: prompt, assistant: responseText)
+            appMemory.appendToolTrace(toolTrace)
             notificationService.notifyAssistantReplyIfAppInBackground(responseText)
             isLoading = false
+            inFlightPrompt = nil
+            activeTask = nil
+        }
+    }
+
+    func appDidEnterBackground() {
+        backgroundPaused = true
+        if isLoading {
+            queuedPrompt = inFlightPrompt ?? queuedPrompt
+            activeTask?.cancel()
+            activeTask = nil
+            isLoading = false
+            backgroundStatus = "Paused to avoid iPad background GPU limits."
+            appMemory.noteHeartbeat("paused active generation due to background")
+        } else {
+            backgroundStatus = "Background mode: local inference paused."
+        }
+    }
+
+    func appWillEnterForeground() {
+        backgroundPaused = false
+        backgroundStatus = ""
+        if autoResumeQueuedPrompt, let pending = queuedPrompt, !pending.isEmpty, !isLoading {
+            queuedPrompt = nil
+            startPrompt(pending)
+            appMemory.noteHeartbeat("auto-resumed queued prompt on foreground")
         }
     }
 

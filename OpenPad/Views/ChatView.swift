@@ -26,6 +26,7 @@ private enum SidebarPanel: String, CaseIterable, Identifiable {
 }
 
 struct ChatView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var vm = ChatViewModel()
     @State private var showSettings = false
     @State private var showSidebar = true
@@ -81,6 +82,15 @@ struct ChatView: View {
                                 Text(attachmentStatus)
                                     .font(.caption2)
                                     .foregroundColor(.secondary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.horizontal)
+                                    .padding(.top, 2)
+                            }
+
+                            if vm.backgroundPaused || !vm.backgroundStatus.isEmpty {
+                                Text(vm.backgroundStatus.isEmpty ? "Background mode active." : vm.backgroundStatus)
+                                    .font(.caption2)
+                                    .foregroundColor(.orange)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .padding(.horizontal)
                                     .padding(.top, 2)
@@ -262,6 +272,16 @@ struct ChatView: View {
         }
         .onDisappear {
             cronRunner.stop()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            switch phase {
+            case .background:
+                vm.appDidEnterBackground()
+            case .active:
+                vm.appWillEnterForeground()
+            default:
+                break
+            }
         }
     }
 
@@ -1447,6 +1467,10 @@ private struct SettingsView: View {
                         Text("Reduces context, OCR, and network retries for better thermal stability.")
                             .font(.caption2)
                             .foregroundColor(.secondary)
+                    }
+
+                    Toggle(isOn: $vm.autoResumeQueuedPrompt) {
+                        Label("Auto-resume queued prompt on foreground", systemImage: "play.circle")
                     }
 
                     SecureField("Brave API Key", text: $braveApiKey)
