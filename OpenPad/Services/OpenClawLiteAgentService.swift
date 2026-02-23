@@ -265,11 +265,19 @@ final class OpenClawLiteAgentService {
 
     private func userExplicitlyAskedMemorySave(in prompt: String) -> Bool {
         let p = prompt.lowercased()
-        let triggers = [
-            "guarda en memoria", "guardar en memoria", "recuerda esto", "memoriza", "acuérdate", "acuerdate",
+
+        let directTriggers = [
+            "guardar en memoria", "guarda en memoria", "recuerda esto", "memoriza", "acuérdate", "acuerdate",
             "remember this", "save this"
         ]
-        return triggers.contains { p.contains($0) }
+        if directTriggers.contains(where: { p.contains($0) }) { return true }
+
+        // Detecta variantes naturales: "guarda eso en memoria", "guárdalo", etc.
+        if p.contains("guarda") && p.contains("memoria") { return true }
+        if p.contains("guardar") && p.contains("memoria") { return true }
+        if p.contains("guárdalo") || p.contains("guardalo") { return true }
+
+        return false
     }
 
     private func preferredLanguageInstruction() -> String {
