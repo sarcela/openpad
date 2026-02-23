@@ -1,5 +1,13 @@
 import Foundation
 
+#if canImport(LlamaCpp)
+import LlamaCpp
+#endif
+
+#if canImport(llama)
+import llama
+#endif
+
 enum LlamaServiceError: LocalizedError {
     case modelNotConfigured
     case modelFileNotFound(String)
@@ -9,6 +17,7 @@ enum LlamaServiceError: LocalizedError {
     case emptyResponse
     case nonLocalEndpointBlocked
     case nativeBackendRequired
+    case nativeBackendUnavailable(String)
 
     var errorDescription: String? {
         switch self {
@@ -28,6 +37,8 @@ enum LlamaServiceError: LocalizedError {
             return "llama.cpp endpoint must be local (127.0.0.1/localhost) in offline strict mode"
         case .nativeBackendRequired:
             return "Offline strict mode requires native llama.cpp backend or local llama-server on loopback"
+        case .nativeBackendUnavailable(let reason):
+            return "Native llama.cpp unavailable: \(reason)"
         }
     }
 }
@@ -35,6 +46,7 @@ enum LlamaServiceError: LocalizedError {
 final class LlamaLocalModelService {
     private var modelPath: String?
     private let runtimeConfig = LocalRuntimeConfig.shared
+    private let native = LlamaNativeAdapter.shared
 
     func configureModel(path: String) throws {
         let clean = path.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -50,8 +62,33 @@ final class LlamaLocalModelService {
             throw LlamaServiceError.modelNotConfigured
         }
 
-        // En modo estricto offline, bloqueamos endpoints no locales.
-        if runtimeConfig.isOfflineStrictModeEnabled() {
+        let strictOffline = runtimeConfig.isOfflineStrictModeEnabled()
+
+        // Native-first path (GGUF on-device) when module is present and adapter is wired.
+        do {
+            if let nativeOut = try await native.generate(prompt: prompt, modelPath: modelPath) {
+                let clean = nativeOut.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !clean.isEmpty {
+                    return clean
+                }
+                if strictOffline {
+                    throw LlamaServiceError.nativeBackendUnavailable("native backend returned empty output")
+                }
+            }
+        } catch {
+            if strictOffline {
+                // In strict mode, do not fallback to any non-local path.
+                let cfg = runtimeConfig.loadLlama()
+                if let base = URL(string: cfg.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)), isLocalEndpoint(base) {
+                    // Local loopback llama-server is allowed in strict mode.
+                } else {
+                    throw (error as? LlamaServiceError) ?? LlamaServiceError.nativeBackendUnavailable(error.localizedDescription)
+                }
+            }
+        }
+
+        // If strict mode is enabled, only loopback llama-server is allowed as fallback.
+        if strictOffline {
             let cfg = runtimeConfig.loadLlama()
             guard let base = URL(string: cfg.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)),
                   isLocalEndpoint(base) else {
@@ -59,15 +96,8 @@ final class LlamaLocalModelService {
             }
         }
 
-        // Siempre intentamos primero backend nativo (si existe en el build).
-        #if canImport(LlamaCpp)
-        // Adapter hook: si integras un paquete con APIs nativas, enrútalo aquí.
-        // Hoy mantenemos el camino llama-server local para compatibilidad.
-        _ = modelPath
-        #endif
-
         let out = try await runViaLlamaServer(prompt: prompt, modelPath: modelPath)
-        if runtimeConfig.isOfflineStrictModeEnabled(), out.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        if strictOffline, out.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             throw LlamaServiceError.nativeBackendRequired
         }
         return out
@@ -79,7 +109,6 @@ final class LlamaLocalModelService {
             throw LlamaServiceError.invalidBaseURL
         }
 
-        // Endpoint OpenAI-compatible de llama-server.
         base.append(path: "v1/chat/completions")
 
         let explicitModel = cfg.model.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -118,7 +147,6 @@ final class LlamaLocalModelService {
                 return text
             }
 
-            // Fallback: algunos builds usan /completion con campo content
             if let asText = String(data: data, encoding: .utf8),
                let raw = extractContentField(from: asText), !raw.isEmpty {
                 return raw
@@ -154,6 +182,38 @@ final class LlamaLocalModelService {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
         }
         return nil
+    }
+}
+
+private struct LlamaNativeAdapter {
+    static let shared = LlamaNativeAdapter()
+
+    private init() {}
+
+    var hasAnyNativeModule: Bool {
+        #if canImport(LlamaCpp) || canImport(llama)
+        true
+        #else
+        false
+        #endif
+    }
+
+    func generate(prompt: String, modelPath: String) async throws -> String? {
+        #if canImport(LlamaCpp)
+        // Compile-safe hook for Swift wrappers exposing module `LlamaCpp`.
+        // Keep this shim API-agnostic; concrete package wiring can be done here
+        // without touching call sites.
+        _ = prompt
+        _ = modelPath
+        throw LlamaServiceError.nativeBackendUnavailable("LlamaCpp module detected but adapter is not bound to package API yet")
+        #elseif canImport(llama)
+        // Compile-safe hook for C module `llama`.
+        _ = prompt
+        _ = modelPath
+        throw LlamaServiceError.nativeBackendUnavailable("llama module detected but adapter is not bound to package API yet")
+        #else
+        return nil
+        #endif
     }
 }
 
