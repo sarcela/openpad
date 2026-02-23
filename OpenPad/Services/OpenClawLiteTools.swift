@@ -475,22 +475,11 @@ final class OpenClawLiteTools {
     }
 
     private func summarizeText(_ text: String) -> String {
-        let clean = text.replacingOccurrences(of: "
-
-
-", with: "
-
-")
+        let clean = text.replacingOccurrences(of: "\n\n\n", with: "\n\n")
         if clean.count <= 900 { return clean }
         let start = String(clean.prefix(550))
         let end = String(clean.suffix(300))
-        return "Resumen rápido (extractivo):
-
-\(start)
-
-[...]
-
-\(end)"
+        return "Resumen rápido (extractivo):\n\n\(start)\n\n[...]\n\n\(end)"
     }
 
     private func evaluateMath(_ expression: String) -> String {
@@ -518,21 +507,16 @@ final class OpenClawLiteTools {
     }
 
     private func csvPreview(text: String, maxRows: Int) -> String {
-        let rows = text.split(separator: "
-", omittingEmptySubsequences: false).map(String.init)
+        let rows = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
         guard !rows.isEmpty else { return "CSV vacío" }
         let shown = rows.prefix(maxRows)
         let cols = rows.first?.split(separator: ",").count ?? 0
         let header = "Filas: \(rows.count), columnas (estimadas): \(cols)"
-        return header + "
-
-" + shown.joined(separator: "
-")
+        return header + "\n\n" + shown.joined(separator: "\n")
     }
 
     private func markdownTOC(_ text: String) -> String {
-        let lines = text.split(separator: "
-").map(String.init)
+        let lines = text.split(separator: "\n").map(String.init)
         let items = lines.compactMap { line -> String? in
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             guard trimmed.hasPrefix("#") else { return nil }
@@ -542,22 +526,18 @@ final class OpenClawLiteTools {
             let indent = String(repeating: "  ", count: max(0, level - 1))
             return "\(indent)- \(title)"
         }
-        return items.isEmpty ? "Sin encabezados markdown" : items.joined(separator: "
-")
+        return items.isEmpty ? "Sin encabezados markdown" : items.joined(separator: "\n")
     }
 
     private func simpleDiff(old: String, new: String) -> String {
-        let oldLines = old.split(separator: "
-", omittingEmptySubsequences: false).map(String.init)
-        let newLines = new.split(separator: "
-", omittingEmptySubsequences: false).map(String.init)
+        let oldLines = old.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        let newLines = new.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
         let oldSet = Set(oldLines)
         let newSet = Set(newLines)
         let removed = oldSet.subtracting(newSet).prefix(50).map { "- \($0)" }
         let added = newSet.subtracting(oldSet).prefix(50).map { "+ \($0)" }
         if removed.isEmpty && added.isEmpty { return "Sin diferencias detectables por línea" }
-        return (["Cambios detectados:"] + removed + added).joined(separator: "
-")
+        return (["Cambios detectados:"] + removed + added).joined(separator: "\n")
     }
 
     private func normalizedURL(from input: String) -> URL? {
