@@ -1429,6 +1429,11 @@ private struct SettingsView: View {
         var id: String { rawValue }
     }
 
+    enum QuickPanel: String, Identifiable {
+        case skills, crons, heartbeat, files
+        var id: String { rawValue }
+    }
+
     @ObservedObject var vm: ChatViewModel
     @Environment(\.dismiss) private var dismiss
 
@@ -1471,10 +1476,7 @@ private struct SettingsView: View {
     @State private var braveApiKey = ""
     @State private var showMemoryManager = false
     @State private var internetOpenAccess = true
-    @State private var showSkillsManager = false
-    @State private var showCronsManager = false
-    @State private var showHeartbeatManager = false
-    @State private var showFilesManager = false
+    @State private var quickPanel: QuickPanel?
     @State private var showToolsManager = false
     @State private var showDownloadsManager = false
     @State private var showAdvancedModelIDs = false
@@ -1875,14 +1877,11 @@ private struct SettingsView: View {
                         Label("Abrir gestor de memory", systemImage: "brain.head.profile")
                     }
 
-                    HStack {
-                        Button("Skills") { showSkillsManager = true }
-                        Spacer()
-                        Button("Crons") { showCronsManager = true }
-                        Spacer()
-                        Button("Heartbeat") { showHeartbeatManager = true }
-                        Spacer()
-                        Button("Archivos") { showFilesManager = true }
+                    VStack(alignment: .leading, spacing: 8) {
+                        Button("Skills") { quickPanel = .skills }
+                        Button("Crons") { quickPanel = .crons }
+                        Button("Heartbeat") { quickPanel = .heartbeat }
+                        Button("Files") { quickPanel = .files }
                     }
                     .font(.caption)
                 } header: {
@@ -2000,17 +1999,17 @@ private struct SettingsView: View {
             .sheet(isPresented: $showMemoryManager) {
                 MemoryManagerView()
             }
-            .sheet(isPresented: $showSkillsManager) {
-                SkillsManagerView()
-            }
-            .sheet(isPresented: $showCronsManager) {
-                CronsManagerView()
-            }
-            .sheet(isPresented: $showHeartbeatManager) {
-                HeartbeatManagerView()
-            }
-            .sheet(isPresented: $showFilesManager) {
-                FilesManagerView()
+            .sheet(item: $quickPanel) { panel in
+                switch panel {
+                case .skills:
+                    SkillsManagerView()
+                case .crons:
+                    CronsManagerView()
+                case .heartbeat:
+                    HeartbeatManagerView()
+                case .files:
+                    FilesManagerView()
+                }
             }
             .sheet(isPresented: $showToolsManager) {
                 ToolsManagerView(toolPermissions: $toolPermissions)
