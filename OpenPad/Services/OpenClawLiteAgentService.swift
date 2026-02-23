@@ -92,7 +92,7 @@ final class OpenClawLiteAgentService {
                 return .init(text: extractContentFromJsonLike(finalReply) ?? finalReply, trace: trace)
             }
             trace.append("Planner: no valid JSON, direct answer")
-            return .init(text: modelReply, trace: trace)
+            return try await applyQualityGate(userPrompt: userPrompt, recentMessages: recentMessages, candidate: modelReply, trace: trace)
         }
 
         if decision.type == "final" {
@@ -115,12 +115,12 @@ final class OpenClawLiteAgentService {
                 }
             }
             trace.append("Planner: final without tools")
-            return .init(text: decision.content ?? modelReply, trace: trace)
+            return try await applyQualityGate(userPrompt: userPrompt, recentMessages: recentMessages, candidate: decision.content ?? modelReply, trace: trace)
         }
 
         guard decision.type == "tool_call", let name = decision.name else {
             trace.append("Planner: unknown output, direct answer")
-            return .init(text: modelReply, trace: trace)
+            return try await applyQualityGate(userPrompt: userPrompt, recentMessages: recentMessages, candidate: modelReply, trace: trace)
         }
 
         trace.append("Tool call: \(name)")
@@ -185,15 +185,78 @@ final class OpenClawLiteAgentService {
         let finalReply = try await localModelService.runLocal(prompt: secondPrompt, purpose: .chat)
 
         if let finalDecision = parseDecision(from: finalReply), let content = finalDecision.content, !content.isEmpty {
-            return .init(text: content, trace: trace)
+            return try await applyQualityGate(userPrompt: userPrompt, recentMessages: recentMessages, candidate: content, trace: trace)
         }
 
         if let extracted = extractContentFromJsonLike(finalReply), !extracted.isEmpty {
             trace.append("Finalize fallback: extracted content from malformed JSON")
-            return .init(text: extracted, trace: trace)
+            return try await applyQualityGate(userPrompt: userPrompt, recentMessages: recentMessages, candidate: extracted, trace: trace)
         }
 
-        return .init(text: finalReply, trace: trace)
+        return try await applyQualityGate(userPrompt: userPrompt, recentMessages: recentMessages, candidate: finalReply, trace: trace)
+    }
+
+    private func applyQualityGate(userPrompt: String, recentMessages: [ChatMessage], candidate: String, trace: [String]) async throws -> OpenClawAgentOutput {
+        var traceOut = trace
+        let clean = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        var score = 100
+        var reasons: [String] = []
+
+        if clean.count < 8 {
+            score -= 25
+            reasons.append("too_short")
+        }
+
+        if let lastAssistant = recentMessages.reversed().first(where: { $0.role.lowercased() == "assistant" })?.text,
+           !lastAssistant.isEmpty,
+           normalizedForCompare(lastAssistant) == normalizedForCompare(clean) {
+            score -= 45
+            reasons.append("repeated_answer")
+        }
+
+        if shouldForceAttachmentTool(userPrompt: userPrompt, recentMessages: recentMessages) {
+            let attachmentContext = buildAttachmentContext(from: userPrompt, recentMessages: recentMessages)
+            let overlap = sharedLongTokenCount(a: clean, b: attachmentContext)
+            if overlap < 2 {
+                score -= 50
+                reasons.append("low_attachment_grounding")
+            }
+        }
+
+        traceOut.append("quality_gate: score=\(score) reasons=\(reasons.isEmpty ? "ok" : reasons.joined(separator: ","))")
+
+        guard score < 60 else {
+            return .init(text: clean, trace: traceOut)
+        }
+
+        // One corrective pass only.
+        if reasons.contains("low_attachment_grounding") {
+            let candidates = attachmentCandidates(from: userPrompt, recentMessages: recentMessages)
+            if let file = candidates.first {
+                traceOut.append("corrective_pass: analyze_attachment(\(file))")
+                let toolResult = await tools.execute(name: "analyze_attachment", arguments: ["fileName": file, "maxChars": "8000"])
+                let secondPrompt = buildFinalizePrompt(userPrompt: userPrompt, toolName: "analyze_attachment", toolResult: toolResult)
+                let reply = try await localModelService.runLocal(prompt: secondPrompt, purpose: .chat)
+                let fixed = extractContentFromJsonLike(reply) ?? reply
+                return .init(text: fixed.trimmingCharacters(in: .whitespacesAndNewlines), trace: traceOut)
+            }
+        }
+
+        if reasons.contains("repeated_answer") && shouldForceTimeTool(userPrompt) {
+            traceOut.append("corrective_pass: get_time")
+            let toolResult = await tools.execute(name: "get_time", arguments: [:])
+            let secondPrompt = buildFinalizePrompt(userPrompt: userPrompt, toolName: "get_time", toolResult: toolResult)
+            let reply = try await localModelService.runLocal(prompt: secondPrompt, purpose: .chat)
+            let fixed = extractContentFromJsonLike(reply) ?? reply
+            return .init(text: fixed.trimmingCharacters(in: .whitespacesAndNewlines), trace: traceOut)
+        }
+
+        return .init(text: clean, trace: traceOut)
+    }
+
+    private func normalizedForCompare(_ text: String) -> String {
+        text.lowercased().replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func shouldBypassPlannerForCurrentModel() -> Bool {
