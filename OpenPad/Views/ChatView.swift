@@ -467,9 +467,21 @@ private struct MessageRowView: View {
             if isUser { Spacer(minLength: 24) }
 
             VStack(alignment: .leading, spacing: 6) {
-                Text(msg.role.uppercased())
-                    .font(.caption2)
-                    .foregroundColor(isUser ? .white.opacity(0.85) : .secondary)
+                HStack(spacing: 6) {
+                    Text(msg.role.uppercased())
+                        .font(.caption2)
+                        .foregroundColor(isUser ? .white.opacity(0.85) : .secondary)
+
+                    if let badge = msg.modelBadge, !badge.isEmpty {
+                        Text(badge)
+                            .font(.caption2)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(isUser ? Color.white.opacity(0.2) : Color.blue.opacity(0.12))
+                            .foregroundColor(isUser ? .white : .blue)
+                            .clipShape(Capsule())
+                    }
+                }
 
                 Text(msg.text)
                     .foregroundColor(isUser ? .white : .primary)

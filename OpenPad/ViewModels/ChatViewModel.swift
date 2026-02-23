@@ -170,7 +170,7 @@ final class ChatViewModel: ObservableObject {
                 self.isLoading = false
                 return
             }
-            self.messages.append(ChatMessage(role: "assistant", text: responseText))
+            self.messages.append(ChatMessage(role: "assistant", text: responseText, modelBadge: self.lastModelUsedBadge))
             self.trimMessagesIfNeeded()
             self.persistActiveSession()
             self.appMemory.appendInteraction(user: prompt, assistant: responseText)
