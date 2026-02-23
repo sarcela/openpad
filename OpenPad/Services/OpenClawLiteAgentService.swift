@@ -1,4 +1,10 @@
 import Foundation
+#if canImport(Speech)
+import Speech
+#endif
+#if canImport(AVFoundation)
+import AVFoundation
+#endif
 
 struct OpenClawAgentOutput {
     let text: String
@@ -21,7 +27,13 @@ final class OpenClawLiteAgentService {
             trace.append("Planner bypass: thinking model compatibility mode")
 
             if hasAttachmentHint(in: userPrompt) {
-                let attachmentContext = buildAttachmentContext(from: userPrompt)
+                var attachmentContext = buildAttachmentContext(from: userPrompt)
+                let audioContext = await buildAudioContext(from: userPrompt)
+                if !audioContext.isEmpty {
+                    attachmentContext += "\n\n[audio transcript]\n\(audioContext)"
+                    trace.append("Compat audio mode: attached transcription context")
+                }
+
                 if !attachmentContext.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                    attachmentContext != "(no attachments)" {
                     trace.append("Compat attachment mode: using injected attachment context")
@@ -481,6 +493,81 @@ final class OpenClawLiteAgentService {
             seen.insert(key)
             return true
         }
+    }
+
+    private func buildAudioContext(from prompt: String) async -> String {
+        let names = extractAttachmentNames(from: prompt)
+        guard !names.isEmpty else { return "" }
+
+        let audioNames = names.filter { n in
+            let l = n.lowercased()
+            return l.hasSuffix(".m4a") || l.hasSuffix(".mp3") || l.hasSuffix(".wav") || l.hasSuffix(".aac") || l.hasSuffix(".caf")
+        }
+        guard !audioNames.isEmpty else { return "" }
+
+        var rows: [String] = []
+        for name in audioNames.prefix(1) {
+            if let url = resolveAttachmentURL(fileName: name),
+               let transcript = await transcribeAudio(url: url),
+               !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                rows.append("[\(name)]\n\(String(transcript.prefix(2400)))")
+            }
+        }
+        return rows.joined(separator: "\n\n")
+    }
+
+    private func resolveAttachmentURL(fileName: String) -> URL? {
+        do {
+            let docs = try LocalModelConfig.shared.documentsDirectory()
+            let dir = docs.appendingPathComponent("OpenClawFiles/Attachments", isDirectory: true)
+            let exact = dir.appendingPathComponent(fileName)
+            if FileManager.default.fileExists(atPath: exact.path) { return exact }
+
+            let items = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
+            let lower = fileName.lowercased()
+            if let ci = items.first(where: { $0.lastPathComponent.lowercased() == lower }) {
+                return ci
+            }
+            let stem = URL(fileURLWithPath: fileName).deletingPathExtension().lastPathComponent.lowercased()
+            if let partial = items.first(where: { $0.lastPathComponent.lowercased().contains(stem) }) {
+                return partial
+            }
+            return nil
+        } catch {
+            return nil
+        }
+    }
+
+    private func transcribeAudio(url: URL) async -> String? {
+        #if canImport(Speech)
+        let status = await withCheckedContinuation { (cont: CheckedContinuation<SFSpeechRecognizerAuthorizationStatus, Never>) in
+            SFSpeechRecognizer.requestAuthorization { cont.resume(returning: $0) }
+        }
+        guard status == .authorized else { return nil }
+
+        guard let recognizer = SFSpeechRecognizer(locale: .current), recognizer.isAvailable else { return nil }
+
+        return await withCheckedContinuation { (cont: CheckedContinuation<String?, Never>) in
+            let req = SFSpeechURLRecognitionRequest(url: url)
+            req.shouldReportPartialResults = false
+            var resumed = false
+            recognizer.recognitionTask(with: req) { result, error in
+                if resumed { return }
+                if error != nil {
+                    resumed = true
+                    cont.resume(returning: nil)
+                    return
+                }
+                if let result, result.isFinal {
+                    resumed = true
+                    cont.resume(returning: result.bestTranscription.formattedString)
+                }
+            }
+        }
+        #else
+        _ = url
+        return nil
+        #endif
     }
 
     private func buildRecentContext(from messages: [ChatMessage]) -> String {
