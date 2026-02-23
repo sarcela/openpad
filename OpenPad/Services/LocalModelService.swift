@@ -31,13 +31,15 @@ final class LocalModelService {
         case .llamaCpp:
             do {
                 try autoConfigureModelIfPresent()
-                return try await llama.runLocal(prompt: prompt)
+                let out = try await llama.runLocal(prompt: prompt)
+                return sanitizeModelOutput(out)
             } catch LlamaServiceError.modelNotConfigured {
                 try await Task.sleep(nanoseconds: 300_000_000)
                 return "No llama.cpp model selected. Add a .gguf in Models and select it in Settings."
             }
         case .ollama:
-            return try await ollama.runLocal(prompt: prompt)
+            let out = try await ollama.runLocal(prompt: prompt)
+            return sanitizeModelOutput(out)
         case .mlx:
             let chatModel = runtimeConfig.loadMLXModelName()
             let modelOverride: String?
@@ -52,7 +54,8 @@ final class LocalModelService {
                     modelOverride = chatModel
                 }
             }
-            return try await mlx.runLocal(prompt: prompt, modelIdOverride: modelOverride)
+            let out = try await mlx.runLocal(prompt: prompt, modelIdOverride: modelOverride)
+            return sanitizeModelOutput(out)
         }
     }
 
@@ -85,6 +88,20 @@ final class LocalModelService {
             out.append(String(text[idx..<end]))
             idx = end
             if out.count >= 12 { break }
+        }
+        return out
+    }
+
+    private func sanitizeModelOutput(_ text: String) -> String {
+        var out = text
+
+        // Remove chain-of-thought blocks emitted by some reasoning models.
+        out = out.replacingOccurrences(of: "(?is)<think>.*?</think>", with: "", options: .regularExpression)
+        out = out.replacingOccurrences(of: "(?im)^\s*thinking:\s*$[\s\S]*", with: "", options: .regularExpression)
+
+        out = out.trimmingCharacters(in: .whitespacesAndNewlines)
+        if out.isEmpty {
+            return "I processed your request, but the model returned an internal reasoning block only. Please retry."
         }
         return out
     }

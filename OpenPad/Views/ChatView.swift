@@ -1242,9 +1242,17 @@ private struct SettingsView: View {
                                 }
                             }
 
+                            if !mlxDownloadedModels.isEmpty {
+                                Picker("Downloaded models", selection: $mlxModelName) {
+                                    ForEach(mlxDownloadedModels, id: \.self) { modelId in
+                                        Text(modelId).tag(modelId)
+                                    }
+                                }
+                            }
+
                             Button("Use suggested model") {
                                 mlxModelName = mlxPresetModel
-                                importMessage = "Modelo MLX seleccionado: \(mlxPresetModel)"
+                                importMessage = "Selected MLX model: \(mlxPresetModel)"
                             }
 
                             TextField("MLX model (manual)", text: $mlxModelName)
@@ -1254,7 +1262,14 @@ private struct SettingsView: View {
                             Toggle("Use a separate model for tools", isOn: $separateToolsModelEnabled)
 
                             if separateToolsModelEnabled {
-                                TextField("Modelo MLX para tools", text: $mlxToolsModelName)
+                                if !mlxDownloadedModels.isEmpty {
+                                    Picker("Downloaded tools model", selection: $mlxToolsModelName) {
+                                        ForEach(mlxDownloadedModels, id: \.self) { modelId in
+                                            Text(modelId).tag(modelId)
+                                        }
+                                    }
+                                }
+                                TextField("MLX tools model", text: $mlxToolsModelName)
                                     .textInputAutocapitalization(.never)
                                     .autocorrectionDisabled()
                                 Text("More RAM usage: may cause OOM/crashes on iPad if both models are heavy.")
