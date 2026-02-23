@@ -395,6 +395,66 @@ final class OpenClawLiteTools {
         return result
     }
 
+    private func appFileExists(relativePath: String) -> Bool {
+        do {
+            let url = try sandboxedFileURL(relativePath: relativePath)
+            return FileManager.default.fileExists(atPath: url.path)
+        } catch {
+            return false
+        }
+    }
+
+    private func appendAppFile(relativePath: String, text: String) throws {
+        let url = try sandboxedFileURL(relativePath: relativePath)
+        let parent = url.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+        if FileManager.default.fileExists(atPath: url.path) {
+            let handle = try FileHandle(forWritingTo: url)
+            defer { try? handle.close() }
+            try handle.seekToEnd()
+            if let data = text.data(using: .utf8) {
+                try handle.write(contentsOf: data)
+            }
+        } else {
+            try text.write(to: url, atomically: true, encoding: .utf8)
+        }
+    }
+
+    private func deleteAppFile(relativePath: String) throws {
+        let url = try sandboxedFileURL(relativePath: relativePath)
+        if FileManager.default.fileExists(atPath: url.path) {
+            try FileManager.default.removeItem(at: url)
+        }
+    }
+
+    private func todayString() -> String {
+        let f = DateFormatter()
+        f.dateStyle = .full
+        f.timeStyle = .medium
+        f.locale = .current
+        f.timeZone = .current
+        return f.string(from: Date())
+    }
+
+    private func summarizeText(_ text: String) -> String {
+        let clean = text.replacingOccurrences(of: "
+
+
+", with: "
+
+")
+        if clean.count <= 900 { return clean }
+        let start = String(clean.prefix(550))
+        let end = String(clean.suffix(300))
+        return "Resumen rápido (extractivo):
+
+\(start)
+
+[...]
+
+\(end)"
+    }
+
     private func normalizedURL(from input: String) -> URL? {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
         if let u = URL(string: trimmed), ["http", "https"].contains(u.scheme?.lowercased() ?? "") {
