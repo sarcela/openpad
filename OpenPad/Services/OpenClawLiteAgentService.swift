@@ -39,8 +39,9 @@ final class OpenClawLiteAgentService {
                 trace.append("Compat attachment mode: using injected attachment context")
                 let prompt = """
                 You are OpenClaw Lite in compatibility mode.
-                Use ONLY the attachment context below to answer the user's question precisely.
-                If required info is missing in the attachment text, say exactly what is missing.
+                Use ONLY the attachment context below. Do not invent facts.
+                If evidence is missing, say: "No encuentro evidencia suficiente en el adjunto para afirmarlo." and ask for a clearer page/section.
+                Include 1-2 short evidence quotes copied verbatim from the attachment context.
                 Do not output JSON schemas.
                 Do not include <think> blocks.
 
@@ -53,7 +54,11 @@ final class OpenClawLiteAgentService {
                 let override = multimodalOverrideModel(for: userPrompt)
                 if let override { trace.append("Compat override model: \(override)") }
                 let reply = try await localModelService.runLocal(prompt: prompt, purpose: .chat, modelOverride: override)
-                return .init(text: reply, trace: trace)
+                let grounded = enforceGrounding(reply: reply, attachmentContext: attachmentContext)
+                if grounded != reply {
+                    trace.append("Grounding guard: replaced low-evidence answer")
+                }
+                return .init(text: grounded, trace: trace)
             }
 
             let directPrompt = buildDirectCompatPrompt(userPrompt: userPrompt, recentMessages: recentMessages)
@@ -455,6 +460,20 @@ final class OpenClawLiteAgentService {
             }
         }
         return chunks.joined(separator: "\n\n")
+    }
+
+    private func enforceGrounding(reply: String, attachmentContext: String) -> String {
+        let evidenceScore = sharedLongTokenCount(a: reply, b: attachmentContext)
+        if evidenceScore >= 2 { return reply }
+        return "No encuentro evidencia suficiente en el adjunto para afirmarlo. Compárteme el nombre exacto del archivo o una página/sección específica y lo verifico textual."
+    }
+
+    private func sharedLongTokenCount(a: String, b: String) -> Int {
+        func tokens(_ s: String) -> Set<String> {
+            let raw = s.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init)
+            return Set(raw.filter { $0.count >= 6 })
+        }
+        return tokens(a).intersection(tokens(b)).count
     }
 
     private func hasAttachmentHint(in text: String) -> Bool {
