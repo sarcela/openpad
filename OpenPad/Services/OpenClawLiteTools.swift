@@ -107,9 +107,11 @@ struct OpenClawLiteConfig {
             "get_time", "calendar_today",
             "save_memory", "list_memories", "search_memories", "clear_memories",
             "read_file", "write_file", "append_file", "delete_file", "list_files", "file_exists",
+            "read_attachment", "list_attachments",
             "http_get", "summarize_url", "brave_search",
             "calculate", "make_uuid", "json_parse", "csv_preview", "markdown_toc", "diff_text",
-            "regex_extract", "json_path", "csv_filter", "html_to_text", "keyword_extract", "chunk_text",
+            "regex_extract", "base64_encode", "base64_decode", "url_encode", "url_decode",
+            "json_path", "csv_filter", "html_to_text", "keyword_extract", "chunk_text",
             "extract_code_blocks", "lint_markdown", "table_to_bullets", "normalize_whitespace"
         ]
     }
@@ -236,6 +238,24 @@ final class OpenClawLiteTools {
                 return .init(ok: false, output: "list_files error: \(error.localizedDescription)")
             }
 
+        case "list_attachments":
+            do {
+                let rows = try listAttachments()
+                return .init(ok: true, output: rows.isEmpty ? "No attachments" : rows.joined(separator: "\n"))
+            } catch {
+                return .init(ok: false, output: "list_attachments error: \(error.localizedDescription)")
+            }
+
+        case "read_attachment":
+            let fileName = (arguments["fileName"] ?? arguments["name"] ?? arguments["path"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !fileName.isEmpty else { return .init(ok: false, output: "Missing argument: fileName") }
+            let maxChars = Int(arguments["maxChars"] ?? arguments["max_chars"] ?? "4000") ?? 4000
+            let snippet = readAttachmentSnippet(fileName: fileName, maxChars: max(300, min(16000, maxChars)))
+            if snippet.isEmpty {
+                return .init(ok: false, output: "Attachment not found or could not be read: \(fileName)")
+            }
+            return .init(ok: true, output: snippet)
+
         case "http_get":
             let urlString = (arguments["url"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             let allowDirect = (arguments["allow_host"] ?? "false").lowercased() == "true"
@@ -293,6 +313,26 @@ final class OpenClawLiteTools {
             let text = arguments["text"] ?? ""
             guard !pattern.isEmpty, !text.isEmpty else { return .init(ok: false, output: "Missing argument: pattern/text") }
             return .init(ok: true, output: regexExtract(pattern: pattern, text: text))
+
+        case "base64_encode":
+            let text = arguments["text"] ?? ""
+            guard let data = text.data(using: .utf8) else { return .init(ok: false, output: "Invalid text") }
+            return .init(ok: true, output: data.base64EncodedString())
+
+        case "base64_decode":
+            let text = (arguments["text"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let data = Data(base64Encoded: text), let decoded = String(data: data, encoding: .utf8) else {
+                return .init(ok: false, output: "Invalid base64")
+            }
+            return .init(ok: true, output: decoded)
+
+        case "url_encode":
+            let text = arguments["text"] ?? ""
+            return .init(ok: true, output: text.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? text)
+
+        case "url_decode":
+            let text = arguments["text"] ?? ""
+            return .init(ok: true, output: text.removingPercentEncoding ?? text)
 
         case "json_path":
             let text = arguments["text"] ?? ""
@@ -358,6 +398,19 @@ final class OpenClawLiteTools {
         }
     }
 
+
+    func listAttachments() throws -> [String] {
+        let docs = try documentsDirectory()
+        let dir = docs.appendingPathComponent("OpenClawFiles/Attachments", isDirectory: true)
+        guard FileManager.default.fileExists(atPath: dir.path) else { return [] }
+        let items = try FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey], options: [.skipsHiddenFiles])
+        let sorted = items.sorted { a, b in
+            let ad = (try? a.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            let bd = (try? b.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            return ad > bd
+        }
+        return sorted.map { $0.lastPathComponent }
+    }
 
     func readAttachmentSnippet(fileName: String, maxChars: Int = 4000) -> String {
         let clean = fileName.trimmingCharacters(in: .whitespacesAndNewlines)
