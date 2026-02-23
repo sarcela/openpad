@@ -16,6 +16,7 @@ final class OpenClawLiteAgentService {
     private let localModelService = LocalModelService()
     private let tools = OpenClawLiteTools()
     private let runtimeConfig = LocalRuntimeConfig.shared
+    private var lastAttachmentFileName: String?
     private let liteConfig = OpenClawLiteConfig.shared
     private let contextManager = OpenClawLiteContextManager.shared
 
@@ -81,6 +82,7 @@ final class OpenClawLiteAgentService {
                 trace.append("Planner fallback: force attachment tool")
                 let candidates = attachmentCandidates(from: userPrompt, recentMessages: recentMessages)
                 if let file = candidates.first {
+                    lastAttachmentFileName = file
                     let toolResult = await tools.execute(name: "analyze_attachment", arguments: ["fileName": file, "maxChars": "8000"])
                     trace.append("Tool result: \(toolResult.ok ? "ok" : "error")")
                     let secondPrompt = buildFinalizePrompt(userPrompt: userPrompt, toolName: "analyze_attachment", toolResult: toolResult)
@@ -111,6 +113,7 @@ final class OpenClawLiteAgentService {
                 trace.append("Planner override: force attachment tool for follow-up question")
                 let candidates = attachmentCandidates(from: userPrompt, recentMessages: recentMessages)
                 if let file = candidates.first {
+                    lastAttachmentFileName = file
                     let toolResult = await tools.execute(name: "analyze_attachment", arguments: ["fileName": file, "maxChars": "8000"])
                     trace.append("Tool result: \(toolResult.ok ? "ok" : "error")")
                     let secondPrompt = buildFinalizePrompt(userPrompt: userPrompt, toolName: "analyze_attachment", toolResult: toolResult)
@@ -147,6 +150,7 @@ final class OpenClawLiteAgentService {
         } else if hasLocalAttachmentHint, ["http_get", "summarize_url", "brave_search"].contains(name) {
             toolName = "analyze_attachment"
             if let f = attachmentCandidatesAll.first {
+                lastAttachmentFileName = f
                 toolArgs = ["fileName": f, "maxChars": "8000"]
                 trace.append("Tool guard: web tool replaced with analyze_attachment (\(f))")
             } else {
@@ -164,6 +168,7 @@ final class OpenClawLiteAgentService {
         if ["read_attachment", "analyze_attachment"].contains(toolName) {
             if (toolArgs["fileName"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 if let first = attachmentCandidatesAll.first {
+                    lastAttachmentFileName = first
                     toolArgs["fileName"] = first
                     trace.append("Tool arg autofill: fileName=\(first)")
                 }
@@ -247,6 +252,7 @@ final class OpenClawLiteAgentService {
         if reasons.contains("low_attachment_grounding") {
             let candidates = attachmentCandidates(from: userPrompt, recentMessages: recentMessages)
             if let file = candidates.first {
+                lastAttachmentFileName = file
                 traceOut.append("corrective_pass: analyze_attachment(\(file))")
                 let toolResult = await tools.execute(name: "analyze_attachment", arguments: ["fileName": file, "maxChars": "8000"])
                 let secondPrompt = buildFinalizePrompt(userPrompt: userPrompt, toolName: "analyze_attachment", toolResult: toolResult)
@@ -293,6 +299,7 @@ final class OpenClawLiteAgentService {
         // Intent: explicit local attachment questions should prioritize attachment tools.
         let asksAttachmentContent = lower.contains("pdf") || lower.contains("adjunto") || lower.contains("attachment") || lower.contains("archivo") || lower.contains("factura") || lower.contains("recibo") || lower.contains("invoice") || lower.contains("de que trata") || lower.contains("what does it say") || lower.contains("resumen") || lower.contains("summary")
         if runtimeConfig.isIntentRouteAttachmentEnabled(), asksAttachmentContent, let file = attachmentFiles.first {
+            lastAttachmentFileName = file
             var t = trace
             t.append("intent_router: intent=attachment_query confidence=high tool=analyze_attachment file=\(file)")
             runtimeConfig.incrementIntentRouteMetric("attachment_query")
@@ -678,7 +685,14 @@ final class OpenClawLiteAgentService {
     private func attachmentCandidates(from prompt: String, recentMessages: [ChatMessage]) -> [String] {
         let direct = extractAttachmentNames(from: prompt)
         if !direct.isEmpty { return direct }
-        return recentAttachmentNames(from: recentMessages)
+
+        let recent = recentAttachmentNames(from: recentMessages)
+        if !recent.isEmpty { return recent }
+
+        if let remembered = lastAttachmentFileName, !remembered.isEmpty {
+            return [remembered]
+        }
+        return []
     }
 
     private func shouldForceAttachmentTool(userPrompt: String, recentMessages: [ChatMessage]) -> Bool {
