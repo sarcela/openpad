@@ -109,7 +109,8 @@ struct OpenClawLiteConfig {
             "calendar_today", "summarize_url", "http_get", "brave_search", "calculate", "make_uuid",
             "json_parse", "csv_preview", "markdown_toc", "diff_text",
             "regex_extract", "base64_encode", "base64_decode", "url_encode", "url_decode",
-            "json_path", "csv_filter", "html_to_text", "keyword_extract", "chunk_text"
+            "json_path", "csv_filter", "html_to_text", "keyword_extract", "chunk_text",
+            "extract_code_blocks", "lint_markdown", "table_to_bullets", "normalize_whitespace"
         ]
     }
 
@@ -542,6 +543,78 @@ final class OpenClawLiteTools {
         return (["Cambios detectados:"] + removed + added).joined(separator: "\n")
     }
 
+    private func extractCodeBlocks(_ text: String) -> String {
+        let pattern = #"```([a-zA-Z0-9_-]*)\n([\s\S]*?)```"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return "Regex inválido" }
+        let range = NSRange(text.startIndex..., in: text)
+        let matches = regex.matches(in: text, options: [], range: range)
+        if matches.isEmpty { return "Sin bloques de código" }
+
+        let rows: [String] = matches.prefix(20).enumerated().compactMap { idx, m in
+            guard let langR = Range(m.range(at: 1), in: text),
+                  let codeR = Range(m.range(at: 2), in: text) else { return nil }
+            let lang = String(text[langR]).isEmpty ? "plain" : String(text[langR])
+            let code = String(text[codeR]).trimmingCharacters(in: .whitespacesAndNewlines)
+            return "[Block \(idx + 1) - \(lang)]\n\(String(code.prefix(1200)))"
+        }
+        return rows.joined(separator: "\n\n")
+    }
+
+    private func lintMarkdown(_ text: String) -> String {
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        var issues: [String] = []
+
+        var headingLevels: [Int] = []
+        for (i, line) in lines.enumerated() {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("#") {
+                let lvl = trimmed.prefix { $0 == "#" }.count
+                headingLevels.append(lvl)
+                if lvl > 1, let prev = headingLevels.dropLast().last, lvl - prev > 1 {
+                    issues.append("Línea \(i + 1): salto abrupto de encabezado H\(prev) -> H\(lvl)")
+                }
+            }
+            if trimmed.contains("	") {
+                issues.append("Línea \(i + 1): contiene tabulaciones")
+            }
+        }
+
+        if text.contains("  ") {
+            issues.append("Espacios dobles detectados (revisar formato)")
+        }
+
+        return issues.isEmpty ? "Markdown OK" : issues.prefix(40).joined(separator: "\n")
+    }
+
+    private func tableToBullets(_ text: String) -> String {
+        let rows = text.split(separator: "\n").map(String.init).filter { $0.contains("|") }
+        guard rows.count >= 2 else { return "No detecté una tabla markdown" }
+
+        let parsed = rows.map { row in
+            row.split(separator: "|").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        }
+        guard let header = parsed.first, header.count >= 2 else { return "Tabla inválida" }
+
+        let body = parsed.dropFirst().filter { !$0.allSatisfy { Set($0).isSubset(of: Set("-:")) } }
+        if body.isEmpty { return "Sin filas de datos" }
+
+        let out = body.prefix(80).map { cols -> String in
+            let pairs = zip(header, cols).map { "\($0): \($1)" }
+            return "- " + pairs.joined(separator: " · ")
+        }
+        return out.joined(separator: "\n")
+    }
+
+    private func normalizeWhitespace(_ text: String) -> String {
+        var out = text.replacingOccurrences(of: "\r\n", with: "\n")
+        out = out.replacingOccurrences(of: "\t", with: " ")
+        while out.contains("  ") {
+            out = out.replacingOccurrences(of: "  ", with: " ")
+        }
+        out = out.replacingOccurrences(of: "\n\n\n", with: "\n\n")
+        return out.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private func jsonPath(text: String, path: String) -> String {
         guard let data = text.data(using: .utf8),
               let obj = try? JSONSerialization.jsonObject(with: data) else {
@@ -566,15 +639,12 @@ final class OpenClawLiteTools {
     }
 
     private func csvFilter(text: String, contains: String) -> String {
-        let rows = text.split(separator: "
-", omittingEmptySubsequences: false).map(String.init)
+        let rows = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
         guard !rows.isEmpty else { return "CSV vacío" }
-        guard !contains.isEmpty else { return rows.prefix(50).joined(separator: "
-") }
+        guard !contains.isEmpty else { return rows.prefix(50).joined(separator: "\n") }
         let filtered = rows.filter { $0.localizedCaseInsensitiveContains(contains) }
         if filtered.isEmpty { return "Sin filas coincidentes" }
-        return filtered.prefix(80).joined(separator: "
-")
+        return filtered.prefix(80).joined(separator: "\n")
     }
 
     private func htmlToText(_ html: String) -> String {
@@ -594,8 +664,7 @@ final class OpenClawLiteTools {
         }
         let ranked = freq.sorted { $0.value > $1.value }.prefix(top)
         if ranked.isEmpty { return "Sin keywords" }
-        return ranked.map { "\($0.key): \($0.value)" }.joined(separator: "
-")
+        return ranked.map { "\($0.key): \($0.value)" }.joined(separator: "\n")
     }
 
     private func chunkText(text: String, size: Int) -> String {
@@ -605,15 +674,12 @@ final class OpenClawLiteTools {
         var i = 1
         while idx < text.endIndex {
             let end = text.index(idx, offsetBy: size, limitedBy: text.endIndex) ?? text.endIndex
-            out.append("[Chunk \(i)]
-" + text[idx..<end])
+            out.append("[Chunk \(i)]\n" + text[idx..<end])
             idx = end
             i += 1
             if out.count >= 12 { break }
         }
-        return out.joined(separator: "
-
-")
+        return out.joined(separator: "\n\n")
     }
 
     private func regexExtract(pattern: String, text: String) -> String {
@@ -632,8 +698,7 @@ final class OpenClawLiteTools {
             }
             return "#\(idx + 1): " + groups.joined(separator: " | ")
         }
-        return rows.joined(separator: "
-")
+        return rows.joined(separator: "\n")
     }
 
     private func normalizedURL(from input: String) -> URL? {
