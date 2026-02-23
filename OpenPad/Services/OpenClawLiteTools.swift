@@ -10,6 +10,7 @@ struct OpenClawLiteConfig {
         static let httpAllowlistHosts = "openclawlite.http.allowlist.hosts"
         static let braveApiKey = "openclawlite.brave.api.key"
         static let internetOpenAccess = "openclawlite.internet.open.access"
+        static let mlxDownloadedModels = "openclawlite.mlx.downloaded.models"
     }
 
     private let defaultHosts = ["docs.openclaw.ai", "api.github.com", "wttr.in"]
@@ -46,6 +47,25 @@ struct OpenClawLiteConfig {
 
     func setInternetOpenAccessEnabled(_ enabled: Bool) {
         UserDefaults.standard.set(enabled, forKey: Keys.internetOpenAccess)
+    }
+
+    func loadDownloadedMLXModels() -> [String] {
+        UserDefaults.standard.stringArray(forKey: Keys.mlxDownloadedModels) ?? []
+    }
+
+    func markMLXModelDownloaded(_ modelId: String) {
+        let clean = modelId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return }
+        var rows = Set(loadDownloadedMLXModels())
+        rows.insert(clean)
+        UserDefaults.standard.set(Array(rows).sorted(), forKey: Keys.mlxDownloadedModels)
+    }
+
+    func unmarkMLXModelDownloaded(_ modelId: String) {
+        let clean = modelId.trimmingCharacters(in: .whitespacesAndNewlines)
+        var rows = Set(loadDownloadedMLXModels())
+        rows.remove(clean)
+        UserDefaults.standard.set(Array(rows).sorted(), forKey: Keys.mlxDownloadedModels)
     }
 }
 

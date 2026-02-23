@@ -697,6 +697,7 @@ private struct SettingsView: View {
     @State private var mlxPresetModel = "mlx-community/Qwen2.5-1.5B-Instruct-4bit"
     @State private var isDownloadingMLXModel = false
     @State private var mlxDownloadProgress: Double = 0
+    @State private var mlxDownloadedModels: [String] = []
 
     @State private var importMessage = ""
     @State private var modelToDelete: URL?
@@ -767,14 +768,28 @@ private struct SettingsView: View {
                                 .textInputAutocapitalization(.never)
                                 .autocorrectionDisabled()
 
-                            Button {
-                                Task {
-                                    await downloadSelectedMLXModel()
+                            if isCurrentMLXModelDownloaded() {
+                                HStack {
+                                    Label("Modelo ya descargado", systemImage: "checkmark.seal.fill")
+                                        .font(.caption)
+                                        .foregroundColor(.green)
+                                    Spacer()
+                                    Button(role: .destructive) {
+                                        removeCurrentMLXModelDownloadMark()
+                                    } label: {
+                                        Label("Borrar", systemImage: "trash")
+                                    }
                                 }
-                            } label: {
-                                Label(isDownloadingMLXModel ? "Descargando..." : "Descargar modelo MLX seleccionado", systemImage: "arrow.down.circle")
+                            } else {
+                                Button {
+                                    Task {
+                                        await downloadSelectedMLXModel()
+                                    }
+                                } label: {
+                                    Label(isDownloadingMLXModel ? "Descargando..." : "Descargar modelo MLX seleccionado", systemImage: "arrow.down.circle")
+                                }
+                                .disabled(isDownloadingMLXModel || mlxModelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                             }
-                            .disabled(isDownloadingMLXModel || mlxModelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
                             Text("Tamaño aprox: \(mlxEstimatedSizeText(for: mlxModelName))")
                                 .font(.caption)
@@ -973,6 +988,7 @@ private struct SettingsView: View {
                 allowlistHostsText = openClawLiteConfig.allowlistHostsText()
                 braveApiKey = openClawLiteConfig.loadBraveApiKey()
                 internetOpenAccess = openClawLiteConfig.isInternetOpenAccessEnabled()
+                mlxDownloadedModels = openClawLiteConfig.loadDownloadedMLXModels()
 
                 refreshModels()
 
@@ -1146,10 +1162,25 @@ private struct SettingsView: View {
             try await mlxService.prewarmModel(modelId: cleanId)
             mlxDownloadProgress = 1.0
             importMessage = "Modelo MLX descargado/listo: \(cleanId)"
+            openClawLiteConfig.markMLXModelDownloaded(cleanId)
+            mlxDownloadedModels = openClawLiteConfig.loadDownloadedMLXModels()
         } catch {
             importMessage = "No pude descargar el modelo MLX: \(error.localizedDescription)"
             mlxDownloadProgress = 0
         }
+    }
+
+    private func isCurrentMLXModelDownloaded() -> Bool {
+        let clean = mlxModelName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !clean.isEmpty && mlxDownloadedModels.contains(clean)
+    }
+
+    private func removeCurrentMLXModelDownloadMark() {
+        let clean = mlxModelName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return }
+        openClawLiteConfig.unmarkMLXModelDownloaded(clean)
+        mlxDownloadedModels = openClawLiteConfig.loadDownloadedMLXModels()
+        importMessage = "Modelo marcado como no descargado: \(clean)"
     }
 
     private func mlxEstimatedSizeText(for modelId: String) -> String {
