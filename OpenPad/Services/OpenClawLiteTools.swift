@@ -112,7 +112,8 @@ struct OpenClawLiteConfig {
             "calculate", "make_uuid", "json_parse", "csv_preview", "markdown_toc", "diff_text",
             "regex_extract", "base64_encode", "base64_decode", "url_encode", "url_decode",
             "json_path", "csv_filter", "html_to_text", "keyword_extract", "chunk_text",
-            "extract_code_blocks", "lint_markdown", "table_to_bullets", "normalize_whitespace"
+            "extract_code_blocks", "lint_markdown", "table_to_bullets", "normalize_whitespace",
+            "word_count", "text_stats", "extract_emails", "extract_urls", "analyze_attachment"
         ]
     }
 
@@ -382,6 +383,37 @@ final class OpenClawLiteTools {
             let text = arguments["text"] ?? ""
             guard !text.isEmpty else { return .init(ok: false, output: "Missing argument: text") }
             return .init(ok: true, output: normalizeWhitespace(text))
+
+        case "word_count":
+            let text = arguments["text"] ?? ""
+            guard !text.isEmpty else { return .init(ok: false, output: "Missing argument: text") }
+            let words = text.split { !$0.isLetter && !$0.isNumber }.count
+            return .init(ok: true, output: "words: \(words)")
+
+        case "text_stats":
+            let text = arguments["text"] ?? ""
+            guard !text.isEmpty else { return .init(ok: false, output: "Missing argument: text") }
+            return .init(ok: true, output: textStats(text))
+
+        case "extract_emails":
+            let text = arguments["text"] ?? ""
+            guard !text.isEmpty else { return .init(ok: false, output: "Missing argument: text") }
+            return .init(ok: true, output: extractEmails(from: text))
+
+        case "extract_urls":
+            let text = arguments["text"] ?? ""
+            guard !text.isEmpty else { return .init(ok: false, output: "Missing argument: text") }
+            return .init(ok: true, output: extractURLs(from: text))
+
+        case "analyze_attachment":
+            let fileName = (arguments["fileName"] ?? arguments["name"] ?? arguments["path"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !fileName.isEmpty else { return .init(ok: false, output: "Missing argument: fileName") }
+            let maxChars = Int(arguments["maxChars"] ?? arguments["max_chars"] ?? "6000") ?? 6000
+            let snippet = readAttachmentSnippet(fileName: fileName, maxChars: max(500, min(20000, maxChars)))
+            guard !snippet.isEmpty else { return .init(ok: false, output: "Attachment not found or could not be read: \(fileName)") }
+            let keywords = keywordExtract(text: snippet, top: 12)
+            let summary = summarizeText(snippet)
+            return .init(ok: true, output: "[attachment:\(fileName)]\n\n\(summary)\n\n[top keywords]\n\(keywords)")
 
         default:
             return .init(ok: false, output: "Unknown tool: \(name)")
@@ -961,6 +993,40 @@ final class OpenClawLiteTools {
         }
         out = out.replacingOccurrences(of: "\n\n\n", with: "\n\n")
         return out.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func textStats(_ text: String) -> String {
+        let chars = text.count
+        let words = text.split { !$0.isLetter && !$0.isNumber }.count
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false).count
+        let paragraphs = text.split(separator: "\n\n").count
+        return "chars: \(chars)\nwords: \(words)\nlines: \(lines)\nparagraphs: \(paragraphs)"
+    }
+
+    private func extractEmails(from text: String) -> String {
+        let pattern = #"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return "Invalid regex" }
+        let range = NSRange(text.startIndex..., in: text)
+        let matches = regex.matches(in: text, options: [], range: range)
+        let rows = matches.compactMap { m -> String? in
+            guard let r = Range(m.range, in: text) else { return nil }
+            return String(text[r])
+        }
+        if rows.isEmpty { return "No emails found" }
+        return Array(Set(rows)).sorted().joined(separator: "\n")
+    }
+
+    private func extractURLs(from text: String) -> String {
+        let pattern = #"https?://[^\s\)\]\>\"]+"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else { return "Invalid regex" }
+        let range = NSRange(text.startIndex..., in: text)
+        let matches = regex.matches(in: text, options: [], range: range)
+        let rows = matches.compactMap { m -> String? in
+            guard let r = Range(m.range, in: text) else { return nil }
+            return String(text[r])
+        }
+        if rows.isEmpty { return "No URLs found" }
+        return Array(Set(rows)).sorted().joined(separator: "\n")
     }
 
     private func jsonPath(text: String, path: String) -> String {

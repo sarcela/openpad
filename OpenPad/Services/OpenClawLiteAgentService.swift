@@ -115,50 +115,23 @@ final class OpenClawLiteAgentService {
         Recent conversation context:
         \(recentContext)
 
-        Herramientas disponibles:
-        1) get_time(arguments: {})
-        2) save_memory(arguments: {"text":"..."})
-        3) list_memories(arguments: {"limit":"10"})
-        4) search_memories(arguments: {"query":"...","limit":"5"})
-        5) clear_memories(arguments: {"confirm":"YES"}) [destructive]
-        6) read_file(arguments: {"path":"archivo.txt"}) [Documents/OpenClawFiles only]
-        7) write_file(arguments: {"path":"archivo.txt","text":"..."}) [Documents/OpenClawFiles only]
-        8) list_files(arguments: {"path":"subcarpeta/opcional"}) [Documents/OpenClawFiles only]
-        9) file_exists(arguments: {"path":"archivo.txt"})
-        10) append_file(arguments: {"path":"archivo.txt","text":"..."})
-        11) delete_file(arguments: {"path":"archivo.txt","confirm":"YES"}) [destructive]
-        12) list_attachments(arguments: {})
-        13) read_attachment(arguments: {"fileName":"receipt.pdf","maxChars":"4000"})
-        14) calendar_today(arguments: {})
-        13) summarize_url(arguments: {"url":"https://..."})
-        14) http_get(arguments: {"url":"https://..."})
-        15) brave_search(arguments: {"query":"...","count":"5"}) [requiere API key]
-        16) calculate(arguments: {"expression":"2+2*10"})
-        17) make_uuid(arguments: {})
-        18) json_parse(arguments: {"text":"{...}"})
-        19) csv_preview(arguments: {"text":"a,b\n1,2","rows":"8"})
-        20) markdown_toc(arguments: {"text":"# Titulo"})
-        21) diff_text(arguments: {"old":"...","new":"..."})
-        22) regex_extract(arguments: {"pattern":"...","text":"..."})
-        23) base64_encode(arguments: {"text":"..."})
-        24) base64_decode(arguments: {"text":"..."})
-        25) url_encode(arguments: {"text":"..."})
-        26) url_decode(arguments: {"text":"..."})
-        27) json_path(arguments: {"text":"{...}","path":"$.a.b"})
-        28) csv_filter(arguments: {"text":"csv...","contains":"foo"})
-        29) html_to_text(arguments: {"text":"<html...>"})
-        30) keyword_extract(arguments: {"text":"...","top":"12"})
-        31) chunk_text(arguments: {"text":"...","size":"1200"})
-        32) extract_code_blocks(arguments: {"text":"..."})
-        33) lint_markdown(arguments: {"text":"..."})
-        34) table_to_bullets(arguments: {"text":"..."})
-        35) normalize_whitespace(arguments: {"text":"..."})
+        Tools available (examples):
+        - get_time(arguments: {})
+        - save_memory/list_memories/search_memories/clear_memories
+        - read_file/write_file/list_files/file_exists/append_file/delete_file
+        - list_attachments/read_attachment/analyze_attachment
+        - calendar_today/summarize_url/http_get/brave_search
+        - calculate/make_uuid/json_parse/csv_preview/markdown_toc/diff_text
+        - regex_extract/base64_encode/base64_decode/url_encode/url_decode
+        - json_path/csv_filter/html_to_text/keyword_extract/chunk_text
+        - extract_code_blocks/lint_markdown/table_to_bullets/normalize_whitespace
+        - word_count/text_stats/extract_emails/extract_urls
 
-        Esquema de salida:
+        Output schema:
         - respuesta final:
           {"type":"final","content":"..."}
         - llamada de herramienta:
-          {"type":"tool_call","name":"get_time|save_memory|list_memories|search_memories|clear_memories|read_file|write_file|list_files|file_exists|append_file|delete_file|list_attachments|read_attachment|calendar_today|summarize_url|http_get|brave_search|calculate|make_uuid|json_parse|csv_preview|markdown_toc|diff_text|regex_extract|base64_encode|base64_decode|url_encode|url_decode|json_path|csv_filter|html_to_text|keyword_extract|chunk_text|extract_code_blocks|lint_markdown|table_to_bullets|normalize_whitespace","arguments":{"key":"value"}}
+          {"type":"tool_call","name":"get_time|save_memory|list_memories|search_memories|clear_memories|read_file|write_file|list_files|file_exists|append_file|delete_file|list_attachments|read_attachment|analyze_attachment|calendar_today|summarize_url|http_get|brave_search|calculate|make_uuid|json_parse|csv_preview|markdown_toc|diff_text|regex_extract|base64_encode|base64_decode|url_encode|url_decode|json_path|csv_filter|html_to_text|keyword_extract|chunk_text|extract_code_blocks|lint_markdown|table_to_bullets|normalize_whitespace|word_count|text_stats|extract_emails|extract_urls","arguments":{"key":"value"}}
 
         Mensaje del usuario:
         \(userPrompt)
@@ -224,7 +197,7 @@ final class OpenClawLiteAgentService {
     private func heuristicDecision(from text: String) -> AgentDecision? {
         let lower = text.lowercased()
         if lower.contains("tool_call") {
-            for name in ["get_time", "save_memory", "list_memories", "search_memories", "clear_memories", "read_file", "write_file", "list_files", "file_exists", "append_file", "delete_file", "list_attachments", "read_attachment", "calendar_today", "summarize_url", "http_get", "brave_search", "calculate", "make_uuid", "json_parse", "csv_preview", "markdown_toc", "diff_text", "regex_extract", "base64_encode", "base64_decode", "url_encode", "url_decode", "json_path", "csv_filter", "html_to_text", "keyword_extract", "chunk_text", "extract_code_blocks", "lint_markdown", "table_to_bullets", "normalize_whitespace"] {
+            for name in ["get_time", "save_memory", "list_memories", "search_memories", "clear_memories", "read_file", "write_file", "list_files", "file_exists", "append_file", "delete_file", "list_attachments", "read_attachment", "analyze_attachment", "calendar_today", "summarize_url", "http_get", "brave_search", "calculate", "make_uuid", "json_parse", "csv_preview", "markdown_toc", "diff_text", "regex_extract", "base64_encode", "base64_decode", "url_encode", "url_decode", "json_path", "csv_filter", "html_to_text", "keyword_extract", "chunk_text", "extract_code_blocks", "lint_markdown", "table_to_bullets", "normalize_whitespace", "word_count", "text_stats", "extract_emails", "extract_urls"] {
                 if lower.contains(name) {
                     return AgentDecision(type: "tool_call", content: nil, name: name, arguments: [:])
                 }
