@@ -1269,6 +1269,33 @@ private struct FilesManagerView: View {
     }
 }
 
+private struct ToolsManagerView: View {
+    @Binding var toolPermissions: [String: Bool]
+    @Environment(\.dismiss) private var dismiss
+    private let config = OpenClawLiteConfig.shared
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("Tool permissions") {
+                    ForEach(config.availableToolNames(), id: \.self) { tool in
+                        Toggle(tool, isOn: Binding(
+                            get: { toolPermissions[tool, default: true] },
+                            set: { toolPermissions[tool] = $0 }
+                        ))
+                    }
+                }
+            }
+            .navigationTitle("Tools")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
 private struct SettingsView: View {
     @ObservedObject var vm: ChatViewModel
     @Environment(\.dismiss) private var dismiss
@@ -1316,6 +1343,9 @@ private struct SettingsView: View {
     @State private var showCronsManager = false
     @State private var showHeartbeatManager = false
     @State private var showFilesManager = false
+    @State private var showToolsManager = false
+    @State private var showAdvancedModelIDs = false
+    @State private var showAdvancedNetwork = false
     @State private var recentContextWindow: Double = 10
     @State private var automationLoopEnabled = false
     @State private var lowPowerModeEnabled = false
@@ -1384,22 +1414,28 @@ private struct SettingsView: View {
                                 importMessage = "Selected MLX model: \(mlxPresetModel)"
                             }
 
-                            TextField("MLX model (manual)", text: $mlxModelName)
-                                .textInputAutocapitalization(.never)
-                                .autocorrectionDisabled()
+                            Toggle("Show advanced model IDs", isOn: $showAdvancedModelIDs)
+
+                            if showAdvancedModelIDs {
+                                TextField("MLX model (manual)", text: $mlxModelName)
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled()
+                            }
 
                             Toggle("Use a separate model for tools", isOn: $separateToolsModelEnabled)
                             Toggle("Enable dual-pass reasoning (Thinking → Instruct)", isOn: $dualPassReasoningEnabled)
                             Toggle("Enable multimodal routing (Vision/Audio)", isOn: $multimodalRoutingEnabled)
 
-                            if !mlxDownloadedModels.isEmpty {
+                            if dualPassReasoningEnabled && !mlxDownloadedModels.isEmpty {
                                 Picker("Reasoning model", selection: $mlxReasoningModelName) {
                                     Text("(none)").tag("")
                                     ForEach(mlxDownloadedModels, id: \.self) { modelId in
                                         Text(modelId).tag(modelId)
                                     }
                                 }
+                            }
 
+                            if multimodalRoutingEnabled && !mlxDownloadedModels.isEmpty {
                                 Picker("Vision model", selection: $mlxVisionModelName) {
                                     Text("(none)").tag("")
                                     ForEach(mlxDownloadedModels, id: \.self) { modelId in
@@ -1415,17 +1451,22 @@ private struct SettingsView: View {
                                 }
                             }
 
-                            TextField("MLX reasoning model (optional)", text: $mlxReasoningModelName)
-                                .textInputAutocapitalization(.never)
-                                .autocorrectionDisabled()
+                            if showAdvancedModelIDs {
+                                if dualPassReasoningEnabled {
+                                    TextField("MLX reasoning model (optional)", text: $mlxReasoningModelName)
+                                        .textInputAutocapitalization(.never)
+                                        .autocorrectionDisabled()
+                                }
+                                if multimodalRoutingEnabled {
+                                    TextField("MLX vision model (optional)", text: $mlxVisionModelName)
+                                        .textInputAutocapitalization(.never)
+                                        .autocorrectionDisabled()
 
-                            TextField("MLX vision model (optional)", text: $mlxVisionModelName)
-                                .textInputAutocapitalization(.never)
-                                .autocorrectionDisabled()
-
-                            TextField("MLX audio model (optional)", text: $mlxAudioModelName)
-                                .textInputAutocapitalization(.never)
-                                .autocorrectionDisabled()
+                                    TextField("MLX audio model (optional)", text: $mlxAudioModelName)
+                                        .textInputAutocapitalization(.never)
+                                        .autocorrectionDisabled()
+                                }
+                            }
 
                             if separateToolsModelEnabled {
                                 if !mlxDownloadedModels.isEmpty {
@@ -1435,9 +1476,11 @@ private struct SettingsView: View {
                                         }
                                     }
                                 }
-                                TextField("MLX tools model", text: $mlxToolsModelName)
-                                    .textInputAutocapitalization(.never)
-                                    .autocorrectionDisabled()
+                                if showAdvancedModelIDs {
+                                    TextField("MLX tools model", text: $mlxToolsModelName)
+                                        .textInputAutocapitalization(.never)
+                                        .autocorrectionDisabled()
+                                }
                                 Text("More RAM usage: may cause OOM/crashes on iPad if both models are heavy.")
                                     .font(.caption2)
                                     .foregroundColor(.orange)
@@ -1605,25 +1648,29 @@ private struct SettingsView: View {
 
                 Section {
                     Toggle(isOn: $internetOpenAccess) {
-                        Label("Acceso abierto a internet", systemImage: "globe")
+                        Label("Open internet access", systemImage: "globe")
                     }
 
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Allowed hosts for http_get (one per line)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        TextEditor(text: $allowlistHostsText)
-                            .frame(minHeight: 90)
-                            .font(.caption)
-                            .opacity(internetOpenAccess ? 0.45 : 1)
-                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.2)))
-                            .disabled(internetOpenAccess)
-                    }
+                    Toggle("Show advanced network controls", isOn: $showAdvancedNetwork)
 
-                    if internetOpenAccess {
-                        Text("Modo abierto: puede visitar cualquier dominio.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                    if showAdvancedNetwork {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Allowed hosts for http_get (one per line)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            TextEditor(text: $allowlistHostsText)
+                                .frame(minHeight: 90)
+                                .font(.caption)
+                                .opacity(internetOpenAccess ? 0.45 : 1)
+                                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.2)))
+                                .disabled(internetOpenAccess)
+                        }
+
+                        if internetOpenAccess {
+                            Text("Open mode: can visit any domain.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
                     }
 
                     VStack(alignment: .leading, spacing: 6) {
@@ -1686,16 +1733,14 @@ private struct SettingsView: View {
                 }
 
 
-                Section("Tool permissions") {
-                    ForEach(openClawLiteConfig.availableToolNames(), id: \.self) { tool in
-                        Toggle(tool, isOn: Binding(
-                            get: { toolPermissions[tool, default: true] },
-                            set: { toolPermissions[tool] = $0 }
-                        ))
-                        .font(.caption)
+                Section("Tools") {
+                    Button {
+                        showToolsManager = true
+                    } label: {
+                        Label("Open Tools submenu", systemImage: "wrench.and.screwdriver")
                     }
 
-                    Toggle("AutoDev (micro-mejoras proactivas)", isOn: $autodevEnabled)
+                    Toggle("AutoDev (proactive micro-improvements)", isOn: $autodevEnabled)
                 }
 
                 if !importMessage.isEmpty {
@@ -1805,6 +1850,9 @@ private struct SettingsView: View {
             }
             .sheet(isPresented: $showFilesManager) {
                 FilesManagerView()
+            }
+            .sheet(isPresented: $showToolsManager) {
+                ToolsManagerView(toolPermissions: $toolPermissions)
             }
             .fileImporter(
                 isPresented: $showFileImporter,
