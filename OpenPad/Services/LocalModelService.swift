@@ -13,20 +13,20 @@ final class LocalModelService {
     private let runtimeConfig = LocalRuntimeConfig.shared
     private let liteConfig = OpenClawLiteConfig.shared
 
-    func runLocal(prompt: String, purpose: LocalInferencePurpose = .chat) async throws -> String {
+    func runLocal(prompt: String, purpose: LocalInferencePurpose = .chat, modelOverride: String? = nil) async throws -> String {
         let prepared = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let emergency = runtimeConfig.isEmergencyMemoryModeEnabled()
         let largePromptThreshold = emergency ? 4200 : (liteConfig.isLowPowerModeEnabled() ? 7000 : 12000)
 
         if prepared.count > largePromptThreshold {
             let reduced = try await reducePromptMemory(prepared, purpose: purpose)
-            return try await runLocalDirect(prompt: reduced, purpose: purpose)
+            return try await runLocalDirect(prompt: reduced, purpose: purpose, modelOverride: modelOverride)
         }
 
-        return try await runLocalDirect(prompt: prepared, purpose: purpose)
+        return try await runLocalDirect(prompt: prepared, purpose: purpose, modelOverride: modelOverride)
     }
 
-    private func runLocalDirect(prompt: String, purpose: LocalInferencePurpose) async throws -> String {
+    private func runLocalDirect(prompt: String, purpose: LocalInferencePurpose, modelOverride: String? = nil) async throws -> String {
         switch runtimeConfig.loadProvider() {
         case .llamaCpp:
             do {
@@ -42,19 +42,23 @@ final class LocalModelService {
             return sanitizeModelOutput(out)
         case .mlx:
             let chatModel = runtimeConfig.loadMLXModelName()
-            let modelOverride: String?
-            switch purpose {
-            case .chat:
-                modelOverride = chatModel
-            case .tools:
-                // Avoid OOM by preventing double-loading large models in the same interaction.
-                if runtimeConfig.isSeparateMLXToolsModelEnabled() {
-                    modelOverride = runtimeConfig.loadMLXToolsModelName()
-                } else {
-                    modelOverride = chatModel
+            let chosenModel: String?
+            if let forced = modelOverride?.trimmingCharacters(in: .whitespacesAndNewlines), !forced.isEmpty {
+                chosenModel = forced
+            } else {
+                switch purpose {
+                case .chat:
+                    chosenModel = chatModel
+                case .tools:
+                    // Avoid OOM by preventing double-loading large models in the same interaction.
+                    if runtimeConfig.isSeparateMLXToolsModelEnabled() {
+                        chosenModel = runtimeConfig.loadMLXToolsModelName()
+                    } else {
+                        chosenModel = chatModel
+                    }
                 }
             }
-            let out = try await mlx.runLocal(prompt: prompt, modelIdOverride: modelOverride)
+            let out = try await mlx.runLocal(prompt: prompt, modelIdOverride: chosenModel)
             return sanitizeModelOutput(out)
         }
     }

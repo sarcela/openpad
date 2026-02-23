@@ -1171,7 +1171,12 @@ private struct SettingsView: View {
     @State private var llamaModel = ""
     @State private var mlxModelName = ""
     @State private var mlxToolsModelName = ""
+    @State private var mlxReasoningModelName = ""
+    @State private var mlxVisionModelName = ""
+    @State private var mlxAudioModelName = ""
     @State private var separateToolsModelEnabled = false
+    @State private var dualPassReasoningEnabled = true
+    @State private var multimodalRoutingEnabled = true
     @State private var mlxPresetModel = "mlx-community/Qwen2.5-1.5B-Instruct-4bit"
     @State private var isDownloadingMLXModel = false
     @State private var mlxDownloadProgress: Double = 0
@@ -1262,6 +1267,20 @@ private struct SettingsView: View {
                                 .autocorrectionDisabled()
 
                             Toggle("Use a separate model for tools", isOn: $separateToolsModelEnabled)
+                            Toggle("Enable dual-pass reasoning (Thinking → Instruct)", isOn: $dualPassReasoningEnabled)
+                            Toggle("Enable multimodal routing (Vision/Audio)", isOn: $multimodalRoutingEnabled)
+
+                            TextField("MLX reasoning model (optional)", text: $mlxReasoningModelName)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+
+                            TextField("MLX vision model (optional)", text: $mlxVisionModelName)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+
+                            TextField("MLX audio model (optional)", text: $mlxAudioModelName)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
 
                             if separateToolsModelEnabled {
                                 if !mlxDownloadedModels.isEmpty {
@@ -1555,7 +1574,12 @@ private struct SettingsView: View {
                         runtimeConfig.saveLlama(baseURL: llamaBaseURL, model: llamaModel)
                         runtimeConfig.saveMLXModelName(mlxModelName)
                         runtimeConfig.saveMLXToolsModelName(mlxToolsModelName)
+                        runtimeConfig.saveMLXReasoningModelName(mlxReasoningModelName)
+                        runtimeConfig.saveMLXVisionModelName(mlxVisionModelName)
+                        runtimeConfig.saveMLXAudioModelName(mlxAudioModelName)
                         runtimeConfig.setSeparateMLXToolsModelEnabled(separateToolsModelEnabled)
+                        runtimeConfig.setDualPassReasoningEnabled(dualPassReasoningEnabled)
+                        runtimeConfig.setMultimodalRoutingEnabled(multimodalRoutingEnabled)
                         openClawLiteConfig.saveAllowlistHosts(allowlistHostsText)
                         openClawLiteConfig.saveBraveApiKey(braveApiKey)
                         openClawLiteConfig.setInternetOpenAccessEnabled(internetOpenAccess)
@@ -1588,7 +1612,12 @@ private struct SettingsView: View {
                 llamaModel = llama.model
                 mlxModelName = runtimeConfig.loadMLXModelName()
                 mlxToolsModelName = runtimeConfig.loadMLXToolsModelName()
+                mlxReasoningModelName = runtimeConfig.loadMLXReasoningModelName()
+                mlxVisionModelName = runtimeConfig.loadMLXVisionModelName()
+                mlxAudioModelName = runtimeConfig.loadMLXAudioModelName()
                 separateToolsModelEnabled = runtimeConfig.isSeparateMLXToolsModelEnabled()
+                dualPassReasoningEnabled = runtimeConfig.isDualPassReasoningEnabled()
+                multimodalRoutingEnabled = runtimeConfig.isMultimodalRoutingEnabled()
                 mlxPresetModel = mlxPresetModels.contains(mlxModelName) ? mlxModelName : mlxPresetModels[0]
                 allowlistHostsText = openClawLiteConfig.allowlistHostsText()
                 braveApiKey = openClawLiteConfig.loadBraveApiKey()

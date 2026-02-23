@@ -47,6 +47,11 @@ struct LocalRuntimeConfig {
         static let recentContextWindow = "agent.recent.context.window"
         static let runProfile = "agent.run.profile"
         static let emergencyMemoryMode = "agent.memory.emergency.mode"
+        static let mlxReasoningModel = "local.mlx.reasoning.model"
+        static let mlxVisionModel = "local.mlx.vision.model"
+        static let mlxAudioModel = "local.mlx.audio.model"
+        static let dualPassReasoningEnabled = "agent.dualpass.reasoning.enabled"
+        static let multimodalRoutingEnabled = "agent.multimodal.routing.enabled"
     }
 
     func loadProvider() -> LocalRuntimeProvider {
@@ -135,5 +140,45 @@ struct LocalRuntimeConfig {
 
     func setEmergencyMemoryModeEnabled(_ enabled: Bool) {
         UserDefaults.standard.set(enabled, forKey: Keys.emergencyMemoryMode)
+    }
+
+    func loadMLXReasoningModelName() -> String {
+        UserDefaults.standard.string(forKey: Keys.mlxReasoningModel) ?? ""
+    }
+
+    func saveMLXReasoningModelName(_ name: String) {
+        UserDefaults.standard.set(name.trimmingCharacters(in: .whitespacesAndNewlines), forKey: Keys.mlxReasoningModel)
+    }
+
+    func loadMLXVisionModelName() -> String {
+        UserDefaults.standard.string(forKey: Keys.mlxVisionModel) ?? ""
+    }
+
+    func saveMLXVisionModelName(_ name: String) {
+        UserDefaults.standard.set(name.trimmingCharacters(in: .whitespacesAndNewlines), forKey: Keys.mlxVisionModel)
+    }
+
+    func loadMLXAudioModelName() -> String {
+        UserDefaults.standard.string(forKey: Keys.mlxAudioModel) ?? ""
+    }
+
+    func saveMLXAudioModelName(_ name: String) {
+        UserDefaults.standard.set(name.trimmingCharacters(in: .whitespacesAndNewlines), forKey: Keys.mlxAudioModel)
+    }
+
+    func isDualPassReasoningEnabled() -> Bool {
+        UserDefaults.standard.object(forKey: Keys.dualPassReasoningEnabled) as? Bool ?? true
+    }
+
+    func setDualPassReasoningEnabled(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: Keys.dualPassReasoningEnabled)
+    }
+
+    func isMultimodalRoutingEnabled() -> Bool {
+        UserDefaults.standard.object(forKey: Keys.multimodalRoutingEnabled) as? Bool ?? true
+    }
+
+    func setMultimodalRoutingEnabled(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: Keys.multimodalRoutingEnabled)
     }
 }

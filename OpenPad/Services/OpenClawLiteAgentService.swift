@@ -38,17 +38,22 @@ final class OpenClawLiteAgentService {
                     User question:
                     \(userPrompt)
                     """
-                    let reply = try await localModelService.runLocal(prompt: prompt, purpose: .chat)
+                    let override = multimodalOverrideModel(for: userPrompt)
+                    if let override { trace.append("Compat override model: \(override)") }
+                    let reply = try await localModelService.runLocal(prompt: prompt, purpose: .chat, modelOverride: override)
                     return .init(text: reply, trace: trace)
                 }
             }
 
             let directPrompt = buildDirectCompatPrompt(userPrompt: userPrompt, recentMessages: recentMessages)
-            let directReply = try await localModelService.runLocal(prompt: directPrompt, purpose: .chat)
+            let override = multimodalOverrideModel(for: userPrompt)
+            if let override { trace.append("Compat override model: \(override)") }
+            let directReply = try await localModelService.runLocal(prompt: directPrompt, purpose: .chat, modelOverride: override)
             return .init(text: directReply, trace: trace)
         }
 
-        let firstPrompt = buildPlannerPrompt(userPrompt: userPrompt, recentMessages: recentMessages)
+        let reasoningDraft = try await buildReasoningDraftIfNeeded(userPrompt: userPrompt, recentMessages: recentMessages)
+        let firstPrompt = buildPlannerPrompt(userPrompt: userPrompt, recentMessages: recentMessages, reasoningDraft: reasoningDraft)
         let modelReply = try await localModelService.runLocal(prompt: firstPrompt, purpose: .tools)
 
         guard let decision = parseDecision(from: modelReply) else {
@@ -142,6 +147,23 @@ final class OpenClawLiteAgentService {
         return false
     }
 
+    private func multimodalOverrideModel(for userPrompt: String) -> String? {
+        guard runtimeConfig.loadProvider() == .mlx,
+              runtimeConfig.isMultimodalRoutingEnabled() else { return nil }
+
+        let lower = userPrompt.lowercased()
+        let vision = runtimeConfig.loadMLXVisionModelName().trimmingCharacters(in: .whitespacesAndNewlines)
+        let audio = runtimeConfig.loadMLXAudioModelName().trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let hasImageHint = lower.contains("[foto:") || lower.contains("[foto-camara:") || lower.contains(".png") || lower.contains(".jpg") || lower.contains(".jpeg") || lower.contains("imagen") || lower.contains("image")
+        if hasImageHint, !vision.isEmpty { return vision }
+
+        let hasAudioHint = lower.contains("[audio:") || lower.contains("audio") || lower.contains("voice") || lower.contains("speech")
+        if hasAudioHint, !audio.isEmpty { return audio }
+
+        return nil
+    }
+
     private func buildDirectCompatPrompt(userPrompt: String, recentMessages: [ChatMessage]) -> String {
         let recent = buildRecentContext(from: recentMessages)
         let attachmentContext = buildAttachmentContext(from: userPrompt)
@@ -164,7 +186,36 @@ final class OpenClawLiteAgentService {
         """
     }
 
-    private func buildPlannerPrompt(userPrompt: String, recentMessages: [ChatMessage]) -> String {
+    private func buildReasoningDraftIfNeeded(userPrompt: String, recentMessages: [ChatMessage]) async throws -> String {
+        guard runtimeConfig.loadProvider() == .mlx,
+              runtimeConfig.isDualPassReasoningEnabled() else { return "" }
+
+        let reasoningModel = runtimeConfig.loadMLXReasoningModelName().trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !reasoningModel.isEmpty else { return "" }
+
+        let recent = buildRecentContext(from: recentMessages)
+        let attachmentContext = buildAttachmentContext(from: userPrompt)
+        let prompt = """
+        Create a concise reasoning draft for another assistant that will execute tools.
+        Return ONLY short bullets with concrete facts, constraints, unknowns, and recommended next action.
+        No JSON.
+        No <think> blocks.
+
+        Attachment context:
+        \(attachmentContext)
+
+        Recent context:
+        \(recent)
+
+        User request:
+        \(userPrompt)
+        """
+
+        let draft = try await localModelService.runLocal(prompt: prompt, purpose: .chat, modelOverride: reasoningModel)
+        return String(draft.prefix(1400))
+    }
+
+    private func buildPlannerPrompt(userPrompt: String, recentMessages: [ChatMessage], reasoningDraft: String) -> String {
         let profile = runtimeConfig.loadRunProfile()
         let lowPower = OpenClawLiteConfig.shared.isLowPowerModeEnabled()
         let budget = contextManager.budget(profile: profile, lowPower: lowPower)
@@ -194,6 +245,9 @@ final class OpenClawLiteAgentService {
 
         Attachment context detected in this message:
         \(attachmentContext)
+
+        Reasoning draft (if available):
+        \(reasoningDraft.isEmpty ? "(none)" : reasoningDraft)
 
         Recent conversation context:
         \(recentContext)
