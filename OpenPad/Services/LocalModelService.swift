@@ -1,5 +1,10 @@
 import Foundation
 
+enum LocalInferencePurpose {
+    case chat
+    case tools
+}
+
 final class LocalModelService {
     private let llama = LlamaLocalModelService()
     private let ollama = OllamaLocalModelService()
@@ -7,7 +12,7 @@ final class LocalModelService {
 
     private let runtimeConfig = LocalRuntimeConfig.shared
 
-    func runLocal(prompt: String) async throws -> String {
+    func runLocal(prompt: String, purpose: LocalInferencePurpose = .chat) async throws -> String {
         switch runtimeConfig.loadProvider() {
         case .llamaCpp:
             do {
@@ -20,7 +25,14 @@ final class LocalModelService {
         case .ollama:
             return try await ollama.runLocal(prompt: prompt)
         case .mlx:
-            return try await mlx.runLocal(prompt: prompt)
+            let modelOverride: String?
+            switch purpose {
+            case .chat:
+                modelOverride = runtimeConfig.loadMLXModelName()
+            case .tools:
+                modelOverride = runtimeConfig.loadMLXToolsModelName()
+            }
+            return try await mlx.runLocal(prompt: prompt, modelIdOverride: modelOverride)
         }
     }
 

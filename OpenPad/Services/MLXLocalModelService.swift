@@ -33,9 +33,10 @@ final class MLXLocalModelService {
     private var session: ChatSession?
     #endif
 
-    func runLocal(prompt: String) async throws -> String {
+    func runLocal(prompt: String, modelIdOverride: String? = nil) async throws -> String {
         #if canImport(MLXLLM)
-        let modelId = config.loadMLXModelName().trimmingCharacters(in: .whitespacesAndNewlines)
+        let configured = modelIdOverride ?? config.loadMLXModelName()
+        let modelId = configured.trimmingCharacters(in: .whitespacesAndNewlines)
         let useModelId = modelId.isEmpty ? "mlx-community/Qwen2.5-1.5B-Instruct-4bit" : modelId
 
         let session = try await getOrCreateSession(modelId: useModelId)

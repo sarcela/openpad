@@ -24,6 +24,7 @@ struct LocalRuntimeConfig {
         static let ollamaBaseURL = "local.ollama.baseURL"
         static let ollamaModel = "local.ollama.model"
         static let mlxModel = "local.mlx.model"
+        static let mlxToolsModel = "local.mlx.tools.model"
     }
 
     func loadProvider() -> LocalRuntimeProvider {
@@ -55,5 +56,13 @@ struct LocalRuntimeConfig {
 
     func saveMLXModelName(_ name: String) {
         UserDefaults.standard.set(name.trimmingCharacters(in: .whitespacesAndNewlines), forKey: Keys.mlxModel)
+    }
+
+    func loadMLXToolsModelName() -> String {
+        UserDefaults.standard.string(forKey: Keys.mlxToolsModel) ?? "mlx-community/Phi-3.5-mini-instruct-4bit"
+    }
+
+    func saveMLXToolsModelName(_ name: String) {
+        UserDefaults.standard.set(name.trimmingCharacters(in: .whitespacesAndNewlines), forKey: Keys.mlxToolsModel)
     }
 }

@@ -113,7 +113,7 @@ final class ChatViewModel: ObservableObject {
 
     private func run(target: String, prompt: String, timeoutMs: Int) async throws -> String {
         if target == "LOCAL" {
-            let output = try await openClawLite.respond(to: prompt)
+            let output = try await openClawLite.respond(to: prompt, recentMessages: messages)
             self.toolTrace = output.trace
             return output.text
         }

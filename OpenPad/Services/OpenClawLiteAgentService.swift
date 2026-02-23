@@ -10,10 +10,10 @@ final class OpenClawLiteAgentService {
     private let localModelService = LocalModelService()
     private let tools = OpenClawLiteTools()
 
-    func respond(to userPrompt: String) async throws -> OpenClawAgentOutput {
+    func respond(to userPrompt: String, recentMessages: [ChatMessage] = []) async throws -> OpenClawAgentOutput {
         var trace: [String] = []
-        let firstPrompt = buildPlannerPrompt(userPrompt: userPrompt)
-        let modelReply = try await localModelService.runLocal(prompt: firstPrompt)
+        let firstPrompt = buildPlannerPrompt(userPrompt: userPrompt, recentMessages: recentMessages)
+        let modelReply = try await localModelService.runLocal(prompt: firstPrompt, purpose: .tools)
 
         guard let decision = parseDecision(from: modelReply) else {
             trace.append("Planner: sin JSON válido, respuesta directa")
@@ -56,7 +56,7 @@ final class OpenClawLiteAgentService {
         trace.append("Tool result: \(toolResult.ok ? "ok" : "error")")
 
         let secondPrompt = buildFinalizePrompt(userPrompt: userPrompt, toolName: toolName, toolResult: toolResult)
-        let finalReply = try await localModelService.runLocal(prompt: secondPrompt)
+        let finalReply = try await localModelService.runLocal(prompt: secondPrompt, purpose: .chat)
 
         if let finalDecision = parseDecision(from: finalReply), let content = finalDecision.content, !content.isEmpty {
             return .init(text: content, trace: trace)
@@ -70,9 +70,10 @@ final class OpenClawLiteAgentService {
         return .init(text: finalReply, trace: trace)
     }
 
-    private func buildPlannerPrompt(userPrompt: String) -> String {
+    private func buildPlannerPrompt(userPrompt: String, recentMessages: [ChatMessage]) -> String {
         let memoryContext = tools.recentMemories(limit: 8)
         let attachmentContext = buildAttachmentContext(from: userPrompt)
+        let recentContext = buildRecentContext(from: recentMessages)
         let languageInstruction = preferredLanguageInstruction()
         return """
         Eres OpenClaw Lite en iPad.
@@ -87,6 +88,9 @@ final class OpenClawLiteAgentService {
 
         Contexto de adjuntos detectados en este mensaje:
         \(attachmentContext)
+
+        Contexto reciente de conversación:
+        \(recentContext)
 
         Herramientas disponibles:
         1) get_time(arguments: {})
@@ -219,6 +223,41 @@ final class OpenClawLiteAgentService {
         }
 
         return nil
+    }
+
+    private func buildAttachmentContext(from prompt: String) -> String {
+        let names = extractAttachmentNames(from: prompt)
+        guard !names.isEmpty else { return "(sin adjuntos)" }
+
+        var chunks: [String] = []
+        for name in names {
+            let snippet = tools.readAttachmentSnippet(fileName: name)
+            if snippet.isEmpty {
+                chunks.append("[\(name)] (no pude leerlo automáticamente)")
+            } else {
+                chunks.append("[\(name)]\n\(snippet)")
+            }
+        }
+        return chunks.joined(separator: "\n\n")
+    }
+
+    private func extractAttachmentNames(from text: String) -> [String] {
+        let pattern = #"\[(?:adjunto|foto|foto-camara)\s*:\s*([^\]]+)\]"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else { return [] }
+        let range = NSRange(text.startIndex..., in: text)
+        let matches = regex.matches(in: text, options: [], range: range)
+        return matches.compactMap { m in
+            guard let r = Range(m.range(at: 1), in: text) else { return nil }
+            return String(text[r]).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    }
+
+    private func buildRecentContext(from messages: [ChatMessage]) -> String {
+        guard !messages.isEmpty else { return "(sin historial reciente)" }
+        let rows = messages.suffix(10).map { msg in
+            "\(msg.role.uppercased()): \(msg.text)"
+        }
+        return rows.joined(separator: "\n")
     }
 
     private func userExplicitlyAskedMemorySave(in prompt: String) -> Bool {

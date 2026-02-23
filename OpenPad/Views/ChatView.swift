@@ -822,6 +822,7 @@ private struct SettingsView: View {
     @State private var ollamaBaseURL = ""
     @State private var ollamaModel = ""
     @State private var mlxModelName = ""
+    @State private var mlxToolsModelName = ""
     @State private var mlxPresetModel = "mlx-community/Qwen2.5-1.5B-Instruct-4bit"
     @State private var isDownloadingMLXModel = false
     @State private var mlxDownloadProgress: Double = 0
@@ -894,6 +895,10 @@ private struct SettingsView: View {
                             }
 
                             TextField("Modelo MLX (manual)", text: $mlxModelName)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+
+                            TextField("Modelo MLX para tools", text: $mlxToolsModelName)
                                 .textInputAutocapitalization(.never)
                                 .autocorrectionDisabled()
 
@@ -1106,6 +1111,7 @@ private struct SettingsView: View {
                         runtimeConfig.saveProvider(runtimeProvider)
                         runtimeConfig.saveOllama(baseURL: ollamaBaseURL, model: ollamaModel)
                         runtimeConfig.saveMLXModelName(mlxModelName)
+                        runtimeConfig.saveMLXToolsModelName(mlxToolsModelName)
                         openClawLiteConfig.saveAllowlistHosts(allowlistHostsText)
                         openClawLiteConfig.saveBraveApiKey(braveApiKey)
                         openClawLiteConfig.setInternetOpenAccessEnabled(internetOpenAccess)
@@ -1126,6 +1132,7 @@ private struct SettingsView: View {
                 ollamaBaseURL = ollama.baseURL
                 ollamaModel = ollama.model
                 mlxModelName = runtimeConfig.loadMLXModelName()
+                mlxToolsModelName = runtimeConfig.loadMLXToolsModelName()
                 mlxPresetModel = mlxPresetModels.contains(mlxModelName) ? mlxModelName : mlxPresetModels[0]
                 allowlistHostsText = openClawLiteConfig.allowlistHostsText()
                 braveApiKey = openClawLiteConfig.loadBraveApiKey()
