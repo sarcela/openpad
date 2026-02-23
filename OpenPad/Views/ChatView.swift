@@ -884,6 +884,8 @@ private struct SettingsView: View {
     @State private var recentContextWindow: Double = 10
     @State private var automationLoopEnabled = false
     @State private var lowPowerModeEnabled = false
+    @State private var autodevEnabled = false
+    @State private var toolPermissions: [String: Bool] = [:]
 
     private let remoteConfig = RemoteModelConfig.shared
     private let localConfig = LocalModelConfig.shared
@@ -1168,6 +1170,19 @@ private struct SettingsView: View {
                     Text("Puedes cambiar entre modo abierto y modo restringido por hosts permitidos.")
                 }
 
+
+                Section("Permisos de herramientas") {
+                    ForEach(openClawLiteConfig.availableToolNames(), id: \.self) { tool in
+                        Toggle(tool, isOn: Binding(
+                            get: { toolPermissions[tool, default: true] },
+                            set: { toolPermissions[tool] = $0 }
+                        ))
+                        .font(.caption)
+                    }
+
+                    Toggle("AutoDev (micro-mejoras proactivas)", isOn: $autodevEnabled)
+                }
+
                 if !importMessage.isEmpty {
                     Section("Estado") {
                         Text(importMessage)
@@ -1195,6 +1210,10 @@ private struct SettingsView: View {
                         runtimeConfig.saveRecentContextWindow(Int(recentContextWindow))
                         openClawLiteConfig.setAutomationLoopEnabled(automationLoopEnabled)
                         openClawLiteConfig.setLowPowerModeEnabled(lowPowerModeEnabled)
+                        openClawLiteConfig.setAutodevEnabled(autodevEnabled)
+                        for (tool, enabled) in toolPermissions {
+                            openClawLiteConfig.setToolEnabled(tool, enabled: enabled)
+                        }
                         localConfig.saveSelectedModelPath(selectedModelPath.isEmpty ? nil : selectedModelPath)
                         localConfig.saveSelectedEmbeddingModelPath(selectedEmbeddingModelPath.isEmpty ? nil : selectedEmbeddingModelPath)
                         dismiss()

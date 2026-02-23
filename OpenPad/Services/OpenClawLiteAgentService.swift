@@ -10,6 +10,7 @@ final class OpenClawLiteAgentService {
     private let localModelService = LocalModelService()
     private let tools = OpenClawLiteTools()
     private let runtimeConfig = LocalRuntimeConfig.shared
+    private let liteConfig = OpenClawLiteConfig.shared
 
     func respond(to userPrompt: String, recentMessages: [ChatMessage] = []) async throws -> OpenClawAgentOutput {
         var trace: [String] = []
@@ -83,11 +84,13 @@ final class OpenClawLiteAgentService {
         let attachmentContext = buildAttachmentContext(from: userPrompt)
         let recentContext = buildRecentContext(from: recentMessages)
         let languageInstruction = preferredLanguageInstruction()
+        let autodevInstruction = liteConfig.isAutodevEnabled() ? "AutoDev: al final sugiere una micro-mejora concreta, reversible y de bajo riesgo." : "AutoDev desactivado."
         return """
         Eres OpenClaw Lite en iPad.
         \(languageInstruction)
         Decide tu siguiente acción y responde SOLO en JSON válido.
         Política de ejecución: sé persistente. Antes de concluir que algo falló, intenta al menos un enfoque alterno o un reintento razonable.
+        \(autodevInstruction)
         Puedes usar internet cuando sea útil para responder mejor.
         Si el usuario comparte una URL completa, prioriza `http_get` para leerla/resumirla directamente.
         Regla de memoria: SOLO usa `save_memory` cuando el usuario lo pida explícitamente (ej: "guarda en memoria", "recuerda esto", "memoriza").
@@ -117,12 +120,14 @@ final class OpenClawLiteAgentService {
         13) summarize_url(arguments: {"url":"https://..."})
         14) http_get(arguments: {"url":"https://..."})
         15) brave_search(arguments: {"query":"...","count":"5"}) [requiere API key]
+        16) calculate(arguments: {"expression":"2+2*10"})
+        17) make_uuid(arguments: {})
 
         Esquema de salida:
         - respuesta final:
           {"type":"final","content":"..."}
         - llamada de herramienta:
-          {"type":"tool_call","name":"get_time|save_memory|list_memories|search_memories|clear_memories|read_file|write_file|list_files|file_exists|append_file|delete_file|calendar_today|summarize_url|http_get|brave_search","arguments":{"key":"value"}}
+          {"type":"tool_call","name":"get_time|save_memory|list_memories|search_memories|clear_memories|read_file|write_file|list_files|file_exists|append_file|delete_file|calendar_today|summarize_url|http_get|brave_search|calculate|make_uuid","arguments":{"key":"value"}}
 
         Mensaje del usuario:
         \(userPrompt)
@@ -131,6 +136,7 @@ final class OpenClawLiteAgentService {
 
     private func buildFinalizePrompt(userPrompt: String, toolName: String, toolResult: OpenClawToolResult) -> String {
         let languageInstruction = preferredLanguageInstruction()
+        let autodevInstruction = liteConfig.isAutodevEnabled() ? "AutoDev: al final sugiere una micro-mejora concreta, reversible y de bajo riesgo." : "AutoDev desactivado."
         return """
         Eres OpenClaw Lite en iPad.
         Ya llamaste una herramienta. Da respuesta final al usuario en JSON válido.
@@ -188,7 +194,7 @@ final class OpenClawLiteAgentService {
     private func heuristicDecision(from text: String) -> AgentDecision? {
         let lower = text.lowercased()
         if lower.contains("tool_call") {
-            for name in ["get_time", "save_memory", "list_memories", "search_memories", "clear_memories", "read_file", "write_file", "list_files", "file_exists", "append_file", "delete_file", "calendar_today", "summarize_url", "http_get", "brave_search"] {
+            for name in ["get_time", "save_memory", "list_memories", "search_memories", "clear_memories", "read_file", "write_file", "list_files", "file_exists", "append_file", "delete_file", "calendar_today", "summarize_url", "http_get", "brave_search", "calculate", "make_uuid"] {
                 if lower.contains(name) {
                     return AgentDecision(type: "tool_call", content: nil, name: name, arguments: [:])
                 }

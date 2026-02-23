@@ -19,6 +19,8 @@ struct OpenClawLiteConfig {
         static let mlxDownloadedModels = "openclawlite.mlx.downloaded.models"
         static let automationLoopEnabled = "openclawlite.automation.loop.enabled"
         static let lowPowerMode = "openclawlite.low.power.mode"
+        static let autodevEnabled = "openclawlite.autodev.enabled"
+        static let disabledTools = "openclawlite.disabled.tools"
     }
 
     private let defaultHosts = ["docs.openclaw.ai", "api.github.com", "wttr.in"]
@@ -77,6 +79,37 @@ struct OpenClawLiteConfig {
         UserDefaults.standard.set(enabled, forKey: Keys.lowPowerMode)
     }
 
+    func isAutodevEnabled() -> Bool {
+        UserDefaults.standard.bool(forKey: Keys.autodevEnabled)
+    }
+
+    func setAutodevEnabled(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: Keys.autodevEnabled)
+    }
+
+    func isToolEnabled(_ name: String) -> Bool {
+        let disabled = Set(UserDefaults.standard.stringArray(forKey: Keys.disabledTools) ?? [])
+        return !disabled.contains(name)
+    }
+
+    func setToolEnabled(_ name: String, enabled: Bool) {
+        var disabled = Set(UserDefaults.standard.stringArray(forKey: Keys.disabledTools) ?? [])
+        if enabled { disabled.remove(name) } else { disabled.insert(name) }
+        UserDefaults.standard.set(Array(disabled).sorted(), forKey: Keys.disabledTools)
+    }
+
+    func loadDisabledTools() -> [String] {
+        UserDefaults.standard.stringArray(forKey: Keys.disabledTools) ?? []
+    }
+
+    func availableToolNames() -> [String] {
+        [
+            "get_time", "save_memory", "list_memories", "search_memories", "clear_memories",
+            "read_file", "write_file", "append_file", "delete_file", "list_files", "file_exists",
+            "calendar_today", "summarize_url", "http_get", "brave_search", "calculate", "make_uuid"
+        ]
+    }
+
     func markMLXModelDownloaded(_ modelId: String) {
         let clean = modelId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { return }
@@ -106,6 +139,10 @@ final class OpenClawLiteTools {
     private let config = OpenClawLiteConfig.shared
 
     func execute(name: String, arguments: [String: String]) async -> OpenClawToolResult {
+        if !config.isToolEnabled(name) {
+            return .init(ok: false, output: "Tool deshabilitada en Settings: \(name)")
+        }
+
         switch name {
         case "get_time":
             let now = Date()
@@ -453,6 +490,18 @@ final class OpenClawLiteTools {
 [...]
 
 \(end)"
+    }
+
+    private func evaluateMath(_ expression: String) -> String {
+        let allowed = CharacterSet(charactersIn: "0123456789+-*/(). ")
+        if expression.rangeOfCharacter(from: allowed.inverted) != nil || expression.count > 120 {
+            return "Expresión inválida"
+        }
+        let exp = NSExpression(format: expression)
+        if let value = exp.expressionValue(with: nil, context: nil) as? NSNumber {
+            return value.stringValue
+        }
+        return "No pude calcular"
     }
 
     private func normalizedURL(from input: String) -> URL? {
