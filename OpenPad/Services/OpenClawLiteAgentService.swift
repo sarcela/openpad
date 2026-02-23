@@ -90,6 +90,7 @@ final class OpenClawLiteAgentService {
         \(languageInstruction)
         Decide tu siguiente acción y responde SOLO en JSON válido.
         Política de ejecución: sé persistente. Antes de concluir que algo falló, intenta al menos un enfoque alterno o un reintento razonable.
+        Política de seguridad: para tools destructivas (`delete_file`, `clear_memories`) exige `confirm=YES`.
         \(autodevInstruction)
         Puedes usar internet cuando sea útil para responder mejor.
         Si el usuario comparte una URL completa, prioriza `http_get` para leerla/resumirla directamente.
@@ -109,13 +110,13 @@ final class OpenClawLiteAgentService {
         2) save_memory(arguments: {"text":"..."})
         3) list_memories(arguments: {"limit":"10"})
         4) search_memories(arguments: {"query":"...","limit":"5"})
-        5) clear_memories(arguments: {})
+        5) clear_memories(arguments: {"confirm":"YES"}) [destructiva]
         6) read_file(arguments: {"path":"archivo.txt"}) [solo Documents/OpenClawFiles]
         7) write_file(arguments: {"path":"archivo.txt","text":"..."}) [solo Documents/OpenClawFiles]
         8) list_files(arguments: {"path":"subcarpeta/opcional"}) [solo Documents/OpenClawFiles]
         9) file_exists(arguments: {"path":"archivo.txt"})
         10) append_file(arguments: {"path":"archivo.txt","text":"..."})
-        11) delete_file(arguments: {"path":"archivo.txt"})
+        11) delete_file(arguments: {"path":"archivo.txt","confirm":"YES"}) [destructiva]
         12) calendar_today(arguments: {})
         13) summarize_url(arguments: {"url":"https://..."})
         14) http_get(arguments: {"url":"https://..."})

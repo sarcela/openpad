@@ -195,6 +195,9 @@ final class OpenClawLiteTools {
             }
 
         case "clear_memories":
+            guard isDestructiveConfirmed(arguments) else {
+                return .init(ok: false, output: "clear_memories requiere confirmación explícita: confirm=YES")
+            }
             do {
                 try clearMemories()
                 return .init(ok: true, output: "Memories cleared")
@@ -366,15 +369,23 @@ final class OpenClawLiteTools {
     }
 
     private func searchMemory(query: String, limit: Int) throws -> [String] {
-        let rows = try readMemoryLines(limit: 200)
-        let tokens = Set(query.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init))
-        let scored: [(Int, String)] = rows.map { row in
-            let rowTokens = Set(row.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init))
-            let score = tokens.intersection(rowTokens).count
-            return (score, row)
+        let rows = try readMemoryLines(limit: 300)
+        let qTokens = normalizedTokens(query)
+        if qTokens.isEmpty { return [] }
+
+        let scored: [(Double, String)] = rows.map { row in
+            let rTokens = normalizedTokens(row)
+            let overlap = Double(qTokens.intersection(rTokens).count)
+            let denom = Double(max(1, qTokens.union(rTokens).count))
+            let jaccard = overlap / denom
+
+            // bonus por frase parcial para hacerlo más “semántico-lite”
+            let phraseBonus = row.lowercased().contains(query.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)) ? 0.25 : 0.0
+            return (jaccard + phraseBonus, row)
         }
+
         return scored
-            .filter { $0.0 > 0 }
+            .filter { $0.0 > 0.02 }
             .sorted { $0.0 > $1.0 }
             .prefix(limit)
             .map { $0.1 }
