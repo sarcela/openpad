@@ -823,6 +823,7 @@ private struct SettingsView: View {
     @State private var ollamaModel = ""
     @State private var mlxModelName = ""
     @State private var mlxToolsModelName = ""
+    @State private var separateToolsModelEnabled = false
     @State private var mlxPresetModel = "mlx-community/Qwen2.5-1.5B-Instruct-4bit"
     @State private var isDownloadingMLXModel = false
     @State private var mlxDownloadProgress: Double = 0
@@ -899,9 +900,16 @@ private struct SettingsView: View {
                                 .textInputAutocapitalization(.never)
                                 .autocorrectionDisabled()
 
-                            TextField("Modelo MLX para tools", text: $mlxToolsModelName)
-                                .textInputAutocapitalization(.never)
-                                .autocorrectionDisabled()
+                            Toggle("Usar modelo separado para tools", isOn: $separateToolsModelEnabled)
+
+                            if separateToolsModelEnabled {
+                                TextField("Modelo MLX para tools", text: $mlxToolsModelName)
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled()
+                                Text("Más RAM: puede causar cierres por memoria en iPad si ambos modelos son pesados.")
+                                    .font(.caption2)
+                                    .foregroundColor(.orange)
+                            }
 
                             if isCurrentMLXModelDownloaded() {
                                 HStack {
@@ -1124,6 +1132,7 @@ private struct SettingsView: View {
                         runtimeConfig.saveOllama(baseURL: ollamaBaseURL, model: ollamaModel)
                         runtimeConfig.saveMLXModelName(mlxModelName)
                         runtimeConfig.saveMLXToolsModelName(mlxToolsModelName)
+                        runtimeConfig.setSeparateMLXToolsModelEnabled(separateToolsModelEnabled)
                         openClawLiteConfig.saveAllowlistHosts(allowlistHostsText)
                         openClawLiteConfig.saveBraveApiKey(braveApiKey)
                         openClawLiteConfig.setInternetOpenAccessEnabled(internetOpenAccess)
@@ -1146,6 +1155,7 @@ private struct SettingsView: View {
                 ollamaModel = ollama.model
                 mlxModelName = runtimeConfig.loadMLXModelName()
                 mlxToolsModelName = runtimeConfig.loadMLXToolsModelName()
+                separateToolsModelEnabled = runtimeConfig.isSeparateMLXToolsModelEnabled()
                 mlxPresetModel = mlxPresetModels.contains(mlxModelName) ? mlxModelName : mlxPresetModels[0]
                 allowlistHostsText = openClawLiteConfig.allowlistHostsText()
                 braveApiKey = openClawLiteConfig.loadBraveApiKey()

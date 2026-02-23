@@ -72,7 +72,7 @@ final class OpenClawLiteAgentService {
     }
 
     private func buildPlannerPrompt(userPrompt: String, recentMessages: [ChatMessage]) -> String {
-        let memoryContext = tools.recentMemories(limit: 8)
+        let memoryContext = String(tools.recentMemories(limit: 6).prefix(1600))
         let attachmentContext = buildAttachmentContext(from: userPrompt)
         let recentContext = buildRecentContext(from: recentMessages)
         let languageInstruction = preferredLanguageInstruction()
@@ -231,8 +231,8 @@ final class OpenClawLiteAgentService {
         guard !names.isEmpty else { return "(sin adjuntos)" }
 
         var chunks: [String] = []
-        for name in names {
-            let snippet = tools.readAttachmentSnippet(fileName: name)
+        for name in names.prefix(2) {
+            let snippet = tools.readAttachmentSnippet(fileName: name, maxChars: 1200)
             if snippet.isEmpty {
                 chunks.append("[\(name)] (no pude leerlo automáticamente)")
             } else {
@@ -257,9 +257,10 @@ final class OpenClawLiteAgentService {
         guard !messages.isEmpty else { return "(sin historial reciente)" }
         let window = runtimeConfig.loadRecentContextWindow()
         let rows = messages.suffix(window).map { msg in
-            "\(msg.role.uppercased()): \(msg.text)"
+            let clipped = String(msg.text.prefix(380))
+            return "\(msg.role.uppercased()): \(clipped)"
         }
-        return rows.joined(separator: "\n")
+        return String(rows.joined(separator: "\n").prefix(3500))
     }
 
     private func userExplicitlyAskedMemorySave(in prompt: String) -> Bool {

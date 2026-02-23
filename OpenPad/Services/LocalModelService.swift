@@ -25,12 +25,18 @@ final class LocalModelService {
         case .ollama:
             return try await ollama.runLocal(prompt: prompt)
         case .mlx:
+            let chatModel = runtimeConfig.loadMLXModelName()
             let modelOverride: String?
             switch purpose {
             case .chat:
-                modelOverride = runtimeConfig.loadMLXModelName()
+                modelOverride = chatModel
             case .tools:
-                modelOverride = runtimeConfig.loadMLXToolsModelName()
+                // Evita OOM por doble carga de modelos grandes en una misma interacción.
+                if runtimeConfig.isSeparateMLXToolsModelEnabled() {
+                    modelOverride = runtimeConfig.loadMLXToolsModelName()
+                } else {
+                    modelOverride = chatModel
+                }
             }
             return try await mlx.runLocal(prompt: prompt, modelIdOverride: modelOverride)
         }

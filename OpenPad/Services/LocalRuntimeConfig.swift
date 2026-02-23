@@ -25,6 +25,7 @@ struct LocalRuntimeConfig {
         static let ollamaModel = "local.ollama.model"
         static let mlxModel = "local.mlx.model"
         static let mlxToolsModel = "local.mlx.tools.model"
+        static let mlxSeparateToolsModelEnabled = "local.mlx.tools.separate.enabled"
         static let recentContextWindow = "agent.recent.context.window"
     }
 
@@ -65,6 +66,14 @@ struct LocalRuntimeConfig {
 
     func saveMLXToolsModelName(_ name: String) {
         UserDefaults.standard.set(name.trimmingCharacters(in: .whitespacesAndNewlines), forKey: Keys.mlxToolsModel)
+    }
+
+    func isSeparateMLXToolsModelEnabled() -> Bool {
+        UserDefaults.standard.bool(forKey: Keys.mlxSeparateToolsModelEnabled)
+    }
+
+    func setSeparateMLXToolsModelEnabled(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: Keys.mlxSeparateToolsModelEnabled)
     }
 
     func loadRecentContextWindow() -> Int {
