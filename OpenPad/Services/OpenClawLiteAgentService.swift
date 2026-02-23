@@ -196,12 +196,30 @@ final class OpenClawLiteAgentService {
             return normalize(decoded)
         }
 
+        if let generic = decodeGenericFinal(from: raw) {
+            return AgentDecision(type: "final", content: generic, name: nil, arguments: nil)
+        }
+
         return heuristicDecision(from: text)
     }
 
     private func decodeDecision(from json: String) -> AgentDecision? {
         guard let data = json.data(using: .utf8) else { return nil }
         return try? JSONDecoder().decode(AgentDecision.self, from: data)
+    }
+
+    private func decodeGenericFinal(from json: String) -> String? {
+        guard let data = json.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        let keys = ["content", "response", "answer", "message", "output", "text"]
+        for k in keys {
+            if let v = obj[k] as? String, !v.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return v.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
+        return nil
     }
 
     private func repairLooselyFormattedJSON(_ text: String) -> String {
@@ -255,10 +273,14 @@ final class OpenClawLiteAgentService {
     }
 
     private func extractContentFromJsonLike(_ text: String) -> String? {
-        // Intenta extraer el campo content de JSON/JSON-like mal formado.
+        // Extract common final-text fields from malformed JSON/JSON-like outputs.
         let patterns = [
             #"\"content\"\s*:\s*\"((?:\\.|[^\"])*)\""#,
-            #"content\s*[:=]\s*\"([^\"]+)\""#
+            #"\"response\"\s*:\s*\"((?:\\.|[^\"])*)\""#,
+            #"\"answer\"\s*:\s*\"((?:\\.|[^\"])*)\""#,
+            #"\"message\"\s*:\s*\"((?:\\.|[^\"])*)\""#,
+            #"content\s*[:=]\s*\"([^\"]+)\""#,
+            #"response\s*[:=]\s*\"([^\"]+)\""#
         ]
 
         for pattern in patterns {
