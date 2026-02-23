@@ -1145,6 +1145,8 @@ private struct SettingsView: View {
     @State private var runtimeProvider: LocalRuntimeProvider = .mlx
     @State private var ollamaBaseURL = ""
     @State private var ollamaModel = ""
+    @State private var llamaBaseURL = ""
+    @State private var llamaModel = ""
     @State private var mlxModelName = ""
     @State private var mlxToolsModelName = ""
     @State private var separateToolsModelEnabled = false
@@ -1301,6 +1303,18 @@ private struct SettingsView: View {
                     }
 
                     if runtimeProvider == .llamaCpp {
+                    Section("Backend llama.cpp") {
+                        TextField("llama-server URL", text: $llamaBaseURL)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                        TextField("Modelo (opcional)", text: $llamaModel)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                        Text("Si dejas modelo vacío, se usa el nombre del .gguf seleccionado.")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+
                     Section {
                         if models.isEmpty {
                             Text("No hay modelos locales para chat")
@@ -1492,6 +1506,7 @@ private struct SettingsView: View {
                         remoteConfig.save(baseURL: baseURL, token: token, model: model)
                         runtimeConfig.saveProvider(runtimeProvider)
                         runtimeConfig.saveOllama(baseURL: ollamaBaseURL, model: ollamaModel)
+                        runtimeConfig.saveLlama(baseURL: llamaBaseURL, model: llamaModel)
                         runtimeConfig.saveMLXModelName(mlxModelName)
                         runtimeConfig.saveMLXToolsModelName(mlxToolsModelName)
                         runtimeConfig.setSeparateMLXToolsModelEnabled(separateToolsModelEnabled)
@@ -1521,6 +1536,9 @@ private struct SettingsView: View {
                 let ollama = runtimeConfig.loadOllama()
                 ollamaBaseURL = ollama.baseURL
                 ollamaModel = ollama.model
+                let llama = runtimeConfig.loadLlama()
+                llamaBaseURL = llama.baseURL
+                llamaModel = llama.model
                 mlxModelName = runtimeConfig.loadMLXModelName()
                 mlxToolsModelName = runtimeConfig.loadMLXToolsModelName()
                 separateToolsModelEnabled = runtimeConfig.isSeparateMLXToolsModelEnabled()

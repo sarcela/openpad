@@ -39,6 +39,8 @@ struct LocalRuntimeConfig {
         static let provider = "local.runtime.provider"
         static let ollamaBaseURL = "local.ollama.baseURL"
         static let ollamaModel = "local.ollama.model"
+        static let llamaBaseURL = "local.llama.baseURL"
+        static let llamaModel = "local.llama.model"
         static let mlxModel = "local.mlx.model"
         static let mlxToolsModel = "local.mlx.tools.model"
         static let mlxSeparateToolsModelEnabled = "local.mlx.tools.separate.enabled"
@@ -67,6 +69,20 @@ struct LocalRuntimeConfig {
         let d = UserDefaults.standard
         d.set(baseURL.trimmingCharacters(in: .whitespacesAndNewlines), forKey: Keys.ollamaBaseURL)
         d.set(model.trimmingCharacters(in: .whitespacesAndNewlines), forKey: Keys.ollamaModel)
+    }
+
+    func loadLlama() -> (baseURL: String, model: String) {
+        let d = UserDefaults.standard
+        return (
+            baseURL: d.string(forKey: Keys.llamaBaseURL) ?? "http://127.0.0.1:8080",
+            model: d.string(forKey: Keys.llamaModel) ?? ""
+        )
+    }
+
+    func saveLlama(baseURL: String, model: String) {
+        let d = UserDefaults.standard
+        d.set(baseURL.trimmingCharacters(in: .whitespacesAndNewlines), forKey: Keys.llamaBaseURL)
+        d.set(model.trimmingCharacters(in: .whitespacesAndNewlines), forKey: Keys.llamaModel)
     }
 
     func loadMLXModelName() -> String {
