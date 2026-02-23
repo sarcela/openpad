@@ -277,12 +277,17 @@ final class OpenClawLiteTools {
             }
 
         case "read_attachment":
-            let fileName = (arguments["fileName"] ?? arguments["name"] ?? arguments["path"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !fileName.isEmpty else { return .init(ok: false, output: "Missing argument: fileName") }
+            var fileName = (arguments["fileName"] ?? arguments["name"] ?? arguments["path"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            fileName = fileName.trimmingCharacters(in: CharacterSet(charactersIn: "\"'`[](){}<>.,;:"))
+            if fileName.isEmpty, let latest = try? listAttachments().first {
+                fileName = latest
+            }
+            guard !fileName.isEmpty else { return .init(ok: false, output: "Missing argument: fileName (and no attachments available)") }
             let maxChars = Int(arguments["maxChars"] ?? arguments["max_chars"] ?? "4000") ?? 4000
             let snippet = readAttachmentSnippet(fileName: fileName, maxChars: max(300, min(16000, maxChars)))
             if snippet.isEmpty {
-                return .init(ok: false, output: "Attachment not found or could not be read: \(fileName)")
+                let available = (try? listAttachments().prefix(5).joined(separator: ", ")) ?? "none"
+                return .init(ok: false, output: "Attachment not found or could not be read: \(fileName). Available attachments: \(available)")
             }
             return .init(ok: true, output: snippet)
 
@@ -435,14 +440,38 @@ final class OpenClawLiteTools {
             return .init(ok: true, output: extractURLs(from: text))
 
         case "analyze_attachment":
-            let fileName = (arguments["fileName"] ?? arguments["name"] ?? arguments["path"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !fileName.isEmpty else { return .init(ok: false, output: "Missing argument: fileName") }
+            var fileName = (arguments["fileName"] ?? arguments["name"] ?? arguments["path"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            fileName = fileName.trimmingCharacters(in: CharacterSet(charactersIn: "\"'`[](){}<>.,;:"))
             let maxChars = Int(arguments["maxChars"] ?? arguments["max_chars"] ?? "6000") ?? 6000
-            let snippet = readAttachmentSnippet(fileName: fileName, maxChars: max(500, min(20000, maxChars)))
-            guard !snippet.isEmpty else { return .init(ok: false, output: "Attachment not found or could not be read: \(fileName)") }
+
+            // If missing fileName, try latest attachment automatically.
+            if fileName.isEmpty {
+                if let latest = try? listAttachments().first {
+                    fileName = latest
+                }
+            }
+            guard !fileName.isEmpty else { return .init(ok: false, output: "Missing argument: fileName (and no attachments available)") }
+
+            var snippet = readAttachmentSnippet(fileName: fileName, maxChars: max(500, min(20000, maxChars)))
+            var usedFile = fileName
+
+            // Fallback: if named file fails, try latest attachment.
+            if snippet.isEmpty, let latest = try? listAttachments().first, latest.lowercased() != fileName.lowercased() {
+                let alt = readAttachmentSnippet(fileName: latest, maxChars: max(500, min(20000, maxChars)))
+                if !alt.isEmpty {
+                    snippet = alt
+                    usedFile = latest
+                }
+            }
+
+            guard !snippet.isEmpty else {
+                let available = (try? listAttachments().prefix(5).joined(separator: ", ")) ?? "none"
+                return .init(ok: false, output: "Attachment not found or unreadable: \(fileName). Available attachments: \(available)")
+            }
+
             let keywords = keywordExtract(text: snippet, top: 12)
             let summary = summarizeText(snippet)
-            return .init(ok: true, output: "[attachment:\(fileName)]\n\n\(summary)\n\n[top keywords]\n\(keywords)")
+            return .init(ok: true, output: "[attachment:\(usedFile)]\n\n\(summary)\n\n[top keywords]\n\(keywords)")
 
         default:
             return .init(ok: false, output: "Unknown tool: \(name)")
