@@ -98,6 +98,15 @@ struct ChatView: View {
                                     .padding(.top, 2)
                             }
 
+                            if !vm.activeDocumentBadge.isEmpty {
+                                Text("Active document: \(vm.activeDocumentBadge)")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.horizontal)
+                                    .padding(.top, 2)
+                            }
+
                             if vm.backgroundPaused || !vm.backgroundStatus.isEmpty {
                                 Text(vm.backgroundStatus.isEmpty ? "Background mode active." : vm.backgroundStatus)
                                     .font(.caption2)

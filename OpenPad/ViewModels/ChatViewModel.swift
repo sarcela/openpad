@@ -33,6 +33,7 @@ final class ChatViewModel: ObservableObject {
     }
     @Published var toolTrace: [String] = []
     @Published var lastModelUsedBadge: String = ""
+    @Published var activeDocumentBadge: String = ""
     @Published var lastLatencyMs: Int = 0
     @Published var lastErrorText: String = ""
     @Published var successCount: Int = 0
@@ -330,11 +331,13 @@ final class ChatViewModel: ObservableObject {
             } else {
                 self.lastModelUsedBadge = providerBadgeFromTrace(output.trace).map { "CHAT • \($0)" } ?? "CHAT • LOCAL"
             }
+            self.activeDocumentBadge = extractActiveDocument(from: output.trace)
             return output.text
         }
 
         self.toolTrace = []
         self.lastModelUsedBadge = "REMOTE • API"
+        self.activeDocumentBadge = ""
         return try await withTimeout(milliseconds: timeoutMs) { [self] in
             try await self.remoteService.runRemote(prompt: prompt)
         }
@@ -365,6 +368,18 @@ final class ChatViewModel: ObservableObject {
         if messages.count > maxMessages {
             messages = Array(messages.suffix(maxMessages))
         }
+    }
+
+    private func extractActiveDocument(from trace: [String]) -> String {
+        for line in trace.reversed() {
+            if let r = line.range(of: "file=") {
+                return String(line[r.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            if let r = line.range(of: "fileName=") {
+                return String(line[r.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
+        return ""
     }
 
     private func providerBadgeFromTrace(_ trace: [String]) -> String? {
