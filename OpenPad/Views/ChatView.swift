@@ -72,6 +72,10 @@ struct ChatView: View {
                                             .padding(.vertical, 4)
                                             .id(msg.id)
                                     }
+                                    if vm.isLoading {
+                                        TypingIndicatorRow()
+                                            .id("typing-indicator")
+                                    }
                                 }
                                 .padding(.horizontal)
                             }
@@ -80,7 +84,7 @@ struct ChatView: View {
                                     Button {
                                         if let last = vm.messages.last {
                                             withAnimation(.easeOut(duration: 0.2)) {
-                                                proxy.scrollTo(last.id, anchor: .bottom)
+                                                proxy.scrollTo(vm.isLoading ? "typing-indicator" : last.id, anchor: .bottom)
                                             }
                                         }
                                     } label: {
@@ -97,13 +101,13 @@ struct ChatView: View {
                             .defaultScrollAnchor(.bottom)
                             .onAppear {
                                 if let last = vm.messages.last {
-                                    proxy.scrollTo(last.id, anchor: .bottom)
+                                    proxy.scrollTo(vm.isLoading ? "typing-indicator" : last.id, anchor: .bottom)
                                 }
                             }
                             .onChange(of: vm.messages.count) { _, _ in
                                 if let last = vm.messages.last {
                                     withAnimation(.easeOut(duration: 0.2)) {
-                                        proxy.scrollTo(last.id, anchor: .bottom)
+                                        proxy.scrollTo(vm.isLoading ? "typing-indicator" : last.id, anchor: .bottom)
                                     }
                                 }
                             }
@@ -182,54 +186,73 @@ private struct MessageRowView: View {
     private var isUser: Bool { msg.role.lowercased() == "user" }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                if isUser { Spacer(minLength: 36) }
+        HStack(alignment: .bottom, spacing: 8) {
+            if !isUser { avatar("sparkles", color: .purple) }
+            if isUser { Spacer(minLength: 24) }
 
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(msg.role.uppercased())
-                        .font(.caption2)
-                        .foregroundColor(isUser ? .white.opacity(0.85) : .secondary)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(msg.role.uppercased())
+                    .font(.caption2)
+                    .foregroundColor(isUser ? .white.opacity(0.85) : .secondary)
 
-                    Text(msg.text)
-                        .foregroundColor(isUser ? .white : .primary)
-                        .textSelection(.enabled)
+                Text(msg.text)
+                    .foregroundColor(isUser ? .white : .primary)
+                    .textSelection(.enabled)
 
-                    if !isUser {
-                        let urls = detectURLs(in: msg.text)
-                        if !urls.isEmpty {
-                            VStack(alignment: .leading, spacing: 6) {
-                                ForEach(urls, id: \.absoluteString) { url in
-                                    HStack {
-                                        Link(destination: url) {
-                                            Label("Abrir", systemImage: "link")
-                                                .font(.caption)
-                                        }
-                                        Spacer()
-                                        Button {
-                                            copyToClipboard(url.absoluteString)
-                                        } label: {
-                                            Label("Copiar", systemImage: "doc.on.doc")
-                                                .font(.caption)
-                                        }
+                Text(Self.timeFmt.string(from: msg.date))
+                    .font(.caption2)
+                    .foregroundColor(isUser ? .white.opacity(0.75) : .secondary.opacity(0.8))
+
+                if !isUser {
+                    let urls = detectURLs(in: msg.text)
+                    if !urls.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            ForEach(urls, id: \.absoluteString) { url in
+                                HStack {
+                                    Link(destination: url) {
+                                        Label("Abrir", systemImage: "link")
+                                            .font(.caption)
                                     }
-                                    .padding(8)
-                                    .background(Color(.secondarySystemBackground))
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    Spacer()
+                                    Button {
+                                        copyToClipboard(url.absoluteString)
+                                    } label: {
+                                        Label("Copiar", systemImage: "doc.on.doc")
+                                            .font(.caption)
+                                    }
                                 }
+                                .padding(8)
+                                .background(Color(.secondarySystemBackground))
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
                             }
                         }
                     }
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .background(isUser ? Color.accentColor : Color(.secondarySystemBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 14))
-
-                if !isUser { Spacer(minLength: 36) }
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(isUser ? Color.accentColor : Color(.secondarySystemBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+
+            if !isUser { Spacer(minLength: 24) }
+            if isUser { avatar("person.fill", color: .blue) }
         }
     }
+
+    private func avatar(_ systemName: String, color: Color) -> some View {
+        Image(systemName: systemName)
+            .font(.caption)
+            .foregroundColor(.white)
+            .frame(width: 24, height: 24)
+            .background(color)
+            .clipShape(Circle())
+    }
+
+    private static let timeFmt: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        return f
+    }()
 
     private func detectURLs(in text: String) -> [URL] {
         guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else { return [] }
@@ -241,6 +264,42 @@ private struct MessageRowView: View {
         #if canImport(UIKit)
         UIPasteboard.general.string = text
         #endif
+    }
+}
+
+private struct TypingIndicatorRow: View {
+    @State private var phase = 0
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 8) {
+            Image(systemName: "sparkles")
+                .font(.caption)
+                .foregroundColor(.white)
+                .frame(width: 24, height: 24)
+                .background(Color.purple)
+                .clipShape(Circle())
+
+            HStack(spacing: 4) {
+                ForEach(0..<3, id: \.self) { i in
+                    Circle()
+                        .fill(Color.secondary.opacity(phase == i ? 0.9 : 0.35))
+                        .frame(width: 6, height: 6)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(Color(.secondarySystemBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+            .task {
+                while true {
+                    try? await Task.sleep(nanoseconds: 300_000_000)
+                    phase = (phase + 1) % 3
+                }
+            }
+
+            Spacer(minLength: 24)
+        }
+        .padding(.vertical, 4)
     }
 }
 
@@ -380,6 +439,152 @@ private struct MemoryManagerView: View {
     }
 }
 
+private struct SkillsManagerView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var rows: [LocalSkill] = OpenClawLiteAutomationStore.shared.loadSkills()
+    @State private var draftName = ""
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("Nuevo skill") {
+                    TextField("Nombre", text: $draftName)
+                    Button("Agregar") {
+                        let n = draftName.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !n.isEmpty else { return }
+                        rows.append(LocalSkill(name: n, content: "# \(n)\n"))
+                        draftName = ""
+                        try? OpenClawLiteAutomationStore.shared.saveSkills(rows)
+                    }
+                }
+                Section("Skills") {
+                    ForEach($rows) { $skill in
+                        VStack(alignment: .leading) {
+                            TextField("Nombre", text: $skill.name)
+                            TextEditor(text: $skill.content).frame(minHeight: 80)
+                        }
+                        .onChange(of: skill.content) { _, _ in try? OpenClawLiteAutomationStore.shared.saveSkills(rows) }
+                    }
+                    .onDelete { idx in
+                        rows.remove(atOffsets: idx)
+                        try? OpenClawLiteAutomationStore.shared.saveSkills(rows)
+                    }
+                }
+            }
+            .navigationTitle("Skills")
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cerrar") { dismiss() } } }
+        }
+    }
+}
+
+private struct CronsManagerView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var rows: [LocalCron] = OpenClawLiteAutomationStore.shared.loadCrons()
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Button("Agregar cron") {
+                    rows.append(LocalCron(title: "Nuevo cron", schedule: "0 * * * *", command: "resumen diario"))
+                    try? OpenClawLiteAutomationStore.shared.saveCrons(rows)
+                }
+                ForEach($rows) { $cron in
+                    VStack(alignment: .leading, spacing: 6) {
+                        TextField("Título", text: $cron.title)
+                        TextField("Schedule", text: $cron.schedule)
+                        TextField("Comando", text: $cron.command)
+                        Toggle("Activo", isOn: $cron.enabled)
+                    }
+                    .onChange(of: cron.command) { _, _ in try? OpenClawLiteAutomationStore.shared.saveCrons(rows) }
+                }
+                .onDelete { idx in
+                    rows.remove(atOffsets: idx)
+                    try? OpenClawLiteAutomationStore.shared.saveCrons(rows)
+                }
+            }
+            .navigationTitle("Crons")
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cerrar") { dismiss() } } }
+        }
+    }
+}
+
+private struct HeartbeatManagerView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var text = OpenClawLiteAutomationStore.shared.loadHeartbeat()
+
+    var body: some View {
+        NavigationStack {
+            VStack {
+                TextEditor(text: $text)
+                    .padding(8)
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.secondary.opacity(0.2)))
+                    .padding()
+            }
+            .navigationTitle("Heartbeat")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cerrar") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Guardar") {
+                        try? OpenClawLiteAutomationStore.shared.saveHeartbeat(text)
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct FilesManagerView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var files: [String] = OpenClawLiteAutomationStore.shared.listWorkspaceFiles()
+    @State private var selected = ""
+    @State private var content = ""
+    @State private var newName = ""
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 10) {
+                HStack {
+                    TextField("nuevo-archivo.txt", text: $newName)
+                    Button("Crear") {
+                        let n = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !n.isEmpty else { return }
+                        try? OpenClawLiteAutomationStore.shared.saveWorkspaceFile(name: n, content: "")
+                        files = OpenClawLiteAutomationStore.shared.listWorkspaceFiles()
+                        selected = n
+                        content = ""
+                        newName = ""
+                    }
+                }
+                .padding(.horizontal)
+
+                Picker("Archivo", selection: $selected) {
+                    Text("-- seleccionar --").tag("")
+                    ForEach(files, id: \.self) { f in Text(f).tag(f) }
+                }
+                .padding(.horizontal)
+                .onChange(of: selected) { _, v in
+                    content = v.isEmpty ? "" : OpenClawLiteAutomationStore.shared.readWorkspaceFile(v)
+                }
+
+                TextEditor(text: $content)
+                    .padding(8)
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.secondary.opacity(0.2)))
+                    .padding(.horizontal)
+
+                Button("Guardar archivo") {
+                    guard !selected.isEmpty else { return }
+                    try? OpenClawLiteAutomationStore.shared.saveWorkspaceFile(name: selected, content: content)
+                    files = OpenClawLiteAutomationStore.shared.listWorkspaceFiles()
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            .navigationTitle("Archivos")
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cerrar") { dismiss() } } }
+        }
+    }
+}
+
 private struct SettingsView: View {
     @ObservedObject var vm: ChatViewModel
     @Environment(\.dismiss) private var dismiss
@@ -412,6 +617,10 @@ private struct SettingsView: View {
     @State private var braveApiKey = ""
     @State private var showMemoryManager = false
     @State private var internetOpenAccess = true
+    @State private var showSkillsManager = false
+    @State private var showCronsManager = false
+    @State private var showHeartbeatManager = false
+    @State private var showFilesManager = false
 
     private let remoteConfig = RemoteModelConfig.shared
     private let localConfig = LocalModelConfig.shared
@@ -616,6 +825,17 @@ private struct SettingsView: View {
                     } label: {
                         Label("Abrir gestor de memoria", systemImage: "brain.head.profile")
                     }
+
+                    HStack {
+                        Button("Skills") { showSkillsManager = true }
+                        Spacer()
+                        Button("Crons") { showCronsManager = true }
+                        Spacer()
+                        Button("Heartbeat") { showHeartbeatManager = true }
+                        Spacer()
+                        Button("Archivos") { showFilesManager = true }
+                    }
+                    .font(.caption)
                 } header: {
                     Text("OpenClaw Lite")
                 } footer: {
@@ -686,6 +906,18 @@ private struct SettingsView: View {
             }
             .sheet(isPresented: $showMemoryManager) {
                 MemoryManagerView()
+            }
+            .sheet(isPresented: $showSkillsManager) {
+                SkillsManagerView()
+            }
+            .sheet(isPresented: $showCronsManager) {
+                CronsManagerView()
+            }
+            .sheet(isPresented: $showHeartbeatManager) {
+                HeartbeatManagerView()
+            }
+            .sheet(isPresented: $showFilesManager) {
+                FilesManagerView()
             }
             .fileImporter(
                 isPresented: $showFileImporter,
