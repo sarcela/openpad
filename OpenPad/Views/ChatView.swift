@@ -697,6 +697,7 @@ private struct SettingsView: View {
     @State private var mlxPresetModel = "mlx-community/Qwen2.5-1.5B-Instruct-4bit"
     @State private var isDownloadingMLXModel = false
     @State private var mlxDownloadProgress: Double = 0
+    @State private var mlxDownloadPhase: String = "idle"
     @State private var mlxDownloadedModels: [String] = []
 
     @State private var importMessage = ""
@@ -798,11 +799,19 @@ private struct SettingsView: View {
                             if isDownloadingMLXModel {
                                 ProgressView(value: mlxDownloadProgress, total: 1.0)
                                     .progressViewStyle(.linear)
-                                Text("Progreso estimado: \(Int(mlxDownloadProgress * 100))%")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                                if mlxDownloadProgress >= 0.90 {
-                                    Text("Finalizando descarga… esto puede tardar algunos minutos.")
+
+                                HStack {
+                                    Text("Progreso estimado: \(Int(mlxDownloadProgress * 100))%")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                    Spacer()
+                                    Text(mlxDownloadPhaseLabel())
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                }
+
+                                if mlxDownloadPhase == "verifying" {
+                                    Text("Finalizando descarga y verificando modelo…")
                                         .font(.caption2)
                                         .foregroundColor(.secondary)
                                 }
@@ -1145,6 +1154,7 @@ private struct SettingsView: View {
 
         isDownloadingMLXModel = true
         mlxDownloadProgress = 0.03
+        mlxDownloadPhase = "downloading"
 
         let progressTask = Task {
             while !Task.isCancelled {
@@ -1153,8 +1163,9 @@ private struct SettingsView: View {
                     if isDownloadingMLXModel {
                         if mlxDownloadProgress < 0.92 {
                             mlxDownloadProgress = min(0.92, mlxDownloadProgress + 0.04)
+                            mlxDownloadPhase = "downloading"
                         } else {
-                            // fase final: animación suave para indicar actividad mientras finaliza.
+                            mlxDownloadPhase = "verifying"
                             mlxDownloadProgress = (mlxDownloadProgress >= 0.98) ? 0.93 : (mlxDownloadProgress + 0.01)
                         }
                     }
@@ -1165,18 +1176,21 @@ private struct SettingsView: View {
         defer {
             progressTask.cancel()
             isDownloadingMLXModel = false
+            if mlxDownloadPhase != "ready" { mlxDownloadPhase = "idle" }
         }
 
         do {
             runtimeConfig.saveMLXModelName(cleanId)
             try await mlxService.prewarmModel(modelId: cleanId)
             mlxDownloadProgress = 1.0
+            mlxDownloadPhase = "ready"
             importMessage = "Modelo MLX descargado/listo: \(cleanId)"
             openClawLiteConfig.markMLXModelDownloaded(cleanId)
             mlxDownloadedModels = openClawLiteConfig.loadDownloadedMLXModels()
         } catch {
             importMessage = "No pude descargar el modelo MLX: \(error.localizedDescription)"
             mlxDownloadProgress = 0
+            mlxDownloadPhase = "idle"
         }
     }
 
@@ -1191,6 +1205,15 @@ private struct SettingsView: View {
         openClawLiteConfig.unmarkMLXModelDownloaded(clean)
         mlxDownloadedModels = openClawLiteConfig.loadDownloadedMLXModels()
         importMessage = "Modelo marcado como no descargado: \(clean)"
+    }
+
+    private func mlxDownloadPhaseLabel() -> String {
+        switch mlxDownloadPhase {
+        case "downloading": return "Descargando"
+        case "verifying": return "Verificando"
+        case "ready": return "Listo"
+        default: return ""
+        }
     }
 
     private func mlxEstimatedSizeText(for modelId: String) -> String {
