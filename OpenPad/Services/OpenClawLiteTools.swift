@@ -281,6 +281,27 @@ final class OpenClawLiteTools {
         }
     }
 
+    private func extractTextFromImageData(_ data: Data) -> String {
+        #if canImport(Vision) && canImport(UIKit)
+        guard let image = UIImage(data: data), let cg = image.cgImage else { return "" }
+
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = true
+
+        let handler = VNImageRequestHandler(cgImage: cg, options: [:])
+        do {
+            try handler.perform([request])
+            let lines = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+            return lines.joined(separator: "\n")
+        } catch {
+            return ""
+        }
+        #else
+        return ""
+        #endif
+    }
+
     private func searchMemory(query: String, limit: Int) throws -> [String] {
         let rows = try readMemoryLines(limit: 200)
         let tokens = Set(query.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init))
