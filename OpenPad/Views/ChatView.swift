@@ -1297,6 +1297,16 @@ private struct ToolsManagerView: View {
 }
 
 private struct SettingsView: View {
+    enum SettingsCategory: String, CaseIterable, Identifiable {
+        case all = "All"
+        case models = "Models"
+        case network = "Network"
+        case automation = "Automation"
+        case tools = "Tools"
+
+        var id: String { rawValue }
+    }
+
     @ObservedObject var vm: ChatViewModel
     @Environment(\.dismiss) private var dismiss
 
@@ -1352,6 +1362,8 @@ private struct SettingsView: View {
     @State private var emergencyMemoryModeEnabled = false
     @State private var autodevEnabled = false
     @State private var toolPermissions: [String: Bool] = [:]
+    @State private var settingsSearch = ""
+    @State private var settingsCategory: SettingsCategory = .all
 
     private let remoteConfig = RemoteModelConfig.shared
     private let localConfig = LocalModelConfig.shared
@@ -1369,15 +1381,30 @@ private struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("How do you want to run?") {
-                    Picker("Modo", selection: $vm.routePreference) {
-                        ForEach(RoutePreference.allCases) { option in
-                            Label(option.title, systemImage: icon(for: option)).tag(option)
+                Section("Settings navigator") {
+                    Picker("Category", selection: $settingsCategory) {
+                        ForEach(SettingsCategory.allCases) { cat in
+                            Text(cat.rawValue).tag(cat)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    TextField("Search settings…", text: $settingsSearch)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                }
+
+                if shouldShowSection(.models, keywords: ["run", "route", "mode", "provider", "engine"]) {
+                    Section("How do you want to run?") {
+                        Picker("Mode", selection: $vm.routePreference) {
+                            ForEach(RoutePreference.allCases) { option in
+                                Label(option.title, systemImage: icon(for: option)).tag(option)
+                            }
                         }
                     }
                 }
 
-                if vm.routePreference == .local {
+                if vm.routePreference == .local && shouldShowSection(.models, keywords: ["local", "mlx", "ollama", "llama", "model", "reasoning", "vision", "audio", "tools"]) {
                     Section("Local engine") {
                         Picker("Proveedor", selection: $runtimeProvider) {
                             ForEach(LocalRuntimeProvider.allCases) { provider in
@@ -1634,7 +1661,7 @@ private struct SettingsView: View {
                     }
                 }
 
-                if vm.routePreference != .local {
+                if vm.routePreference != .local && shouldShowSection(.network, keywords: ["remote", "api", "token", "url", "model"]) {
                     Section("Remote API") {
                         TextField("URL del API", text: $baseURL)
                             .textInputAutocapitalization(.never)
@@ -1646,6 +1673,7 @@ private struct SettingsView: View {
                     }
                 }
 
+                if shouldShowSection(.automation, keywords: ["internet", "network", "context", "automation", "low-power", "memory", "heartbeat", "skills", "crons", "files", "brave", "autodev"]) {
                 Section {
                     Toggle(isOn: $internetOpenAccess) {
                         Label("Open internet access", systemImage: "globe")
@@ -1729,10 +1757,11 @@ private struct SettingsView: View {
                 } header: {
                     Text("OpenClaw Lite")
                 } footer: {
-                    Text("Puedes cambiar entre modo abierto y modo restringido por hosts permitidos.")
+                    Text("You can switch between open internet mode and allowlist-restricted mode.")
+                }
                 }
 
-
+                if shouldShowSection(.tools, keywords: ["tools", "permissions", "autodev"]) {
                 Section("Tools") {
                     Button {
                         showToolsManager = true
@@ -1741,6 +1770,7 @@ private struct SettingsView: View {
                     }
 
                     Toggle("AutoDev (proactive micro-improvements)", isOn: $autodevEnabled)
+                }
                 }
 
                 if !importMessage.isEmpty {
@@ -1946,6 +1976,16 @@ private struct SettingsView: View {
                 }
             }
         }
+    }
+
+    private func shouldShowSection(_ category: SettingsCategory, keywords: [String]) -> Bool {
+        let categoryOk = settingsCategory == .all || settingsCategory == category
+        guard categoryOk else { return false }
+
+        let q = settingsSearch.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !q.isEmpty else { return true }
+
+        return keywords.contains(where: { $0.lowercased().contains(q) || q.contains($0.lowercased()) })
     }
 
     private func refreshModels() {
