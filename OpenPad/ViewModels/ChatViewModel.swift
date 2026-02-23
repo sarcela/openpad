@@ -321,16 +321,20 @@ final class ChatViewModel: ObservableObject {
 
             let output = try await openClawLite.respond(to: prompt, recentMessages: messages)
             self.toolTrace = output.trace
-            if let line = output.trace.last(where: { $0.contains("model_used=") }) {
-                self.lastModelUsedBadge = line.replacingOccurrences(of: "model_used=", with: "")
+            if output.trace.contains(where: { $0.lowercased().contains("audio mode") }) {
+                self.lastModelUsedBadge = "AUDIO • LOCAL"
+            } else if output.trace.contains(where: { $0.lowercased().contains("attachment mode") }) {
+                self.lastModelUsedBadge = "VISION • LOCAL"
+            } else if output.trace.contains(where: { $0.lowercased().contains("tool call") || $0.lowercased().contains("tool result") }) {
+                self.lastModelUsedBadge = providerBadgeFromTrace(output.trace).map { "TOOLS • \($0)" } ?? "TOOLS • LOCAL"
             } else {
-                self.lastModelUsedBadge = "LOCAL/agent"
+                self.lastModelUsedBadge = providerBadgeFromTrace(output.trace).map { "CHAT • \($0)" } ?? "CHAT • LOCAL"
             }
             return output.text
         }
 
         self.toolTrace = []
-        self.lastModelUsedBadge = "REMOTE/api"
+        self.lastModelUsedBadge = "REMOTE • API"
         return try await withTimeout(milliseconds: timeoutMs) { [self] in
             try await self.remoteService.runRemote(prompt: prompt)
         }
@@ -361,6 +365,14 @@ final class ChatViewModel: ObservableObject {
         if messages.count > maxMessages {
             messages = Array(messages.suffix(maxMessages))
         }
+    }
+
+    private func providerBadgeFromTrace(_ trace: [String]) -> String? {
+        guard let line = trace.last(where: { $0.contains("model_used=") })?.lowercased() else { return nil }
+        if line.contains("provider:mlx") { return "MLX" }
+        if line.contains("provider:llama_cpp") { return "LLAMA" }
+        if line.contains("provider:ollama") { return "OLLAMA" }
+        return "LOCAL"
     }
 
     @discardableResult
