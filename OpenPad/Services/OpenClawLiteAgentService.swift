@@ -357,7 +357,8 @@ final class OpenClawLiteAgentService {
 
     private func preferredLanguageInstruction() -> String {
         let preferred = Locale.preferredLanguages.first ?? "en"
-        let languageCode = Locale.Components(identifier: preferred).languageCode?.identifier.lowercased() ?? "en"
+        let normalized = preferred.replacingOccurrences(of: "_", with: "-")
+        let languageCode = normalized.split(separator: "-").first.map { String($0).lowercased() } ?? "en"
 
         switch languageCode {
         case "es":
