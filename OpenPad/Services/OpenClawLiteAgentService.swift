@@ -357,13 +357,7 @@ final class OpenClawLiteAgentService {
 
     private func preferredLanguageInstruction() -> String {
         let preferred = Locale.preferredLanguages.first ?? "en"
-        let languageCode: String
-        if #available(iOS 16.0, *) {
-            languageCode = Locale.Components(identifier: preferred).languageCode?.identifier.lowercased() ?? "en"
-        } else {
-            let parts = Locale.components(fromIdentifier: preferred)
-            languageCode = (parts[NSLocale.Key.languageCode.rawValue] ?? "en").lowercased()
-        }
+        let languageCode = Locale.Components(identifier: preferred).languageCode?.identifier.lowercased() ?? "en"
 
         switch languageCode {
         case "es":
