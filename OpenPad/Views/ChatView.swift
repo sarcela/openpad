@@ -25,6 +25,7 @@ struct ChatView: View {
 
     private let localConfig = LocalModelConfig.shared
     private let runtimeConfig = LocalRuntimeConfig.shared
+    private let openClawLiteConfig = OpenClawLiteConfig.shared
 
     var body: some View {
         NavigationStack {
@@ -233,17 +234,6 @@ struct ChatView: View {
             } else {
                 cronRunner.stop()
             }
-        }
-        .onChange(of: automationLoopEnabled) { enabled in
-            if enabled {
-                cronRunner.start()
-            } else {
-                cronRunner.stop()
-            }
-            openClawLiteConfig.setAutomationLoopEnabled(enabled)
-        }
-        .onChange(of: lowPowerModeEnabled) { enabled in
-            openClawLiteConfig.setLowPowerModeEnabled(enabled)
         }
         .onDisappear {
             cronRunner.stop()
