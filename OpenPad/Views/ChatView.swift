@@ -496,31 +496,91 @@ private struct SkillsManagerView: View {
 private struct CronsManagerView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var rows: [LocalCron] = OpenClawLiteAutomationStore.shared.loadCrons()
+    @State private var logs: [LocalCronLog] = OpenClawLiteAutomationStore.shared.loadCronLogs().reversed()
+
+    private let cronRunner = OpenClawLiteCronRunner.shared
 
     var body: some View {
         NavigationStack {
             List {
                 Button("Agregar cron") {
-                    rows.append(LocalCron(title: "Nuevo cron", schedule: "0 * * * *", command: "resumen diario"))
-                    try? OpenClawLiteAutomationStore.shared.saveCrons(rows)
+                    rows.append(LocalCron(title: "Nuevo cron", schedule: "0 9 * * *", command: "resumen diario"))
+                    saveCrons()
                 }
-                ForEach($rows) { $cron in
-                    VStack(alignment: .leading, spacing: 6) {
-                        TextField("Título", text: $cron.title)
-                        TextField("Schedule", text: $cron.schedule)
-                        TextField("Comando", text: $cron.command)
-                        Toggle("Activo", isOn: $cron.enabled)
+
+                Section("Crons") {
+                    ForEach($rows) { $cron in
+                        VStack(alignment: .leading, spacing: 8) {
+                            TextField("Título", text: $cron.title)
+                            TextField("Schedule", text: $cron.schedule)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                            TextField("Comando", text: $cron.command)
+                            Toggle("Activo", isOn: $cron.enabled)
+
+                            let validation = cronRunner.validate(schedule: cron.schedule)
+                            Text(validation.ok ? "✅ \(validation.message)" : "⚠️ \(validation.message)")
+                                .font(.caption2)
+                                .foregroundColor(validation.ok ? .green : .orange)
+
+                            HStack {
+                                Button("Run now") {
+                                    cronRunner.runNow(cron: cron)
+                                    logs = OpenClawLiteAutomationStore.shared.loadCronLogs().reversed()
+                                }
+                                .buttonStyle(.bordered)
+
+                                Spacer()
+
+                                Button("Guardar") {
+                                    saveCrons()
+                                }
+                                .buttonStyle(.borderedProminent)
+                            }
+                        }
                     }
-                    .onChange(of: cron.command) { _ in try? OpenClawLiteAutomationStore.shared.saveCrons(rows) }
+                    .onDelete { idx in
+                        rows.remove(atOffsets: idx)
+                        saveCrons()
+                    }
                 }
-                .onDelete { idx in
-                    rows.remove(atOffsets: idx)
-                    try? OpenClawLiteAutomationStore.shared.saveCrons(rows)
+
+                Section("Historial") {
+                    if logs.isEmpty {
+                        Text("Sin ejecuciones todavía")
+                            .foregroundColor(.secondary)
+                    } else {
+                        ForEach(logs) { log in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(log.title).font(.subheadline)
+                                Text("\(dateText(log.executedAt)) • \(log.source) • \(log.note)")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                                Text(log.command).font(.caption)
+                            }
+                        }
+                    }
+
+                    Button("Limpiar historial", role: .destructive) {
+                        OpenClawLiteAutomationStore.shared.clearCronLogs()
+                        logs = []
+                    }
                 }
             }
             .navigationTitle("Crons")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cerrar") { dismiss() } } }
         }
+    }
+
+    private func saveCrons() {
+        try? OpenClawLiteAutomationStore.shared.saveCrons(rows)
+    }
+
+    private func dateText(_ d: Date) -> String {
+        let f = DateFormatter()
+        f.dateStyle = .short
+        f.timeStyle = .short
+        return f.string(from: d)
     }
 }
 

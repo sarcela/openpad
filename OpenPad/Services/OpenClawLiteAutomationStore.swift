@@ -14,6 +14,17 @@ struct LocalCron: Codable, Identifiable {
     var enabled: Bool = true
 }
 
+struct LocalCronLog: Codable, Identifiable {
+    var id: UUID = UUID()
+    var cronId: UUID
+    var title: String
+    var command: String
+    var executedAt: Date = Date()
+    var source: String = "timer"
+    var success: Bool = true
+    var note: String = ""
+}
+
 @MainActor
 final class OpenClawLiteAutomationStore {
     static let shared = OpenClawLiteAutomationStore()
@@ -22,6 +33,7 @@ final class OpenClawLiteAutomationStore {
     private let skillsFile = "skills.json"
     private let cronsFile = "crons.json"
     private let heartbeatFile = "HEARTBEAT.md"
+    private let cronLogsFile = "cron_logs.json"
     private let filesFolder = "OpenClawFiles"
 
     private func docs() throws -> URL {
@@ -71,6 +83,34 @@ final class OpenClawLiteAutomationStore {
     func saveCrons(_ rows: [LocalCron]) throws {
         let data = try JSONEncoder().encode(rows)
         try data.write(to: fileURL(cronsFile), options: .atomic)
+    }
+
+    func loadCronLogs() -> [LocalCronLog] {
+        do {
+            let url = try fileURL(cronLogsFile)
+            guard FileManager.default.fileExists(atPath: url.path) else { return [] }
+            let data = try Data(contentsOf: url)
+            return try JSONDecoder().decode([LocalCronLog].self, from: data)
+        } catch {
+            return []
+        }
+    }
+
+    func appendCronLog(_ log: LocalCronLog, keepLast max: Int = 200) {
+        var logs = loadCronLogs()
+        logs.append(log)
+        if logs.count > max {
+            logs = Array(logs.suffix(max))
+        }
+        if let data = try? JSONEncoder().encode(logs), let url = try? fileURL(cronLogsFile) {
+            try? data.write(to: url, options: .atomic)
+        }
+    }
+
+    func clearCronLogs() {
+        if let url = try? fileURL(cronLogsFile), FileManager.default.fileExists(atPath: url.path) {
+            try? FileManager.default.removeItem(at: url)
+        }
     }
 
     func loadHeartbeat() -> String {

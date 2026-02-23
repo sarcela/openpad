@@ -10,7 +10,6 @@ final class OpenClawLiteCronRunner: ObservableObject {
     @Published private(set) var lastRunSummary: String = ""
 
     private var timer: Timer?
-    private var lastExecutionKey = "openclawlite.cron.lastExecution"
 
     func start() {
         stop()
@@ -23,6 +22,30 @@ final class OpenClawLiteCronRunner: ObservableObject {
     func stop() {
         timer?.invalidate()
         timer = nil
+    }
+
+    func runNow(cron: LocalCron) {
+        execute(cron: cron, source: "manual")
+    }
+
+    func validate(schedule: String) -> (ok: Bool, message: String) {
+        let parts = schedule.split(separator: " ").map(String.init)
+        guard parts.count >= 2 else {
+            return (false, "Formato inválido. Usa al menos: minuto hora (ej: 0 9 * * *)")
+        }
+        let m = validateField(parts[0], range: 0...59, label: "minuto")
+        if !m.ok { return m }
+        let h = validateField(parts[1], range: 0...23, label: "hora")
+        if !h.ok { return h }
+        return (true, "Cron válido")
+    }
+
+    private func validateField(_ field: String, range: ClosedRange<Int>, label: String) -> (ok: Bool, message: String) {
+        if field == "*" { return (true, "") }
+        guard let n = Int(field), range.contains(n) else {
+            return (false, "Valor inválido en \(label): \(field)")
+        }
+        return (true, "")
     }
 
     private func tick() {
@@ -43,13 +66,28 @@ final class OpenClawLiteCronRunner: ObservableObject {
                 if UserDefaults.standard.bool(forKey: key) { continue }
                 UserDefaults.standard.set(true, forKey: key)
                 fired.append(cron.title)
-                notify(title: "Cron ejecutado", body: "\(cron.title): \(cron.command)")
+                execute(cron: cron, source: "timer")
             }
         }
 
         if !fired.isEmpty {
             lastRunSummary = "Ejecutados: " + fired.joined(separator: ", ")
         }
+    }
+
+    private func execute(cron: LocalCron, source: String) {
+        notify(title: "Cron ejecutado", body: "\(cron.title): \(cron.command)")
+        let log = LocalCronLog(
+            cronId: cron.id,
+            title: cron.title,
+            command: cron.command,
+            executedAt: Date(),
+            source: source,
+            success: true,
+            note: "OK"
+        )
+        OpenClawLiteAutomationStore.shared.appendCronLog(log)
+        lastRunSummary = "\(cron.title) (\(source))"
     }
 
     private func matches(schedule: String, hour: Int, minute: Int) -> Bool {
