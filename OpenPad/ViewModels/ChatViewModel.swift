@@ -13,6 +13,8 @@ enum RoutePreference: String, CaseIterable, Identifiable {
 @MainActor
 final class ChatViewModel: ObservableObject {
     private let runtimeConfig = LocalRuntimeConfig.shared
+    private let chatStore = OpenClawLiteChatStore.shared
+
     @Published var messages: [ChatMessage] = []
     @Published var inputText: String = ""
     @Published var isLoading = false
@@ -22,6 +24,9 @@ final class ChatViewModel: ObservableObject {
         didSet { UserDefaults.standard.set(routePreference.rawValue, forKey: Self.routePreferenceKey) }
     }
     @Published var toolTrace: [String] = []
+
+    @Published var chatSessions: [ChatSessionSummary] = []
+    @Published var activeSessionId: UUID?
 
     private static let routePreferenceKey = "chat.routePreference"
 
@@ -37,10 +42,23 @@ final class ChatViewModel: ObservableObject {
             routePreference = .local
         }
 
-        // Default local provider: MLX (privado/offline).
         if UserDefaults.standard.string(forKey: "local.runtime.provider") == nil {
             runtimeConfig.saveProvider(.mlx)
         }
+
+        loadOrCreateInitialSession()
+    }
+
+    func createNewChat() {
+        let session = chatStore.createSession(title: "Nuevo chat")
+        refreshSessions()
+        activeSessionId = session.id
+        messages = []
+    }
+
+    func selectChat(sessionId: UUID) {
+        activeSessionId = sessionId
+        messages = chatStore.loadMessages(sessionId: sessionId)
     }
 
     func send() {
@@ -50,14 +68,39 @@ final class ChatViewModel: ObservableObject {
         inputText = ""
         messages.append(ChatMessage(role: "user", text: prompt))
         trimMessagesIfNeeded()
+        persistActiveSession()
         isLoading = true
 
         Task {
             let responseText = await runPipeline(prompt: prompt)
             messages.append(ChatMessage(role: "assistant", text: responseText))
             trimMessagesIfNeeded()
+            persistActiveSession()
             isLoading = false
         }
+    }
+
+    private func loadOrCreateInitialSession() {
+        refreshSessions()
+        if let first = chatSessions.first {
+            activeSessionId = first.id
+            messages = chatStore.loadMessages(sessionId: first.id)
+        } else {
+            let session = chatStore.createSession(title: "Nuevo chat")
+            refreshSessions()
+            activeSessionId = session.id
+            messages = []
+        }
+    }
+
+    private func refreshSessions() {
+        chatSessions = chatStore.loadSummaries()
+    }
+
+    private func persistActiveSession() {
+        guard let activeSessionId else { return }
+        chatStore.saveMessages(sessionId: activeSessionId, title: nil, messages: messages)
+        refreshSessions()
     }
 
     private func runPipeline(prompt: String) async -> String {
@@ -77,7 +120,6 @@ final class ChatViewModel: ObservableObject {
                 return "Error remoto: \(error.localizedDescription)"
             }
 
-            // Si el usuario forzó LOCAL, NO intentamos remoto como fallback.
             if routePreference == .local {
                 lastRoute = "LOCAL"
                 lastReason = "forced_local_error"

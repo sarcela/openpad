@@ -31,7 +31,7 @@ struct ChatView: View {
         NavigationStack {
             HStack(spacing: 0) {
                 if showSidebar {
-                    SidebarMenuView()
+                    SidebarMenuView(vm: vm)
                         .frame(width: 260)
                         .transition(.move(edge: .leading))
                 }
@@ -465,6 +465,8 @@ private struct CameraPicker: UIViewControllerRepresentable {
 }
 
 private struct SidebarMenuView: View {
+    @ObservedObject var vm: ChatViewModel
+
     private struct Item: Identifiable {
         let id = UUID()
         let icon: String
@@ -472,7 +474,6 @@ private struct SidebarMenuView: View {
     }
 
     private let sections: [(String, [Item])] = [
-        ("Chat", [Item(icon: "message", title: "Chat")]),
         ("Control", [
             Item(icon: "chart.bar", title: "Overview"),
             Item(icon: "link", title: "Channels"),
@@ -485,8 +486,7 @@ private struct SidebarMenuView: View {
             Item(icon: "folder", title: "Agents"),
             Item(icon: "bolt", title: "Skills"),
             Item(icon: "desktopcomputer", title: "Nodes")
-        ]),
-        ("Settings", [])
+        ])
     ]
 
     var body: some View {
@@ -508,6 +508,42 @@ private struct SidebarMenuView: View {
                         }
                     }
                     .padding(.bottom, 8)
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Text("Chats")
+                                .font(.caption)
+                                .foregroundColor(.white.opacity(0.6))
+                            Spacer()
+                            Button {
+                                vm.createNewChat()
+                            } label: {
+                                Image(systemName: "plus")
+                                    .foregroundColor(.white.opacity(0.8))
+                            }
+                        }
+
+                        ForEach(vm.chatSessions.prefix(12)) { chat in
+                            Button {
+                                vm.selectChat(sessionId: chat.id)
+                            } label: {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "bubble.left")
+                                        .frame(width: 16)
+                                        .foregroundColor(.white.opacity(0.75))
+                                    Text(chat.title.isEmpty ? "Nuevo chat" : chat.title)
+                                        .lineLimit(1)
+                                        .foregroundColor(.white.opacity(0.92))
+                                    Spacer()
+                                }
+                                .font(.subheadline)
+                                .padding(.vertical, 8)
+                                .padding(.horizontal, 10)
+                                .background(vm.activeSessionId == chat.id ? Color.red.opacity(0.22) : Color.clear)
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                            }
+                        }
+                    }
 
                     ForEach(sections, id: \.0) { section in
                         VStack(alignment: .leading, spacing: 10) {
@@ -532,7 +568,6 @@ private struct SidebarMenuView: View {
                                 .font(.subheadline)
                                 .padding(.vertical, 10)
                                 .padding(.horizontal, 10)
-                                .background(item.title == "Chat" ? Color.red.opacity(0.22) : Color.clear)
                                 .clipShape(RoundedRectangle(cornerRadius: 10))
                             }
                         }
