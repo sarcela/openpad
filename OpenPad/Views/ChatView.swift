@@ -618,45 +618,124 @@ private struct SidebarContentView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section(panel.rawValue) {
-                    switch panel {
-                    case .overview:
-                        Text("Resumen rápido del sistema")
-                        Text("Sesiones: \(vm.chatSessions.count)")
-                        Text("Éxitos: \(vm.successCount) • Errores: \(vm.errorCount)")
-                        Text("Latencia: \(vm.lastLatencyMs) ms")
-                    case .channels:
-                        Text("Channels (MVP)")
-                        Text("Configura aquí conectores futuros (WhatsApp/Telegram/etc)")
-                    case .instances:
-                        Text("Instances (MVP)")
-                        Text("Estado de runtimes locales/remotos")
-                    case .sessions:
-                        ForEach(vm.chatSessions) { c in
-                            Text(c.title)
+                switch panel {
+                case .overview:
+                    Section("Estado") {
+                        Label("Sesiones: \(vm.chatSessions.count)", systemImage: "bubble.left.and.bubble.right")
+                        Label("Mensajes en sesión activa: \(vm.messages.count)", systemImage: "text.bubble")
+                        Label("Última ruta: \(vm.lastRoute)", systemImage: "arrow.triangle.branch")
+                        Label("Razón: \(vm.lastReason)", systemImage: "info.circle")
+                    }
+
+                    Section("Salud") {
+                        if let health = vm.healthChecks.first {
+                            Text(health.message)
+                                .foregroundColor(health.level == "ok" ? .green : .orange)
+                        } else {
+                            Text("Sin datos todavía")
+                                .foregroundColor(.secondary)
                         }
-                    case .usage:
-                        Text("Usage (MVP)")
-                        Text("Tokens/costos locales próximamente")
-                    case .cronJobs:
-                        Text("Cron Jobs")
+                    }
+
+                case .channels:
+                    Section("Channels") {
+                        Text("Integraciones de canales (WhatsApp/Telegram/etc) próximamente.")
+                            .foregroundColor(.secondary)
+                    }
+
+                case .instances:
+                    Section("Instances") {
+                        Text("Runtime local activo: \(LocalRuntimeConfig.shared.loadProvider().title)")
+                        Text("Perfil: \(LocalRuntimeConfig.shared.loadRunProfile().title)")
+                    }
+
+                case .sessions:
+                    Section("Sesiones guardadas") {
+                        if vm.chatSessions.isEmpty {
+                            Text("No hay sesiones")
+                                .foregroundColor(.secondary)
+                        } else {
+                            ForEach(vm.chatSessions) { c in
+                                Button {
+                                    vm.selectChat(sessionId: c.id)
+                                } label: {
+                                    HStack {
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(c.title)
+                                                .font(.subheadline)
+                                            Text(dateText(c.updatedAt))
+                                                .font(.caption2)
+                                                .foregroundColor(.secondary)
+                                        }
+                                        Spacer()
+                                        if vm.activeSessionId == c.id {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .foregroundColor(.green)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Button {
+                            vm.createNewChat()
+                        } label: {
+                            Label("Nuevo chat", systemImage: "plus.circle")
+                        }
+                    }
+
+                case .usage:
+                    Section("Métricas") {
+                        Label("Latencia última: \(vm.lastLatencyMs) ms", systemImage: "speedometer")
+                        Label("Éxitos: \(vm.successCount)", systemImage: "checkmark.circle")
+                        Label("Errores: \(vm.errorCount)", systemImage: "xmark.circle")
+                    }
+
+                    Section("Último error") {
+                        Text(vm.lastErrorText.isEmpty ? "Sin errores recientes" : vm.lastErrorText)
+                            .foregroundColor(vm.lastErrorText.isEmpty ? .secondary : .orange)
+                    }
+
+                case .cronJobs:
+                    Section("Cron Jobs") {
                         Text("Configura jobs desde Settings > Crons")
-                    case .agents:
-                        Text("Agents (MVP)")
-                        Text("Subagentes locales próximamente")
-                    case .skills:
-                        Text("Skills")
-                        Text("Gestiona skills en Settings > Skills")
-                    case .nodes:
-                        Text("Nodes (MVP)")
-                        Text("Integración de dispositivos próximamente")
-                    case .chat:
+                        Text(OpenClawLiteCronRunner.shared.lastRunSummary.isEmpty ? "Sin ejecuciones recientes" : OpenClawLiteCronRunner.shared.lastRunSummary)
+                            .foregroundColor(.secondary)
+                    }
+
+                case .agents:
+                    Section("Agents") {
+                        Text("Subagentes locales (roadmap)")
+                            .foregroundColor(.secondary)
+                    }
+
+                case .skills:
+                    Section("Skills") {
+                        Text("Gestiona skills desde Settings > Skills")
+                            .foregroundColor(.secondary)
+                    }
+
+                case .nodes:
+                    Section("Nodes") {
+                        Text("Integración de nodos/dispositivos (roadmap)")
+                            .foregroundColor(.secondary)
+                    }
+
+                case .chat:
+                    Section {
                         Text("Selecciona Chat en sidebar")
                     }
                 }
             }
             .navigationTitle(panel.rawValue)
         }
+    }
+
+    private func dateText(_ d: Date) -> String {
+        let f = DateFormatter()
+        f.dateStyle = .short
+        f.timeStyle = .short
+        return f.string(from: d)
     }
 }
 
