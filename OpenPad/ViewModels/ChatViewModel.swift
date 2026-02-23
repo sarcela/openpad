@@ -14,6 +14,8 @@ enum RoutePreference: String, CaseIterable, Identifiable {
 final class ChatViewModel: ObservableObject {
     private let runtimeConfig = LocalRuntimeConfig.shared
     private let chatStore = OpenClawLiteChatStore.shared
+    private let healthService = OpenClawLiteHealthService.shared
+    private let workflowService = OpenClawLiteWorkflowService.shared
 
     @Published var messages: [ChatMessage] = []
     @Published var inputText: String = ""
@@ -28,6 +30,7 @@ final class ChatViewModel: ObservableObject {
     @Published var lastErrorText: String = ""
     @Published var successCount: Int = 0
     @Published var errorCount: Int = 0
+    @Published var healthChecks: [OpenClawHealthCheck] = []
 
     @Published var chatSessions: [ChatSessionSummary] = []
     @Published var activeSessionId: UUID?
@@ -120,6 +123,7 @@ final class ChatViewModel: ObservableObject {
             self.lastLatencyMs = Int(Date().timeIntervalSince(started) * 1000)
             self.lastErrorText = ""
             self.successCount += 1
+            refreshHealth()
             return text
         } catch {
             guard primaryTarget == "LOCAL" else {
@@ -128,6 +132,7 @@ final class ChatViewModel: ObservableObject {
                 self.lastLatencyMs = Int(Date().timeIntervalSince(started) * 1000)
                 self.lastErrorText = error.localizedDescription
                 self.errorCount += 1
+                refreshHealth()
                 return "Error remoto: \(error.localizedDescription)"
             }
 
@@ -137,6 +142,7 @@ final class ChatViewModel: ObservableObject {
                 self.lastLatencyMs = Int(Date().timeIntervalSince(started) * 1000)
                 self.lastErrorText = error.localizedDescription
                 self.errorCount += 1
+                refreshHealth()
                 return "Error local: \(error.localizedDescription)"
             }
 
@@ -147,6 +153,7 @@ final class ChatViewModel: ObservableObject {
                 self.lastLatencyMs = Int(Date().timeIntervalSince(started) * 1000)
                 self.lastErrorText = ""
                 self.successCount += 1
+                refreshHealth()
                 return fallback
             } catch {
                 lastRoute = "LOCAL"
@@ -154,6 +161,7 @@ final class ChatViewModel: ObservableObject {
                 self.lastLatencyMs = Int(Date().timeIntervalSince(started) * 1000)
                 self.lastErrorText = error.localizedDescription
                 self.errorCount += 1
+                refreshHealth()
                 return "No pude responder (falló local y fallback remoto): \(error.localizedDescription)"
             }
         }
@@ -177,6 +185,13 @@ final class ChatViewModel: ObservableObject {
 
     private func run(target: String, prompt: String, timeoutMs: Int) async throws -> String {
         if target == "LOCAL" {
+            if prompt.lowercased().hasPrefix("/wf ") || prompt.lowercased().hasPrefix("/workflow ") {
+                let goal = prompt.replacingOccurrences(of: "/workflow ", with: "", options: [.caseInsensitive]).replacingOccurrences(of: "/wf ", with: "", options: [.caseInsensitive])
+                let wf = await workflowService.run(goal: goal, recentMessages: messages)
+                self.toolTrace = wf.trace
+                return wf.text
+            }
+
             let output = try await openClawLite.respond(to: prompt, recentMessages: messages)
             self.toolTrace = output.trace
             return output.text
@@ -202,6 +217,10 @@ final class ChatViewModel: ObservableObject {
             group.cancelAll()
             return first
         }
+    }
+
+    private func refreshHealth() {
+        healthChecks = healthService.runChecks(lastLatencyMs: lastLatencyMs, lastError: lastErrorText, successCount: successCount, errorCount: errorCount)
     }
 
     private func trimMessagesIfNeeded() {

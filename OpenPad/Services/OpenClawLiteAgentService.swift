@@ -11,6 +11,7 @@ final class OpenClawLiteAgentService {
     private let tools = OpenClawLiteTools()
     private let runtimeConfig = LocalRuntimeConfig.shared
     private let liteConfig = OpenClawLiteConfig.shared
+    private let contextManager = OpenClawLiteContextManager.shared
 
     func respond(to userPrompt: String, recentMessages: [ChatMessage] = []) async throws -> OpenClawAgentOutput {
         var trace: [String] = []
@@ -81,9 +82,10 @@ final class OpenClawLiteAgentService {
 
     private func buildPlannerPrompt(userPrompt: String, recentMessages: [ChatMessage]) -> String {
         let profile = runtimeConfig.loadRunProfile()
-        let memoryLimit = OpenClawLiteConfig.shared.isLowPowerModeEnabled() ? 4 : (profile == .turbo ? 10 : 6)
-        let memoryChars = OpenClawLiteConfig.shared.isLowPowerModeEnabled() ? 900 : (profile == .turbo ? 2600 : 1600)
-        let memoryContext = String(tools.recentMemories(limit: memoryLimit).prefix(memoryChars))
+        let lowPower = OpenClawLiteConfig.shared.isLowPowerModeEnabled()
+        let budget = contextManager.budget(profile: profile, lowPower: lowPower)
+        let memoryLimit = lowPower ? 4 : (profile == .turbo ? 10 : 6)
+        let memoryContext = String(tools.recentMemories(limit: memoryLimit).prefix(budget.memoryChars))
         let attachmentContext = buildAttachmentContext(from: userPrompt)
         let recentContext = buildRecentContext(from: recentMessages)
         let languageInstruction = preferredLanguageInstruction()
@@ -273,8 +275,10 @@ final class OpenClawLiteAgentService {
 
         var chunks: [String] = []
         let lowPower = OpenClawLiteConfig.shared.isLowPowerModeEnabled()
-        let attachmentLimit = lowPower ? 1 : 2
-        let maxChars = lowPower ? 600 : 1200
+        let profile = runtimeConfig.loadRunProfile()
+        let budget = contextManager.budget(profile: profile, lowPower: lowPower)
+        let attachmentLimit = lowPower ? 1 : (profile == .turbo ? 3 : 2)
+        let maxChars = budget.attachmentChars
         for name in names.prefix(attachmentLimit) {
             let snippet = tools.readAttachmentSnippet(fileName: name, maxChars: maxChars)
             if snippet.isEmpty {
