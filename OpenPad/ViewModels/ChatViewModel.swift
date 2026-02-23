@@ -1,60 +1,11 @@
 import Foundation
 import Combine
-
-
-struct OpenClawHealthCheck {
-    let level: String // ok|warn
-    let message: String
-}
-
-@MainActor
-final class OpenClawLiteHealthService {
-    static let shared = OpenClawLiteHealthService()
-    private let runtime = LocalRuntimeConfig.shared
-    private let lite = OpenClawLiteConfig.shared
-
-    func runChecks(lastLatencyMs: Int, lastError: String, successCount: Int, errorCount: Int) -> [OpenClawHealthCheck] {
-        var out: [OpenClawHealthCheck] = []
-        if runtime.loadProvider() == .mlx {
-            if !lite.isLowPowerModeEnabled() { out.append(.init(level: "warn", message: "MLX sin modo ahorro puede calentar iPad.")) }
-            if runtime.isSeparateMLXToolsModelEnabled() { out.append(.init(level: "warn", message: "Modelo separado para tools aumenta riesgo de OOM.")) }
-        }
-        if errorCount > successCount && errorCount >= 3 { out.append(.init(level: "warn", message: "Tasa de error alta; revisa modelo o red.")) }
-        if lastLatencyMs > 12000 { out.append(.init(level: "warn", message: "Latencia alta (>12s).")) }
-        if !lastError.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { out.append(.init(level: "warn", message: "Último error: \(String(lastError.prefix(80)))")) }
-        if out.isEmpty { out.append(.init(level: "ok", message: "Sistema saludable ✅")) }
-        return out
-    }
-}
-
-@MainActor
-final class OpenClawLiteWorkflowService {
-    static let shared = OpenClawLiteWorkflowService()
-    private let model = LocalModelService()
-    private let tools = OpenClawLiteTools()
-
-    func run(goal: String, recentMessages: [ChatMessage]) async -> (text: String, trace: [String]) {
-        var trace: [String] = ["Workflow: analyze", "Workflow: plan", "Workflow: execute", "Workflow: verify"]
-        let step = goal.lowercased().contains("http") ? "summarize_url" : "keyword_extract"
-        let result: OpenClawToolResult = step == "summarize_url"
-            ? await tools.execute(name: "summarize_url", arguments: ["url": extractFirstURL(goal) ?? ""])
-            : await tools.execute(name: "keyword_extract", arguments: ["text": goal, "top": "10"])
-        trace.append("Step \(step): \(result.ok ? "ok" : "error")")
-
-        let prompt = "Resultado workflow para objetivo: \(goal)\n\nSalida:\n\(result.output)\n\nResponde en español con resumen final."
-        let out = (try? await model.runLocal(prompt: prompt, purpose: .chat)) ?? result.output
-        return (out, trace)
-    }
-
-    private func extractFirstURL(_ text: String) -> String? {
-        let pattern = #"https?://[^\s\)\]\>\"]+"#
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
-        let range = NSRange(text.startIndex..., in: text)
-        guard let m = regex.firstMatch(in: text, options: [], range: range), let r = Range(m.range, in: text) else { return nil }
-        return String(text[r])
-    }
-}
-
+#if canImport(UIKit)
+import UIKit
+#endif
+#if canImport(UserNotifications)
+import UserNotifications
+#endif
 
 enum RoutePreference: String, CaseIterable, Identifiable {
     case auto = "AUTO"
@@ -95,6 +46,7 @@ final class ChatViewModel: ObservableObject {
     private let routing = RoutingService()
     private let remoteService = RemoteModelService()
     private let openClawLite = OpenClawLiteAgentService()
+    private let notificationService = OpenClawLiteNotificationService.shared
 
     init() {
         if let saved = UserDefaults.standard.string(forKey: Self.routePreferenceKey),
@@ -184,6 +136,7 @@ final class ChatViewModel: ObservableObject {
             messages.append(ChatMessage(role: "assistant", text: responseText))
             trimMessagesIfNeeded()
             persistActiveSession()
+            notificationService.notifyAssistantReplyIfAppInBackground(responseText)
             isLoading = false
         }
     }
@@ -334,4 +287,34 @@ final class ChatViewModel: ObservableObject {
 
 struct TimeoutError: LocalizedError {
     var errorDescription: String? { "timeout" }
+}
+
+@MainActor
+final class OpenClawLiteNotificationService {
+    static let shared = OpenClawLiteNotificationService()
+
+    func notifyAssistantReplyIfAppInBackground(_ text: String) {
+        #if canImport(UserNotifications) && canImport(UIKit)
+        guard UIApplication.shared.applicationState != .active else { return }
+
+        let center = UNUserNotificationCenter.current()
+        center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
+            guard granted else { return }
+
+            let content = UNMutableNotificationContent()
+            content.title = "OpenPad"
+            content.body = String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(180))
+            content.sound = .default
+
+            let req = UNNotificationRequest(
+                identifier: UUID().uuidString,
+                content: content,
+                trigger: UNTimeIntervalNotificationTrigger(timeInterval: 0.25, repeats: false)
+            )
+            UNUserNotificationCenter.current().add(req)
+        }
+        #else
+        _ = text
+        #endif
+    }
 }

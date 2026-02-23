@@ -373,19 +373,27 @@ final class OpenClawLiteTools {
         let qTokens = normalizedTokens(query)
         if qTokens.isEmpty { return [] }
 
+        let qEmbedding = localEmbedding(query)
+
         let scored: [(Double, String)] = rows.map { row in
             let rTokens = normalizedTokens(row)
             let overlap = Double(qTokens.intersection(rTokens).count)
             let denom = Double(max(1, qTokens.union(rTokens).count))
             let jaccard = overlap / denom
 
-            // bonus por frase parcial para hacerlo más “semántico-lite”
-            let phraseBonus = row.lowercased().contains(query.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)) ? 0.25 : 0.0
-            return (jaccard + phraseBonus, row)
+            // Embeddings locales (hash vector) para similitud semántica ligera sin red.
+            let semantic = cosineSimilarity(qEmbedding, localEmbedding(row))
+
+            // bonus por frase parcial para hacerlo más robusto.
+            let phraseBonus = row.lowercased().contains(query.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)) ? 0.20 : 0.0
+
+            // Peso híbrido: semántica + overlap léxico + frase exacta parcial.
+            let score = (semantic * 0.60) + (jaccard * 0.40) + phraseBonus
+            return (score, row)
         }
 
         return scored
-            .filter { $0.0 > 0.02 }
+            .filter { $0.0 > 0.08 }
             .sorted { $0.0 > $1.0 }
             .prefix(limit)
             .map { $0.1 }
@@ -467,6 +475,40 @@ final class OpenClawLiteTools {
             return t
         }
         return Set(cleaned.filter { $0.count > 2 && !stop.contains($0) })
+    }
+
+    private func localEmbedding(_ text: String, dimensions: Int = 256) -> [Double] {
+        var vec = Array(repeating: 0.0, count: dimensions)
+        let tokens = normalizedTokens(text)
+        if tokens.isEmpty { return vec }
+
+        for token in tokens {
+            var hasher = Hasher()
+            hasher.combine(token)
+            let h = hasher.finalize()
+            let idx = Int(UInt(bitPattern: h) % UInt(dimensions))
+
+            var signHasher = Hasher()
+            signHasher.combine(token + "_sign")
+            let sign = (signHasher.finalize() % 2 == 0) ? 1.0 : -1.0
+            vec[idx] += sign
+        }
+
+        let norm = sqrt(vec.reduce(0.0) { $0 + ($1 * $1) })
+        if norm > 0 {
+            vec = vec.map { $0 / norm }
+        }
+        return vec
+    }
+
+    private func cosineSimilarity(_ a: [Double], _ b: [Double]) -> Double {
+        guard a.count == b.count, !a.isEmpty else { return 0 }
+        var dot = 0.0
+        for i in 0..<a.count {
+            dot += a[i] * b[i]
+        }
+        // Normaliza a rango 0...1 para combinar fácil con otras señales.
+        return max(0, min(1, (dot + 1.0) / 2.0))
     }
 
     private func appFileExists(relativePath: String) -> Bool {

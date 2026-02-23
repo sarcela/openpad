@@ -52,80 +52,112 @@ struct ChatView: View {
                         .transition(.move(edge: .leading))
                 }
 
-                if activePanel == .chat {
-                VStack(spacing: 0) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "cpu")
-                            .foregroundColor(.secondary)
-                        Text(selectedModelBannerText())
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
-                        Spacer()
-                    }
-                    .padding(.horizontal)
-                    .padding(.vertical, 10)
-                    .background(Color(.secondarySystemBackground))
-
-                    if !cronRunner.lastRunSummary.isEmpty {
-                        Text(cronRunner.lastRunSummary)
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal)
-                            .padding(.top, 2)
-                    }
-
-                    if !attachmentStatus.isEmpty {
-                        Text(attachmentStatus)
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal)
-                            .padding(.top, 2)
-                    }
-
-                    if !vm.toolTrace.isEmpty {
-                        DisclosureGroup(isExpanded: $showToolTrace) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                ForEach(vm.toolTrace, id: \.self) { line in
-                                    Text("• \(line)")
-                                        .font(.caption2)
-                                        .foregroundColor(.secondary)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                }
+                Group {
+                    if activePanel == .chat {
+                        VStack(spacing: 0) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "cpu")
+                                    .foregroundColor(.secondary)
+                                Text(selectedModelBannerText())
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(1)
+                                Spacer()
                             }
-                            .padding(.top, 4)
-                        } label: {
-                            Label("Tool Trace", systemImage: "wrench.and.screwdriver")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        .padding(.horizontal)
-                        .padding(.top, 6)
-                    }
+                            .padding(.horizontal)
+                            .padding(.vertical, 10)
+                            .background(Color(.secondarySystemBackground))
 
-                    if vm.messages.isEmpty {
-                        ContentUnavailableView("Sin mensajes aún", systemImage: "bubble.left.and.bubble.right")
-                    } else {
-                        ScrollViewReader { proxy in
-                            ScrollView {
-                                LazyVStack(alignment: .leading, spacing: 0) {
-                                    ForEach(vm.messages) { msg in
-                                        MessageRowView(msg: msg)
-                                            .padding(.vertical, 4)
-                                            .id(msg.id)
+                            if !cronRunner.lastRunSummary.isEmpty {
+                                Text(cronRunner.lastRunSummary)
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.horizontal)
+                                    .padding(.top, 2)
+                            }
+
+                            if !attachmentStatus.isEmpty {
+                                Text(attachmentStatus)
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.horizontal)
+                                    .padding(.top, 2)
+                            }
+
+                            if !vm.toolTrace.isEmpty {
+                                DisclosureGroup(isExpanded: $showToolTrace) {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        ForEach(vm.toolTrace, id: \.self) { line in
+                                            Text("• \(line)")
+                                                .font(.caption2)
+                                                .foregroundColor(.secondary)
+                                                .frame(maxWidth: .infinity, alignment: .leading)
+                                        }
                                     }
-                                    if vm.isLoading {
-                                        TypingIndicatorRow()
-                                            .id("typing-indicator")
-                                    }
+                                    .padding(.top, 4)
+                                } label: {
+                                    Label("Tool Trace", systemImage: "wrench.and.screwdriver")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
                                 }
                                 .padding(.horizontal)
+                                .padding(.top, 6)
                             }
-                            .overlay(alignment: .bottomTrailing) {
-                                if vm.messages.count > 6 {
-                                    Button {
+
+                            if vm.messages.isEmpty {
+                                ContentUnavailableView("Sin mensajes aún", systemImage: "bubble.left.and.bubble.right")
+                            } else {
+                                ScrollViewReader { proxy in
+                                    ScrollView {
+                                        LazyVStack(alignment: .leading, spacing: 0) {
+                                            ForEach(vm.messages) { msg in
+                                                MessageRowView(msg: msg)
+                                                    .padding(.vertical, 4)
+                                                    .id(msg.id)
+                                            }
+                                            if vm.isLoading {
+                                                TypingIndicatorRow()
+                                                    .id("typing-indicator")
+                                            }
+                                        }
+                                        .padding(.horizontal)
+                                    }
+                                    .overlay(alignment: .bottomTrailing) {
+                                        if vm.messages.count > 6 {
+                                            Button {
+                                                if let last = vm.messages.last {
+                                                    withAnimation(.easeOut(duration: 0.2)) {
+                                                        if vm.isLoading {
+                                                            proxy.scrollTo("typing-indicator", anchor: .bottom)
+                                                        } else {
+                                                            proxy.scrollTo(last.id, anchor: .bottom)
+                                                        }
+                                                    }
+                                                }
+                                            } label: {
+                                                Image(systemName: "arrow.down.circle.fill")
+                                                    .font(.system(size: 28))
+                                                    .foregroundColor(.accentColor)
+                                                    .padding(10)
+                                                    .background(.ultraThinMaterial)
+                                                    .clipShape(Circle())
+                                            }
+                                            .padding(14)
+                                        }
+                                    }
+                                    .defaultScrollAnchor(.bottom)
+                                    .onAppear {
+                                        if let last = vm.messages.last {
+                                            if vm.isLoading {
+                                                proxy.scrollTo("typing-indicator", anchor: .bottom)
+                                            } else {
+                                                proxy.scrollTo(last.id, anchor: .bottom)
+                                            }
+                                        }
+                                    }
+                                    .onChange(of: vm.messages.count) { _, _ in
                                         if let last = vm.messages.last {
                                             withAnimation(.easeOut(duration: 0.2)) {
                                                 if vm.isLoading {
@@ -135,78 +167,48 @@ struct ChatView: View {
                                                 }
                                             }
                                         }
-                                    } label: {
-                                        Image(systemName: "arrow.down.circle.fill")
-                                            .font(.system(size: 28))
-                                            .foregroundColor(.accentColor)
-                                            .padding(10)
-                                            .background(.ultraThinMaterial)
-                                            .clipShape(Circle())
-                                    }
-                                    .padding(14)
-                                }
-                            }
-                            .defaultScrollAnchor(.bottom)
-                            .onAppear {
-                                if let last = vm.messages.last {
-                                    if vm.isLoading {
-                                        proxy.scrollTo("typing-indicator", anchor: .bottom)
-                                    } else {
-                                        proxy.scrollTo(last.id, anchor: .bottom)
                                     }
                                 }
+                                .frame(maxHeight: .infinity)
                             }
-                             .onChange(of: vm.messages.count) { _ in
-                                if let last = vm.messages.last {
-                                    withAnimation(.easeOut(duration: 0.2)) {
-                                        if vm.isLoading {
-                                        proxy.scrollTo("typing-indicator", anchor: .bottom)
-                                    } else {
-                                        proxy.scrollTo(last.id, anchor: .bottom)
-                                    }
-                                    }
+
+                            HStack(spacing: 8) {
+                                Button {
+                                    showAttachmentOptions = true
+                                } label: {
+                                    Image(systemName: "paperclip")
+                                        .font(.headline)
+                                        .frame(width: 36, height: 36)
                                 }
+                                .buttonStyle(.bordered)
+
+                                ComposerTextView(text: $vm.inputText, isEnabled: !vm.isLoading) {
+                                    vm.send()
+                                }
+                                .frame(minHeight: 38, maxHeight: 120)
+
+                                Button {
+                                    vm.send()
+                                } label: {
+                                    Image(systemName: vm.isLoading ? "hourglass" : "paperplane.fill")
+                                        .font(.headline)
+                                        .frame(width: 36, height: 36)
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(vm.isLoading || vm.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                             }
+                            .padding(.horizontal)
+                            .padding(.top, 8)
+                            .padding(.bottom, 10)
+                            .background(.ultraThinMaterial)
                         }
-                        .frame(maxHeight: .infinity)
+                    } else {
+                        SidebarContentView(panel: activePanel, vm: vm)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .background(Color(.systemBackground))
                     }
-
-                    HStack(spacing: 8) {
-                        Button {
-                            showAttachmentOptions = true
-                        } label: {
-                            Image(systemName: "paperclip")
-                                .font(.headline)
-                                .frame(width: 36, height: 36)
-                        }
-                        .buttonStyle(.bordered)
-
-                        TextField("Escribe un prompt...", text: $vm.inputText, axis: .vertical)
-                            .textFieldStyle(.roundedBorder)
-                            .lineLimit(1...4)
-
-                        Button {
-                            vm.send()
-                        } label: {
-                            Image(systemName: vm.isLoading ? "hourglass" : "paperplane.fill")
-                                .font(.headline)
-                                .frame(width: 36, height: 36)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(vm.isLoading || vm.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    }
-                    .padding(.horizontal)
-                    .padding(.top, 8)
-                    .padding(.bottom, 10)
-                    .background(.ultraThinMaterial)
                 }
             }
-                }
-                else {
-                    SidebarContentView(panel: activePanel, vm: vm)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(Color(.systemBackground))
-                }
             .animation(.easeInOut(duration: 0.2), value: showSidebar)
             .navigationTitle("OpenPad")
             .toolbar {
@@ -242,7 +244,7 @@ struct ChatView: View {
             handleFileImport(result)
         }
         .photosPicker(isPresented: $showPhotoPicker, selection: $selectedPhotoItem, matching: .images)
-        .onChange(of: selectedPhotoItem) { item in
+        .onChange(of: selectedPhotoItem) { _, item in
             guard let item else { return }
             Task { await handlePhotoSelection(item) }
         }
@@ -331,6 +333,78 @@ struct ChatView: View {
         }
     }
 }
+
+#if canImport(UIKit)
+private struct ComposerTextView: UIViewRepresentable {
+    @Binding var text: String
+    var isEnabled: Bool = true
+    var onSend: () -> Void
+
+    func makeUIView(context: Context) -> ReturnAwareTextView {
+        let tv = ReturnAwareTextView()
+        tv.delegate = context.coordinator
+        tv.font = UIFont.preferredFont(forTextStyle: .body)
+        tv.backgroundColor = .clear
+        tv.textContainerInset = UIEdgeInsets(top: 8, left: 6, bottom: 8, right: 6)
+        tv.layer.cornerRadius = 10
+        tv.layer.borderWidth = 1
+        tv.layer.borderColor = UIColor.separator.cgColor
+        tv.isScrollEnabled = true
+        tv.returnHandler = { shiftPressed in
+            if shiftPressed {
+                tv.insertText("\n")
+            } else {
+                onSend()
+            }
+        }
+        return tv
+    }
+
+    func updateUIView(_ uiView: ReturnAwareTextView, context: Context) {
+        if uiView.text != text {
+            uiView.text = text
+        }
+        uiView.isEditable = isEnabled
+        uiView.alpha = isEnabled ? 1 : 0.6
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text)
+    }
+
+    final class Coordinator: NSObject, UITextViewDelegate {
+        @Binding var text: String
+
+        init(text: Binding<String>) {
+            _text = text
+        }
+
+        func textViewDidChange(_ textView: UITextView) {
+            text = textView.text
+        }
+    }
+}
+
+private final class ReturnAwareTextView: UITextView {
+    var returnHandler: ((Bool) -> Void)?
+
+    override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        var handled = false
+
+        for press in presses {
+            guard let key = press.key else { continue }
+            if key.keyCode == .keyboardReturnOrEnter {
+                let shiftPressed = key.modifierFlags.contains(.shift)
+                returnHandler?(shiftPressed)
+                handled = true
+            }
+        }
+
+        if handled { return }
+        super.pressesBegan(presses, with: event)
+    }
+}
+#endif
 
 private struct MessageRowView: View {
     let msg: ChatMessage
