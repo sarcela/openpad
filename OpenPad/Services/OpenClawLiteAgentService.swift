@@ -442,18 +442,7 @@ final class OpenClawLiteAgentService {
         let normalized = preferred.replacingOccurrences(of: "_", with: "-")
         let languageCode = normalized.split(separator: "-").first.map { String($0).lowercased() } ?? "en"
 
-        switch languageCode {
-        case "es":
-            return "Respond in English by default unless the user asks for another language."
-        case "en":
-            return "Respond in English by default, unless the user asks for another language."
-        case "pt":
-            return "Respond in Portuguese by default, unless the user asks for another language."
-        case "fr":
-            return "Respond in French by default, unless the user asks for another language."
-        default:
-            return "Respond in the iPad preferred language (\(languageCode)) by default, unless the user asks for another language."
-        }
+        return "Respond in the user's language when obvious. Otherwise default to the iPad preferred language (\(languageCode))."
     }
 
     private func ensureAppMemoryFilesIfNeeded() {
