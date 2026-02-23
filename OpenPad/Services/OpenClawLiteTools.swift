@@ -107,7 +107,8 @@ struct OpenClawLiteConfig {
             "get_time", "save_memory", "list_memories", "search_memories", "clear_memories",
             "read_file", "write_file", "append_file", "delete_file", "list_files", "file_exists",
             "calendar_today", "summarize_url", "http_get", "brave_search", "calculate", "make_uuid",
-            "json_parse", "csv_preview", "markdown_toc", "diff_text"
+            "json_parse", "csv_preview", "markdown_toc", "diff_text",
+            "regex_extract", "base64_encode", "base64_decode", "url_encode", "url_decode"
         ]
     }
 
@@ -538,6 +539,26 @@ final class OpenClawLiteTools {
         let added = newSet.subtracting(oldSet).prefix(50).map { "+ \($0)" }
         if removed.isEmpty && added.isEmpty { return "Sin diferencias detectables por línea" }
         return (["Cambios detectados:"] + removed + added).joined(separator: "\n")
+    }
+
+    private func regexExtract(pattern: String, text: String) -> String {
+        guard !pattern.isEmpty else { return "Pattern vacío" }
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return "Regex inválido" }
+        let range = NSRange(text.startIndex..., in: text)
+        let matches = regex.matches(in: text, options: [], range: range)
+        if matches.isEmpty { return "Sin coincidencias" }
+
+        let rows: [String] = matches.prefix(30).enumerated().map { idx, m in
+            var groups: [String] = []
+            for i in 0..<m.numberOfRanges {
+                if let r = Range(m.range(at: i), in: text) {
+                    groups.append(String(text[r]))
+                }
+            }
+            return "#\(idx + 1): " + groups.joined(separator: " | ")
+        }
+        return rows.joined(separator: "
+")
     }
 
     private func normalizedURL(from input: String) -> URL? {
