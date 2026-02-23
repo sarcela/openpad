@@ -111,6 +111,34 @@ final class ChatViewModel: ObservableObject {
         loadOrCreateInitialSession()
     }
 
+
+    func renameChat(sessionId: UUID, title: String) {
+        chatStore.renameSession(sessionId: sessionId, title: title)
+        refreshSessions()
+    }
+
+    func deleteChat(sessionId: UUID) {
+        chatStore.deleteSession(sessionId: sessionId)
+        refreshSessions()
+        if activeSessionId == sessionId {
+            if let first = chatSessions.first {
+                activeSessionId = first.id
+                messages = chatStore.loadMessages(sessionId: first.id)
+            } else {
+                let s = chatStore.createSession(title: "Nuevo chat")
+                refreshSessions()
+                activeSessionId = s.id
+                messages = []
+            }
+        }
+    }
+
+    func togglePinChat(sessionId: UUID) {
+        guard let current = chatSessions.first(where: { $0.id == sessionId }) else { return }
+        chatStore.setPinned(sessionId: sessionId, pinned: !current.pinned)
+        refreshSessions()
+    }
+
     func createNewChat() {
         let session = chatStore.createSession(title: "Nuevo chat")
         refreshSessions()

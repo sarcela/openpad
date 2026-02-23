@@ -558,7 +558,7 @@ private struct SidebarMenuView: View {
                                     Image(systemName: "bubble.left")
                                         .frame(width: 16)
                                         .foregroundColor(.white.opacity(0.75))
-                                    Text(chat.title.isEmpty ? "Nuevo chat" : chat.title)
+                                    Text((chat.pinned ? "📌 " : "") + (chat.title.isEmpty ? "Nuevo chat" : chat.title))
                                         .lineLimit(1)
                                         .foregroundColor(.white.opacity(0.92))
                                     Spacer()
@@ -614,6 +614,8 @@ private struct SidebarMenuView: View {
 private struct SidebarContentView: View {
     let panel: SidebarPanel
     @ObservedObject var vm: ChatViewModel
+    @State private var renameTarget: ChatSessionSummary?
+    @State private var renameText: String = ""
 
     var body: some View {
         NavigationStack {
@@ -728,6 +730,25 @@ private struct SidebarContentView: View {
                 }
             }
             .navigationTitle(panel.rawValue)
+            .sheet(item: $renameTarget) { chat in
+                NavigationStack {
+                    Form {
+                        TextField("Título", text: $renameText)
+                    }
+                    .navigationTitle("Renombrar chat")
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Cancelar") { renameTarget = nil }
+                        }
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Guardar") {
+                                vm.renameChat(sessionId: chat.id, title: renameText)
+                                renameTarget = nil
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 

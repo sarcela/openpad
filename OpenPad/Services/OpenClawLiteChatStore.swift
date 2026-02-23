@@ -4,12 +4,14 @@ struct ChatSessionSummary: Identifiable, Codable {
     let id: UUID
     var title: String
     var updatedAt: Date
+    var pinned: Bool = false
 }
 
 private struct ChatSessionRecord: Codable {
     let id: UUID
     var title: String
     var updatedAt: Date
+    var pinned: Bool = false
     var messages: [ChatMessage]
 }
 
@@ -53,16 +55,44 @@ final class OpenClawLiteChatStore {
 
     func loadSummaries() -> [ChatSessionSummary] {
         loadRecords()
-            .sorted { $0.updatedAt > $1.updatedAt }
-            .map { .init(id: $0.id, title: $0.title, updatedAt: $0.updatedAt) }
+            .sorted {
+                if $0.pinned != $1.pinned { return $0.pinned && !$1.pinned }
+                return $0.updatedAt > $1.updatedAt
+            }
+            .map { .init(id: $0.id, title: $0.title, updatedAt: $0.updatedAt, pinned: $0.pinned) }
     }
 
     func createSession(title: String = "Nuevo chat") -> ChatSessionSummary {
         var rows = loadRecords()
-        let record = ChatSessionRecord(id: UUID(), title: title, updatedAt: Date(), messages: [])
+        let record = ChatSessionRecord(id: UUID(), title: title, updatedAt: Date(), pinned: false, messages: [])
         rows.append(record)
         saveRecords(rows)
-        return .init(id: record.id, title: record.title, updatedAt: record.updatedAt)
+        return .init(id: record.id, title: record.title, updatedAt: record.updatedAt, pinned: record.pinned)
+    }
+
+
+    func renameSession(sessionId: UUID, title: String) {
+        var rows = loadRecords()
+        guard let idx = rows.firstIndex(where: { $0.id == sessionId }) else { return }
+        let clean = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return }
+        rows[idx].title = clean
+        rows[idx].updatedAt = Date()
+        saveRecords(rows)
+    }
+
+    func deleteSession(sessionId: UUID) {
+        var rows = loadRecords()
+        rows.removeAll { $0.id == sessionId }
+        saveRecords(rows)
+    }
+
+    func setPinned(sessionId: UUID, pinned: Bool) {
+        var rows = loadRecords()
+        guard let idx = rows.firstIndex(where: { $0.id == sessionId }) else { return }
+        rows[idx].pinned = pinned
+        rows[idx].updatedAt = Date()
+        saveRecords(rows)
     }
 
     func loadMessages(sessionId: UUID) -> [ChatMessage] {
