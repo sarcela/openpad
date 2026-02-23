@@ -414,7 +414,7 @@ final class OpenClawLiteTools {
     }
 
     private func fetchURLWithRetries(_ url: URL) async -> OpenClawToolResult {
-        await withNetworkRetries(attempts: config.isLowPowerModeEnabled() ? 2 : 3, initialDelayMs: 500) {
+        await self.withNetworkRetries(attempts: self.config.isLowPowerModeEnabled() ? 2 : 3, initialDelayMs: 500) {
             do {
                 let (data, response) = try await URLSession.shared.data(from: url)
                 if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
@@ -423,7 +423,7 @@ final class OpenClawLiteTools {
 
                 let contentType = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Type")?.lowercased() ?? ""
                 if contentType.contains("application/pdf") || url.pathExtension.lowercased() == "pdf" {
-                    let text = extractPDFText(from: data)
+                    let text = self.extractPDFText(from: data)
                     return .init(ok: true, output: text)
                 }
 
@@ -454,14 +454,14 @@ final class OpenClawLiteTools {
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         req.setValue(key, forHTTPHeaderField: "X-Subscription-Token")
 
-        return await withNetworkRetries(attempts: config.isLowPowerModeEnabled() ? 2 : 3, initialDelayMs: 500) {
+        return await self.withNetworkRetries(attempts: self.config.isLowPowerModeEnabled() ? 2 : 3, initialDelayMs: 500) {
             do {
                 let (data, response) = try await URLSession.shared.data(for: req)
                 if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
                     let body = String(data: data, encoding: .utf8) ?? ""
                     return .init(ok: false, output: "Brave HTTP \(http.statusCode): \(body.prefix(300))")
                 }
-                return .init(ok: true, output: formatBraveResults(from: data))
+                return .init(ok: true, output: self.formatBraveResults(from: data))
             } catch {
                 return .init(ok: false, output: "brave_search error: \(error.localizedDescription)")
             }
