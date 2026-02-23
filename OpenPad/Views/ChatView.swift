@@ -1269,6 +1269,128 @@ private struct FilesManagerView: View {
     }
 }
 
+private struct DownloadsManagerView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    @Binding var mlxDownloadedModels: [String]
+    @Binding var mlxModelName: String
+    @Binding var mlxToolsModelName: String
+    @Binding var mlxReasoningModelName: String
+    @Binding var mlxVisionModelName: String
+    @Binding var mlxAudioModelName: String
+
+    @Binding var models: [URL]
+    @Binding var embeddingModels: [URL]
+    @Binding var selectedModelPath: String
+    @Binding var selectedEmbeddingModelPath: String
+    @Binding var importMessage: String
+
+    var onRefresh: () -> Void
+
+    private let openClawLiteConfig = OpenClawLiteConfig.shared
+    private let localConfig = LocalModelConfig.shared
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("Downloaded MLX models") {
+                    if mlxDownloadedModels.isEmpty {
+                        Text("No downloaded MLX models")
+                            .foregroundColor(.secondary)
+                    } else {
+                        ForEach(mlxDownloadedModels, id: \.self) { model in
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(model).font(.subheadline)
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 8) {
+                                        Button("Chat") { mlxModelName = model }
+                                            .buttonStyle(.bordered)
+                                        Button("Tools") { mlxToolsModelName = model }
+                                            .buttonStyle(.bordered)
+                                        Button("Reasoning") { mlxReasoningModelName = model }
+                                            .buttonStyle(.bordered)
+                                        Button("Vision") { mlxVisionModelName = model }
+                                            .buttonStyle(.bordered)
+                                        Button("Audio") { mlxAudioModelName = model }
+                                            .buttonStyle(.bordered)
+                                        Button("Remove", role: .destructive) {
+                                            openClawLiteConfig.unmarkMLXModelDownloaded(model)
+                                            mlxDownloadedModels = openClawLiteConfig.loadDownloadedMLXModels()
+                                            importMessage = "Removed downloaded mark: \(model)"
+                                        }
+                                        .buttonStyle(.bordered)
+                                    }
+                                }
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+                }
+
+                Section("Local chat models (.gguf)") {
+                    if models.isEmpty {
+                        Text("No local chat models")
+                            .foregroundColor(.secondary)
+                    } else {
+                        ForEach(models, id: \.path) { url in
+                            HStack {
+                                Text(localConfig.displayName(for: url))
+                                Spacer()
+                                if selectedModelPath == url.path {
+                                    Text("Active").font(.caption).foregroundColor(.green)
+                                }
+                                Button("Use") { selectedModelPath = url.path }
+                                Button("Delete", role: .destructive) {
+                                    do {
+                                        try localConfig.deleteModel(at: url)
+                                        importMessage = "Deleted model: \(localConfig.displayName(for: url))"
+                                        onRefresh()
+                                    } catch {
+                                        importMessage = "Delete error: \(error.localizedDescription)"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Section("Local embedding models") {
+                    if embeddingModels.isEmpty {
+                        Text("No local embedding models")
+                            .foregroundColor(.secondary)
+                    } else {
+                        ForEach(embeddingModels, id: \.path) { url in
+                            HStack {
+                                Text(localConfig.displayName(for: url))
+                                Spacer()
+                                if selectedEmbeddingModelPath == url.path {
+                                    Text("Active").font(.caption).foregroundColor(.green)
+                                }
+                                Button("Use") { selectedEmbeddingModelPath = url.path }
+                                Button("Delete", role: .destructive) {
+                                    do {
+                                        try localConfig.deleteEmbeddingModel(at: url)
+                                        importMessage = "Deleted embedding model: \(localConfig.displayName(for: url))"
+                                        onRefresh()
+                                    } catch {
+                                        importMessage = "Delete error: \(error.localizedDescription)"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Downloads")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
 private struct ToolsManagerView: View {
     @Binding var toolPermissions: [String: Bool]
     @Environment(\.dismiss) private var dismiss
@@ -1354,6 +1476,7 @@ private struct SettingsView: View {
     @State private var showHeartbeatManager = false
     @State private var showFilesManager = false
     @State private var showToolsManager = false
+    @State private var showDownloadsManager = false
     @State private var showAdvancedModelIDs = false
     @State private var showAdvancedNetwork = false
     @State private var recentContextWindow: Double = 10
@@ -1422,6 +1545,12 @@ private struct SettingsView: View {
                         }
 
                         if runtimeProvider == .mlx {
+                            Button {
+                                showDownloadsManager = true
+                            } label: {
+                                Label("Open Downloads Manager", systemImage: "arrow.down.circle")
+                            }
+
                             Picker("Suggested models", selection: $mlxPresetModel) {
                                 ForEach(mlxPresetModels, id: \.self) { modelId in
                                     Text(modelId).tag(modelId)
@@ -1885,6 +2014,22 @@ private struct SettingsView: View {
             }
             .sheet(isPresented: $showToolsManager) {
                 ToolsManagerView(toolPermissions: $toolPermissions)
+            }
+            .sheet(isPresented: $showDownloadsManager) {
+                DownloadsManagerView(
+                    mlxDownloadedModels: $mlxDownloadedModels,
+                    mlxModelName: $mlxModelName,
+                    mlxToolsModelName: $mlxToolsModelName,
+                    mlxReasoningModelName: $mlxReasoningModelName,
+                    mlxVisionModelName: $mlxVisionModelName,
+                    mlxAudioModelName: $mlxAudioModelName,
+                    models: $models,
+                    embeddingModels: $embeddingModels,
+                    selectedModelPath: $selectedModelPath,
+                    selectedEmbeddingModelPath: $selectedEmbeddingModelPath,
+                    importMessage: $importMessage,
+                    onRefresh: { refreshModels() }
+                )
             }
             .fileImporter(
                 isPresented: $showFileImporter,
