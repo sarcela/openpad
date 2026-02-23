@@ -1391,6 +1391,92 @@ private struct DownloadsManagerView: View {
     }
 }
 
+private struct PolicyEditorView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var selected = "POLICY.md"
+    @State private var content = ""
+    @State private var status = ""
+
+    private let files = ["POLICY.md", "ROUTING.md", "TOOL_RULES.md"]
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 10) {
+                Picker("Policy file", selection: $selected) {
+                    ForEach(files, id: \.self) { file in
+                        Text(file).tag(file)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal)
+                .onChange(of: selected) { _, _ in
+                    loadSelected()
+                }
+
+                TextEditor(text: $content)
+                    .padding(8)
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.secondary.opacity(0.2)))
+                    .padding(.horizontal)
+
+                if !status.isEmpty {
+                    Text(status)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal)
+                }
+
+                HStack {
+                    Button("Reload") { loadSelected() }
+                    Spacer()
+                    Button("Save") { saveSelected() }
+                        .buttonStyle(.borderedProminent)
+                }
+                .padding(.horizontal)
+            }
+            .navigationTitle("Policy Editor")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                }
+            }
+            .onAppear { loadSelected() }
+        }
+    }
+
+    private func appMemoryDir() throws -> URL {
+        let docs = try LocalModelConfig.shared.documentsDirectory()
+        return docs.appendingPathComponent("OpenClawMemory/AppMemory", isDirectory: true)
+    }
+
+    private func loadSelected() {
+        do {
+            let dir = try appMemoryDir()
+            let url = dir.appendingPathComponent(selected)
+            if let text = try? String(contentsOf: url, encoding: .utf8) {
+                content = text
+                status = "Loaded \(selected)"
+            } else {
+                content = ""
+                status = "File not found yet: \(selected)"
+            }
+        } catch {
+            status = "Load error: \(error.localizedDescription)"
+        }
+    }
+
+    private func saveSelected() {
+        do {
+            let dir = try appMemoryDir()
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let url = dir.appendingPathComponent(selected)
+            try content.write(to: url, atomically: true, encoding: .utf8)
+            status = "Saved \(selected)"
+        } catch {
+            status = "Save error: \(error.localizedDescription)"
+        }
+    }
+}
+
 private struct ToolsManagerView: View {
     @Binding var toolPermissions: [String: Bool]
     @Environment(\.dismiss) private var dismiss
@@ -1479,6 +1565,7 @@ private struct SettingsView: View {
     @State private var quickPanel: QuickPanel?
     @State private var showToolsManager = false
     @State private var showDownloadsManager = false
+    @State private var showPolicyEditor = false
     @State private var showAdvancedModelIDs = false
     @State private var showAdvancedNetwork = false
     @State private var recentContextWindow: Double = 10
@@ -1874,7 +1961,13 @@ private struct SettingsView: View {
                     Button {
                         showMemoryManager = true
                     } label: {
-                        Label("Abrir gestor de memory", systemImage: "brain.head.profile")
+                        Label("Open memory manager", systemImage: "brain.head.profile")
+                    }
+
+                    Button {
+                        showPolicyEditor = true
+                    } label: {
+                        Label("Open policy editor", systemImage: "doc.text.magnifyingglass")
                     }
 
                     VStack(alignment: .leading, spacing: 8) {
@@ -2029,6 +2122,9 @@ private struct SettingsView: View {
                     importMessage: $importMessage,
                     onRefresh: { refreshModels() }
                 )
+            }
+            .sheet(isPresented: $showPolicyEditor) {
+                PolicyEditorView()
             }
             .fileImporter(
                 isPresented: $showFileImporter,
