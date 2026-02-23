@@ -109,16 +109,10 @@ final class OpenClawLiteChatStore {
 
     func exportSessionMarkdown(sessionId: UUID) -> String {
         guard let rec = loadRecords().first(where: { $0.id == sessionId }) else { return "" }
-        var out = "# \(rec.title)
-
-"
+        var out = "# \(rec.title)\n\n"
         let f = DateFormatter(); f.dateStyle = .short; f.timeStyle = .short
         for m in rec.messages {
-            out += "## [\(f.string(from: m.date))] \(m.role.uppercased())
-
-\(m.text)
-
-"
+            out += "## [\(f.string(from: m.date))] \(m.role.uppercased())\n\n\(m.text)\n\n"
         }
         return out
     }
