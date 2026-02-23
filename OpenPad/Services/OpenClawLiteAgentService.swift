@@ -1,5 +1,29 @@
 import Foundation
 
+
+struct ContextBudget {
+    let recentChars: Int
+    let memoryChars: Int
+    let attachmentChars: Int
+}
+
+@MainActor
+final class OpenClawLiteContextManager {
+    static let shared = OpenClawLiteContextManager()
+
+    func budget(profile: RunProfile, lowPower: Bool) -> ContextBudget {
+        if lowPower {
+            return .init(recentChars: 1400, memoryChars: 700, attachmentChars: 500)
+        }
+        switch profile {
+        case .stable: return .init(recentChars: 1800, memoryChars: 1000, attachmentChars: 700)
+        case .balanced: return .init(recentChars: 3200, memoryChars: 1600, attachmentChars: 1200)
+        case .turbo: return .init(recentChars: 5000, memoryChars: 2600, attachmentChars: 1800)
+        }
+    }
+}
+
+
 struct OpenClawAgentOutput {
     let text: String
     let trace: [String]
@@ -89,14 +113,13 @@ final class OpenClawLiteAgentService {
         let attachmentContext = buildAttachmentContext(from: userPrompt)
         let recentContext = buildRecentContext(from: recentMessages)
         let languageInstruction = preferredLanguageInstruction()
-        let autodevInstruction = liteConfig.isAutodevEnabled() ? "AutoDev: al final sugiere una micro-mejora concreta, reversible y de bajo riesgo." : "AutoDev desactivado."
         return """
         Eres OpenClaw Lite en iPad.
         \(languageInstruction)
         Decide tu siguiente acción y responde SOLO en JSON válido.
         Política de ejecución: sé persistente. Antes de concluir que algo falló, intenta al menos un enfoque alterno o un reintento razonable.
         Política de seguridad: para tools destructivas (`delete_file`, `clear_memories`) exige `confirm=YES`.
-        \(autodevInstruction)
+        \(liteConfig.isAutodevEnabled() ? "AutoDev: al final sugiere una micro-mejora concreta, reversible y de bajo riesgo." : "AutoDev desactivado.")
         Puedes usar internet cuando sea útil para responder mejor.
         Si el usuario comparte una URL completa, prioriza `http_get` para leerla/resumirla directamente.
         Regla de memoria: SOLO usa `save_memory` cuando el usuario lo pida explícitamente (ej: "guarda en memoria", "recuerda esto", "memoriza").
@@ -160,7 +183,6 @@ final class OpenClawLiteAgentService {
 
     private func buildFinalizePrompt(userPrompt: String, toolName: String, toolResult: OpenClawToolResult) -> String {
         let languageInstruction = preferredLanguageInstruction()
-        let autodevInstruction = liteConfig.isAutodevEnabled() ? "AutoDev: al final sugiere una micro-mejora concreta, reversible y de bajo riesgo." : "AutoDev desactivado."
         return """
         Eres OpenClaw Lite en iPad.
         Ya llamaste una herramienta. Da respuesta final al usuario en JSON válido.
