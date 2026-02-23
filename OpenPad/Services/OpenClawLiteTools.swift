@@ -469,9 +469,10 @@ final class OpenClawLiteTools {
                 return .init(ok: false, output: "Attachment not found or unreadable: \(fileName). Available attachments: \(available)")
             }
 
-            let keywords = keywordExtract(text: snippet, top: 12)
+            let keywords = keywordExtract(text: snippet, top: 16)
             let summary = summarizeText(snippet)
-            return .init(ok: true, output: "[attachment:\(usedFile)]\n\n\(summary)\n\n[top keywords]\n\(keywords)")
+            let highlights = extractEvidenceHighlights(from: snippet, maxLines: 14)
+            return .init(ok: true, output: "[attachment:\(usedFile)]\n\n[summary]\n\(summary)\n\n[evidence]\n\(highlights)\n\n[top keywords]\n\(keywords)")
 
         default:
             return .init(ok: false, output: "Unknown tool: \(name)")
@@ -651,11 +652,50 @@ final class OpenClawLiteTools {
         #if canImport(PDFKit)
         guard let pdf = PDFDocument(data: data) else { return "" }
         var chunks: [String] = []
+
         for i in 0..<pdf.pageCount {
             if let pageText = pdf.page(at: i)?.string?.trimmingCharacters(in: .whitespacesAndNewlines), !pageText.isEmpty {
-                chunks.append(pageText)
+                chunks.append("[Page \(i + 1)]\n\(pageText)")
             }
         }
+
+        if !chunks.isEmpty {
+            return chunks.joined(separator: "\n\n")
+        }
+
+        // Fallback OCR for scanned PDFs.
+        #if canImport(Vision) && canImport(UIKit)
+        let ocrPages = min(pdf.pageCount, 6)
+        for i in 0..<ocrPages {
+            guard let page = pdf.page(at: i) else { continue }
+            let bounds = page.bounds(for: .mediaBox)
+            let scale: CGFloat = 2.0
+            let size = CGSize(width: max(1, bounds.width * scale), height: max(1, bounds.height * scale))
+            UIGraphicsBeginImageContextWithOptions(size, true, 1.0)
+            guard let ctx = UIGraphicsGetCurrentContext() else {
+                UIGraphicsEndImageContext()
+                continue
+            }
+            UIColor.white.set()
+            ctx.fill(CGRect(origin: .zero, size: size))
+            ctx.saveGState()
+            ctx.translateBy(x: 0, y: size.height)
+            ctx.scaleBy(x: scale, y: -scale)
+            page.draw(with: .mediaBox, to: ctx)
+            ctx.restoreGState()
+            let image = UIGraphicsGetImageFromCurrentImageContext()
+            UIGraphicsEndImageContext()
+
+            if let image,
+               let jpeg = image.jpegData(compressionQuality: 0.85) {
+                let ocr = extractTextFromImageData(jpeg).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !ocr.isEmpty {
+                    chunks.append("[Page \(i + 1) OCR]\n\(ocr)")
+                }
+            }
+        }
+        #endif
+
         return chunks.joined(separator: "\n\n")
         #else
         _ = data
@@ -795,31 +835,37 @@ final class OpenClawLiteTools {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { return [] }
 
-        let remoteModel = runtimeConfig.loadOllama().model.trimmingCharacters(in: .whitespacesAndNewlines)
-        let remoteKey = embeddingCacheKey(backend: "ollama", model: remoteModel, text: clean)
+        let llamaModel = resolvedLlamaEmbeddingModelName()
+        let ollamaModel = runtimeConfig.loadOllama().model.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let llamaKey = embeddingCacheKey(backend: "llama_cpp", model: llamaModel, text: clean)
+        let ollamaKey = embeddingCacheKey(backend: "ollama", model: ollamaModel, text: clean)
         let localKey = embeddingCacheKey(backend: "local_hash", model: "v1", text: clean)
 
-        if allowRemote,
-           !remoteModel.isEmpty,
-           let cached = cachedEmbedding(for: remoteKey),
-           !cached.isEmpty {
+        if let cached = cachedEmbedding(for: llamaKey), !cached.isEmpty {
             return cached
         }
 
-        if let cachedLocal = cachedEmbedding(for: localKey), !cachedLocal.isEmpty {
-            if allowRemote {
-                // still try remote for better semantic quality if available.
-                if let remote = await remoteEmbeddingFromOllama(text: clean) {
-                    saveCachedEmbedding(remote, key: remoteKey, backend: "ollama", model: remoteModel)
-                    return remote
-                }
+        if let cached = cachedEmbedding(for: ollamaKey), !cached.isEmpty {
+            if let llama = await localEmbeddingFromLlamaCpp(text: clean, modelName: llamaModel) {
+                saveCachedEmbedding(llama, key: llamaKey, backend: "llama_cpp", model: llamaModel)
+                return llama
             }
-            return cachedLocal
+            return cached
+        }
+
+        if let llama = await localEmbeddingFromLlamaCpp(text: clean, modelName: llamaModel) {
+            saveCachedEmbedding(llama, key: llamaKey, backend: "llama_cpp", model: llamaModel)
+            return llama
         }
 
         if allowRemote, let remote = await remoteEmbeddingFromOllama(text: clean) {
-            saveCachedEmbedding(remote, key: remoteKey, backend: "ollama", model: remoteModel)
+            saveCachedEmbedding(remote, key: ollamaKey, backend: "ollama", model: ollamaModel)
             return remote
+        }
+
+        if let cachedLocal = cachedEmbedding(for: localKey), !cachedLocal.isEmpty {
+            return cachedLocal
         }
 
         let local = localEmbedding(clean)
@@ -849,6 +895,65 @@ final class OpenClawLiteTools {
             vec = vec.map { $0 / norm }
         }
         return vec
+    }
+
+    private func resolvedLlamaEmbeddingModelName() -> String {
+        let selectedPath = LocalModelConfig.shared.loadSelectedEmbeddingModelPath() ?? ""
+        let clean = selectedPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !clean.isEmpty {
+            return URL(fileURLWithPath: clean).deletingPathExtension().lastPathComponent
+        }
+
+        let configured = runtimeConfig.loadLlama().model.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !configured.isEmpty {
+            return configured
+        }
+
+        return ""
+    }
+
+    private func localEmbeddingFromLlamaCpp(text: String, modelName: String) async -> [Double]? {
+        let cfg = runtimeConfig.loadLlama()
+        let base = cfg.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !base.isEmpty,
+              var endpoint = URL(string: base) else {
+            return nil
+        }
+        endpoint.append(path: "v1/embeddings")
+
+        let chosenModel: String = {
+            let m = modelName.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !m.isEmpty { return m }
+            let fallback = cfg.model.trimmingCharacters(in: .whitespacesAndNewlines)
+            return fallback
+        }()
+
+        guard !chosenModel.isEmpty else { return nil }
+
+        var req = URLRequest(url: endpoint)
+        req.httpMethod = "POST"
+        req.timeoutInterval = 8
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let payload: [String: Any] = [
+            "model": chosenModel,
+            "input": text
+        ]
+        req.httpBody = try? JSONSerialization.data(withJSONObject: payload)
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: req)
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { return nil }
+            guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let dataArr = obj["data"] as? [[String: Any]],
+                  let first = dataArr.first,
+                  let emb = first["embedding"] as? [Double], !emb.isEmpty else {
+                return nil
+            }
+            return normalizeEmbedding(emb)
+        } catch {
+            return nil
+        }
     }
 
     private func remoteEmbeddingFromOllama(text: String) async -> [Double]? {
@@ -1013,10 +1118,36 @@ final class OpenClawLiteTools {
 
     private func summarizeText(_ text: String) -> String {
         let clean = text.replacingOccurrences(of: "\n\n\n", with: "\n\n")
-        if clean.count <= 900 { return clean }
-        let start = String(clean.prefix(550))
-        let end = String(clean.suffix(300))
-        return "Quick summary (extractive):\n\n\(start)\n\n[...]\n\n\(end)"
+        if clean.count <= 1200 { return clean }
+
+        let paragraphs = clean
+            .components(separatedBy: "\n\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        if paragraphs.isEmpty {
+            let start = String(clean.prefix(700))
+            let end = String(clean.suffix(450))
+            return "Quick summary (extractive):\n\n\(start)\n\n[...]\n\n\(end)"
+        }
+
+        let head = paragraphs.prefix(2).joined(separator: "\n\n")
+        let tail = paragraphs.suffix(2).joined(separator: "\n\n")
+        return "Quick summary (extractive):\n\n\(String(head.prefix(1600)))\n\n[...]\n\n\(String(tail.prefix(1200)))"
+    }
+
+    private func extractEvidenceHighlights(from text: String, maxLines: Int) -> String {
+        let lines = text
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { $0.count >= 28 }
+
+        if lines.isEmpty {
+            return String(text.prefix(1200))
+        }
+
+        let picked = lines.prefix(maxLines).map { "- \(String($0.prefix(220)))" }
+        return picked.joined(separator: "\n")
     }
 
     private func evaluateMath(_ expression: String) -> String {

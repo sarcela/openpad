@@ -635,7 +635,7 @@ final class OpenClawLiteAgentService {
         let lowPower = OpenClawLiteConfig.shared.isLowPowerModeEnabled()
         let profile = runtimeConfig.loadRunProfile()
         let budget = contextManager.budget(profile: profile, lowPower: lowPower)
-        let attachmentLimit = lowPower ? 1 : (profile == .turbo ? 3 : 2)
+        let attachmentLimit = lowPower ? 2 : (profile == .turbo ? 4 : 3)
         let maxChars = budget.attachmentChars
         for name in names.prefix(attachmentLimit) {
             let snippet = tools.readAttachmentSnippet(fileName: name, maxChars: maxChars)

@@ -1662,9 +1662,12 @@ private struct SettingsView: View {
     @ObservedObject var vm: ChatViewModel
     @Environment(\.dismiss) private var dismiss
 
+    @State private var remoteProvider: RemoteProvider = .customOpenAICompatible
     @State private var baseURL = ""
     @State private var token = ""
     @State private var model = ""
+    @State private var remoteOrganization = ""
+    @State private var remoteProject = ""
 
     @State private var models: [URL] = []
     @State private var selectedModelPath: String = ""
@@ -2024,13 +2027,26 @@ private struct SettingsView: View {
                     }
                 }
 
-                if vm.routePreference != .local && shouldShowSection(.network, keywords: ["remote", "api", "token", "url", "model"]) {
+                if vm.routePreference != .local && shouldShowSection(.network, keywords: ["remote", "api", "token", "url", "model", "provider", "openai", "anthropic", "google", "nvidia"]) {
                     Section("Remote API") {
+                        Picker("Provider", selection: $remoteProvider) {
+                            ForEach(RemoteProvider.allCases) { provider in
+                                Text(provider.title).tag(provider)
+                            }
+                        }
+
                         TextField("URL del API", text: $baseURL)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
-                        SecureField("Token (optional)", text: $token)
+                        SecureField("Token/API key", text: $token)
                         TextField("Modelo", text: $model)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+
+                        TextField("Organization (optional)", text: $remoteOrganization)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                        TextField("Project/App (optional)", text: $remoteProject)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                     }
@@ -2194,7 +2210,7 @@ private struct SettingsView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        remoteConfig.save(baseURL: baseURL, token: token, model: model)
+                        remoteConfig.save(provider: remoteProvider, baseURL: baseURL, token: token, model: model, organization: remoteOrganization, project: remoteProject)
                         runtimeConfig.saveProvider(runtimeProvider)
                         runtimeConfig.saveOllama(baseURL: ollamaBaseURL, model: ollamaModel)
                         runtimeConfig.saveLlama(baseURL: llamaBaseURL, model: llamaModel)
@@ -2227,9 +2243,12 @@ private struct SettingsView: View {
             }
             .onAppear {
                 let savedRemote = remoteConfig.load()
+                remoteProvider = savedRemote.provider
                 baseURL = savedRemote.baseURL
                 token = savedRemote.token
                 model = savedRemote.model
+                remoteOrganization = savedRemote.organization
+                remoteProject = savedRemote.project
 
                 runtimeProvider = runtimeConfig.loadProvider()
                 let ollama = runtimeConfig.loadOllama()
