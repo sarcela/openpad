@@ -2,6 +2,12 @@ import Foundation
 #if canImport(PDFKit)
 import PDFKit
 #endif
+#if canImport(Vision)
+import Vision
+#endif
+#if canImport(UIKit)
+import UIKit
+#endif
 
 struct OpenClawLiteConfig {
     static let shared = OpenClawLiteConfig()
@@ -198,8 +204,23 @@ final class OpenClawLiteTools {
     func readAttachmentSnippet(fileName: String, maxChars: Int = 4000) -> String {
         let clean = fileName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { return "" }
+
+        let lower = clean.lowercased()
+        let isImage = ["jpg", "jpeg", "png", "heic", "webp"].contains { lower.hasSuffix("." + $0) }
+
         do {
-            let text = try readAppFile(relativePath: "Attachments/\(clean)")
+            let docs = try documentsDirectory()
+            let url = docs.appendingPathComponent("OpenClawFiles/Attachments", isDirectory: true).appendingPathComponent(clean)
+
+            if isImage {
+                let data = try Data(contentsOf: url)
+                let ocr = extractTextFromImageData(data)
+                if !ocr.isEmpty {
+                    return String(ocr.prefix(maxChars))
+                }
+            }
+
+            let text = try String(contentsOf: url, encoding: .utf8)
             return String(text.prefix(maxChars))
         } catch {
             return ""
