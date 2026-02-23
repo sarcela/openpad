@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import PhotosUI
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -15,6 +16,12 @@ struct ChatView: View {
     @State private var showSidebar = true
     @State private var showToolTrace = false
     @StateObject private var cronRunner = OpenClawLiteCronRunner.shared
+    @State private var showAttachmentOptions = false
+    @State private var showAttachmentFileImporter = false
+    @State private var showPhotoPicker = false
+    @State private var showCameraPicker = false
+    @State private var selectedPhotoItem: PhotosPickerItem?
+    @State private var attachmentStatus = ""
 
     private let localConfig = LocalModelConfig.shared
     private let runtimeConfig = LocalRuntimeConfig.shared
@@ -44,6 +51,15 @@ struct ChatView: View {
 
                     if !cronRunner.lastRunSummary.isEmpty {
                         Text(cronRunner.lastRunSummary)
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal)
+                            .padding(.top, 2)
+                    }
+
+                    if !attachmentStatus.isEmpty {
+                        Text(attachmentStatus)
                             .font(.caption2)
                             .foregroundColor(.secondary)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -138,6 +154,15 @@ struct ChatView: View {
                     }
 
                     HStack(spacing: 8) {
+                        Button {
+                            showAttachmentOptions = true
+                        } label: {
+                            Image(systemName: "paperclip")
+                                .font(.headline)
+                                .frame(width: 36, height: 36)
+                        }
+                        .buttonStyle(.bordered)
+
                         TextField("Escribe un prompt...", text: $vm.inputText, axis: .vertical)
                             .textFieldStyle(.roundedBorder)
                             .lineLimit(1...4)
@@ -183,12 +208,83 @@ struct ChatView: View {
         .sheet(isPresented: $showSettings) {
             SettingsView(vm: vm)
         }
+        .confirmationDialog("Adjuntar", isPresented: $showAttachmentOptions, titleVisibility: .visible) {
+            Button("Archivo") { showAttachmentFileImporter = true }
+            Button("Foto") { showPhotoPicker = true }
+            Button("Tomar foto") { showCameraPicker = true }
+            Button("Cancelar", role: .cancel) {}
+        }
+        .fileImporter(isPresented: $showAttachmentFileImporter, allowedContentTypes: [.data], allowsMultipleSelection: false) { result in
+            handleFileImport(result)
+        }
+        .photosPicker(isPresented: $showPhotoPicker, selection: $selectedPhotoItem, matching: .images)
+        .onChange(of: selectedPhotoItem) { item in
+            guard let item else { return }
+            Task { await handlePhotoSelection(item) }
+        }
+        .sheet(isPresented: $showCameraPicker) {
+            CameraPicker { image in
+                handleCapturedImage(image)
+            }
+        }
         .onAppear {
             cronRunner.start()
         }
         .onDisappear {
             cronRunner.stop()
         }
+    }
+
+    private func handleFileImport(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            guard let sourceURL = urls.first else { return }
+            let access = sourceURL.startAccessingSecurityScopedResource()
+            defer { if access { sourceURL.stopAccessingSecurityScopedResource() } }
+            do {
+                let data = try Data(contentsOf: sourceURL)
+                let saved = try saveAttachment(data: data, preferredName: sourceURL.lastPathComponent)
+                attachmentStatus = "Adjunto: \(saved.lastPathComponent)"
+                vm.inputText += " [adjunto: \(saved.lastPathComponent)]"
+            } catch {
+                attachmentStatus = "Error adjuntando archivo: \(error.localizedDescription)"
+            }
+        case .failure(let error):
+            attachmentStatus = "Adjuntar cancelado/error: \(error.localizedDescription)"
+        }
+    }
+
+    private func handlePhotoSelection(_ item: PhotosPickerItem) async {
+        do {
+            if let data = try await item.loadTransferable(type: Data.self) {
+                let saved = try saveAttachment(data: data, preferredName: "foto_\(Int(Date().timeIntervalSince1970)).jpg")
+                attachmentStatus = "Foto adjunta: \(saved.lastPathComponent)"
+                vm.inputText += " [foto: \(saved.lastPathComponent)]"
+            }
+        } catch {
+            attachmentStatus = "Error adjuntando foto: \(error.localizedDescription)"
+        }
+    }
+
+    private func handleCapturedImage(_ image: UIImage) {
+        guard let data = image.jpegData(compressionQuality: 0.9) else { return }
+        do {
+            let saved = try saveAttachment(data: data, preferredName: "camara_\(Int(Date().timeIntervalSince1970)).jpg")
+            attachmentStatus = "Foto tomada: \(saved.lastPathComponent)"
+            vm.inputText += " [foto-camara: \(saved.lastPathComponent)]"
+        } catch {
+            attachmentStatus = "Error guardando foto: \(error.localizedDescription)"
+        }
+    }
+
+    private func saveAttachment(data: Data, preferredName: String) throws -> URL {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let dir = docs.appendingPathComponent("OpenClawFiles/Attachments", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let safeName = preferredName.replacingOccurrences(of: "/", with: "_")
+        let url = dir.appendingPathComponent(safeName)
+        try data.write(to: url, options: .atomic)
+        return url
     }
 
     private func selectedModelBannerText() -> String {
@@ -328,6 +424,38 @@ private struct TypingIndicatorRow: View {
             Spacer(minLength: 24)
         }
         .padding(.vertical, 4)
+    }
+}
+
+private struct CameraPicker: UIViewControllerRepresentable {
+    var onCapture: (UIImage) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.sourceType = UIImagePickerController.isSourceTypeAvailable(.camera) ? .camera : .photoLibrary
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+
+    func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
+
+    final class Coordinator: NSObject, UINavigationControllerDelegate, UIImagePickerControllerDelegate {
+        let parent: CameraPicker
+        init(parent: CameraPicker) { self.parent = parent }
+
+        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
+            if let image = info[.originalImage] as? UIImage {
+                parent.onCapture(image)
+            }
+            parent.dismiss()
+        }
+
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            parent.dismiss()
+        }
     }
 }
 
