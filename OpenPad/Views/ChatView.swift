@@ -14,6 +14,7 @@ struct ChatView: View {
     @State private var showSettings = false
     @State private var showSidebar = true
     @State private var showToolTrace = false
+    @StateObject private var cronRunner = OpenClawLiteCronRunner.shared
 
     private let localConfig = LocalModelConfig.shared
     private let runtimeConfig = LocalRuntimeConfig.shared
@@ -40,6 +41,15 @@ struct ChatView: View {
                     .padding(.horizontal)
                     .padding(.vertical, 10)
                     .background(Color(.secondarySystemBackground))
+
+                    if !cronRunner.lastRunSummary.isEmpty {
+                        Text(cronRunner.lastRunSummary)
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal)
+                            .padding(.top, 2)
+                    }
 
                     if !vm.toolTrace.isEmpty {
                         DisclosureGroup(isExpanded: $showToolTrace) {
@@ -104,7 +114,7 @@ struct ChatView: View {
                                     proxy.scrollTo(vm.isLoading ? "typing-indicator" : last.id, anchor: .bottom)
                                 }
                             }
-                            .onChange(of: vm.messages.count) { _, _ in
+                             .onChange(of: vm.messages.count) { _ in
                                 if let last = vm.messages.last {
                                     withAnimation(.easeOut(duration: 0.2)) {
                                         proxy.scrollTo(vm.isLoading ? "typing-indicator" : last.id, anchor: .bottom)
@@ -160,6 +170,12 @@ struct ChatView: View {
         }
         .sheet(isPresented: $showSettings) {
             SettingsView(vm: vm)
+        }
+        .onAppear {
+            cronRunner.start()
+        }
+        .onDisappear {
+            cronRunner.stop()
         }
     }
 
@@ -463,7 +479,7 @@ private struct SkillsManagerView: View {
                             TextField("Nombre", text: $skill.name)
                             TextEditor(text: $skill.content).frame(minHeight: 80)
                         }
-                        .onChange(of: skill.content) { _, _ in try? OpenClawLiteAutomationStore.shared.saveSkills(rows) }
+                        .onChange(of: skill.content) { _ in try? OpenClawLiteAutomationStore.shared.saveSkills(rows) }
                     }
                     .onDelete { idx in
                         rows.remove(atOffsets: idx)
@@ -495,7 +511,7 @@ private struct CronsManagerView: View {
                         TextField("Comando", text: $cron.command)
                         Toggle("Activo", isOn: $cron.enabled)
                     }
-                    .onChange(of: cron.command) { _, _ in try? OpenClawLiteAutomationStore.shared.saveCrons(rows) }
+                    .onChange(of: cron.command) { _ in try? OpenClawLiteAutomationStore.shared.saveCrons(rows) }
                 }
                 .onDelete { idx in
                     rows.remove(atOffsets: idx)
@@ -563,7 +579,7 @@ private struct FilesManagerView: View {
                     ForEach(files, id: \.self) { f in Text(f).tag(f) }
                 }
                 .padding(.horizontal)
-                .onChange(of: selected) { _, v in
+                .onChange(of: selected) { v in
                     content = v.isEmpty ? "" : OpenClawLiteAutomationStore.shared.readWorkspaceFile(v)
                 }
 

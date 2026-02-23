@@ -195,26 +195,25 @@ final class OpenClawLiteAgentService {
     }
 
     private func extractContentFromJsonLike(_ text: String) -> String? {
-        if let decision = parseDecision(from: text), let content = decision.content, !content.isEmpty {
-            return content
-        }
-
+        // Intenta extraer el campo content de JSON/JSON-like mal formado.
         let patterns = [
-            #""content"\s*:\s*"((?:\.|[^"])*)""#,
-            #"content\s*[:=]\s*"([^"]+)""#
+            #"\"content\"\s*:\s*\"((?:\\.|[^\"])*)\""#,
+            #"content\s*[:=]\s*\"([^\"]+)\""#
         ]
 
         for pattern in patterns {
-            if let regex = try? NSRegularExpression(pattern: pattern),
-               let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
-               let range = Range(match.range(at: 1), in: text) {
-                return String(text[range])
-                    .replacingOccurrences(of: "\\n", with: "
-")
-                    .replacingOccurrences(of: "\"", with: """)
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-            }
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+            let nsrange = NSRange(text.startIndex..., in: text)
+            guard let match = regex.firstMatch(in: text, options: [], range: nsrange),
+                  let range = Range(match.range(at: 1), in: text) else { continue }
+
+            let raw = String(text[range])
+            return raw
+                .replacingOccurrences(of: "\\n", with: "\n")
+                .replacingOccurrences(of: "\\\"", with: "\"")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
         }
+
         return nil
     }
 
