@@ -55,6 +55,21 @@ final class OpenClawLiteAgentService {
             trace.append("Tool guard: web tool blocked due to local attachment context")
         }
 
+        if toolName == "analyze_attachement" {
+            toolName = "analyze_attachment"
+            trace.append("Tool alias fix: analyze_attachement -> analyze_attachment")
+        }
+
+        if ["read_attachment", "analyze_attachment"].contains(toolName) {
+            if (toolArgs["fileName"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                let candidates = extractAttachmentNames(from: userPrompt)
+                if let first = candidates.first {
+                    toolArgs["fileName"] = first
+                    trace.append("Tool arg autofill: fileName=\(first)")
+                }
+            }
+        }
+
         if toolName == "save_memory" && !userExplicitlyAskedMemorySave(in: userPrompt) {
             trace.append("Tool blocked: save_memory not explicitly requested")
             return .init(text: "Understood. I will not save it to memory unless you ask explicitly.", trace: trace)
@@ -207,9 +222,18 @@ final class OpenClawLiteAgentService {
     }
 
     private func normalize(_ decision: AgentDecision) -> AgentDecision {
-        let normalizedName = decision.name?
+        var normalizedName = decision.name?
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .trimmingCharacters(in: CharacterSet(charactersIn: ":,;"))
+
+        let aliases: [String: String] = [
+            "analyze_attachement": "analyze_attachment",
+            "read_attachement": "read_attachment"
+        ]
+        if let n = normalizedName?.lowercased(), let alias = aliases[n] {
+            normalizedName = alias
+        }
+
         let normalizedType = decision.type.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return AgentDecision(type: normalizedType, content: decision.content, name: normalizedName, arguments: decision.arguments)
     }
