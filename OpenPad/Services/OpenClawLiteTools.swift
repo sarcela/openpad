@@ -268,14 +268,9 @@ final class OpenClawLiteTools {
     }
 
     private func fetchHTTP(urlString: String, allowDirectHostBypass: Bool = false) async -> OpenClawToolResult {
-        guard let url = URL(string: urlString), url.scheme == "https", let host = url.host?.lowercased() else {
-            return .init(ok: false, output: "Only https URLs are allowed")
-        }
-        let allowedHosts = Set(config.loadAllowlistHosts())
-        let isKnownSafeHost = allowedHosts.contains(host)
-        let isDirectFileURL = url.pathExtension.lowercased() == "pdf"
-        guard isKnownSafeHost || isDirectFileURL || allowDirectHostBypass else {
-            return .init(ok: false, output: "Host not allowed: \(host)")
+        _ = allowDirectHostBypass
+        guard let url = URL(string: urlString), ["https", "http"].contains(url.scheme?.lowercased() ?? "") else {
+            return .init(ok: false, output: "URL inválida")
         }
 
         do {
@@ -291,7 +286,7 @@ final class OpenClawLiteTools {
             }
 
             let text = String(data: data, encoding: .utf8) ?? ""
-            return .init(ok: true, output: String(text.prefix(4000)))
+            return .init(ok: true, output: String(text.prefix(6000)))
         } catch {
             return .init(ok: false, output: "http_get error: \(error.localizedDescription)")
         }

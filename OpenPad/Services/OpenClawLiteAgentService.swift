@@ -32,12 +32,6 @@ final class OpenClawLiteAgentService {
 
         trace.append("Tool call: \(name)")
 
-        if isNetworkTool(name), !userExplicitlyAskedInternet(for: userPrompt) {
-            trace.append("Tool blocked: internet no solicitado por el usuario")
-            let safeReply = "Entendido. No usaré internet si no me lo pides explícitamente. ¿En qué te ayudo con eso?"
-            return .init(text: safeReply, trace: trace)
-        }
-
         var toolName = name
         var toolArgs = decision.arguments ?? [:]
 
@@ -72,8 +66,8 @@ final class OpenClawLiteAgentService {
         Eres OpenClaw Lite en iPad.
         \(languageInstruction)
         Decide tu siguiente acción y responde SOLO en JSON válido.
-        Regla estricta: NO uses internet (`http_get` o `brave_search`) a menos que el usuario lo pida explícitamente (ej: "busca", "investiga", "en internet", "web") o te comparta una URL directa.
-        Si el usuario comparte una URL completa, usa `http_get` (NO `brave_search`) para leerla/resumirla.
+        Puedes usar internet cuando sea útil para responder mejor.
+        Si el usuario comparte una URL completa, prioriza `http_get` para leerla/resumirla directamente.
 
         Memoria reciente persistida (sobrevive reinicios):
         \(memoryContext)
@@ -175,20 +169,6 @@ final class OpenClawLiteAgentService {
             .trimmingCharacters(in: CharacterSet(charactersIn: ":,;"))
         let normalizedType = decision.type.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return AgentDecision(type: normalizedType, content: decision.content, name: normalizedName, arguments: decision.arguments)
-    }
-
-    private func isNetworkTool(_ name: String) -> Bool {
-        name == "http_get" || name == "brave_search"
-    }
-
-    private func userExplicitlyAskedInternet(for prompt: String) -> Bool {
-        if extractFirstURL(from: prompt) != nil { return true }
-        let p = prompt.lowercased()
-        let triggers = [
-            "busca", "buscar", "investiga", "investigar", "internet", "en la web", "en internet", "web",
-            "search", "look up", "browse", "google"
-        ]
-        return triggers.contains { p.contains($0) }
     }
 
     private func extractFirstURL(from text: String) -> URL? {
