@@ -239,6 +239,35 @@ final class OpenClawLiteTools {
                 return .init(ok: false, output: "list_files error: \(error.localizedDescription)")
             }
 
+        case "file_exists":
+            let relativePath = (arguments["path"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !relativePath.isEmpty else { return .init(ok: false, output: "Missing argument: path") }
+            return .init(ok: true, output: appFileExists(relativePath: relativePath) ? "true" : "false")
+
+        case "append_file":
+            let relativePath = (arguments["path"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let text = arguments["text"] ?? ""
+            guard !relativePath.isEmpty else { return .init(ok: false, output: "Missing argument: path") }
+            do {
+                try appendAppFile(relativePath: relativePath, text: text)
+                return .init(ok: true, output: "Appended file: \(relativePath)")
+            } catch {
+                return .init(ok: false, output: "append_file error: \(error.localizedDescription)")
+            }
+
+        case "delete_file":
+            guard isDestructiveConfirmed(arguments) else {
+                return .init(ok: false, output: "delete_file requires explicit confirmation: confirm=YES")
+            }
+            let relativePath = (arguments["path"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !relativePath.isEmpty else { return .init(ok: false, output: "Missing argument: path") }
+            do {
+                try deleteAppFile(relativePath: relativePath)
+                return .init(ok: true, output: "Deleted file: \(relativePath)")
+            } catch {
+                return .init(ok: false, output: "delete_file error: \(error.localizedDescription)")
+            }
+
         case "list_attachments":
             do {
                 let rows = try listAttachments()
