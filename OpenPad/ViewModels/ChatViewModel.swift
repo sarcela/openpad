@@ -24,6 +24,10 @@ final class ChatViewModel: ObservableObject {
         didSet { UserDefaults.standard.set(routePreference.rawValue, forKey: Self.routePreferenceKey) }
     }
     @Published var toolTrace: [String] = []
+    @Published var lastLatencyMs: Int = 0
+    @Published var lastErrorText: String = ""
+    @Published var successCount: Int = 0
+    @Published var errorCount: Int = 0
 
     @Published var chatSessions: [ChatSessionSummary] = []
     @Published var activeSessionId: UUID?
@@ -104,6 +108,7 @@ final class ChatViewModel: ObservableObject {
     }
 
     private func runPipeline(prompt: String) async -> String {
+        let started = Date()
         let autoDecision = routing.decide(prompt: prompt)
         let primaryTarget = selectPrimaryTarget(autoTarget: autoDecision.target)
         let timeoutMs = routing.localTimeoutMs
@@ -112,17 +117,26 @@ final class ChatViewModel: ObservableObject {
             let text = try await run(target: primaryTarget, prompt: prompt, timeoutMs: timeoutMs)
             lastRoute = primaryTarget
             lastReason = primaryTarget == "LOCAL" ? localReason(pref: routePreference, autoReason: autoDecision.reason) : "forced_remote_or_auto"
+            self.lastLatencyMs = Int(Date().timeIntervalSince(started) * 1000)
+            self.lastErrorText = ""
+            self.successCount += 1
             return text
         } catch {
             guard primaryTarget == "LOCAL" else {
                 lastRoute = "REMOTE"
                 lastReason = "remote_error_no_fallback"
+                self.lastLatencyMs = Int(Date().timeIntervalSince(started) * 1000)
+                self.lastErrorText = error.localizedDescription
+                self.errorCount += 1
                 return "Error remoto: \(error.localizedDescription)"
             }
 
             if routePreference == .local {
                 lastRoute = "LOCAL"
                 lastReason = "forced_local_error"
+                self.lastLatencyMs = Int(Date().timeIntervalSince(started) * 1000)
+                self.lastErrorText = error.localizedDescription
+                self.errorCount += 1
                 return "Error local: \(error.localizedDescription)"
             }
 
@@ -130,10 +144,16 @@ final class ChatViewModel: ObservableObject {
                 let fallback = try await run(target: "REMOTE", prompt: prompt, timeoutMs: timeoutMs)
                 lastRoute = "REMOTE"
                 lastReason = "fallback_remote_after_local_error"
+                self.lastLatencyMs = Int(Date().timeIntervalSince(started) * 1000)
+                self.lastErrorText = ""
+                self.successCount += 1
                 return fallback
             } catch {
                 lastRoute = "LOCAL"
                 lastReason = "local_failed_and_remote_failed"
+                self.lastLatencyMs = Int(Date().timeIntervalSince(started) * 1000)
+                self.lastErrorText = error.localizedDescription
+                self.errorCount += 1
                 return "No pude responder (falló local y fallback remoto): \(error.localizedDescription)"
             }
         }

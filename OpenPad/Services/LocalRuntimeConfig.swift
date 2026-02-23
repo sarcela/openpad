@@ -1,5 +1,21 @@
 import Foundation
 
+enum RunProfile: String, CaseIterable, Identifiable {
+    case stable
+    case balanced
+    case turbo
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .stable: return "Estable"
+        case .balanced: return "Balanceado"
+        case .turbo: return "Turbo"
+        }
+    }
+}
+
 enum LocalRuntimeProvider: String, CaseIterable, Identifiable {
     case llamaCpp = "LLAMA_CPP"
     case ollama = "OLLAMA"
@@ -27,6 +43,7 @@ struct LocalRuntimeConfig {
         static let mlxToolsModel = "local.mlx.tools.model"
         static let mlxSeparateToolsModelEnabled = "local.mlx.tools.separate.enabled"
         static let recentContextWindow = "agent.recent.context.window"
+        static let runProfile = "agent.run.profile"
     }
 
     func loadProvider() -> LocalRuntimeProvider {
@@ -74,6 +91,16 @@ struct LocalRuntimeConfig {
 
     func setSeparateMLXToolsModelEnabled(_ enabled: Bool) {
         UserDefaults.standard.set(enabled, forKey: Keys.mlxSeparateToolsModelEnabled)
+    }
+
+    
+    func loadRunProfile() -> RunProfile {
+        let raw = UserDefaults.standard.string(forKey: Keys.runProfile) ?? RunProfile.balanced.rawValue
+        return RunProfile(rawValue: raw) ?? .balanced
+    }
+
+    func saveRunProfile(_ profile: RunProfile) {
+        UserDefaults.standard.set(profile.rawValue, forKey: Keys.runProfile)
     }
 
     func loadRecentContextWindow() -> Int {

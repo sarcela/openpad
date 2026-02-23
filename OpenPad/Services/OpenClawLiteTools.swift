@@ -731,7 +731,7 @@ final class OpenClawLiteTools {
     }
 
     private func fetchURLWithRetries(_ url: URL) async -> OpenClawToolResult {
-        await self.withNetworkRetries(attempts: self.config.isLowPowerModeEnabled() ? 2 : 3, initialDelayMs: 500) {
+        await self.withNetworkRetries(attempts: self.networkAttempts(), initialDelayMs: 500) {
             do {
                 let (data, response) = try await URLSession.shared.data(from: url)
                 if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
@@ -771,7 +771,7 @@ final class OpenClawLiteTools {
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         req.setValue(key, forHTTPHeaderField: "X-Subscription-Token")
 
-        return await self.withNetworkRetries(attempts: self.config.isLowPowerModeEnabled() ? 2 : 3, initialDelayMs: 500) {
+        return await self.withNetworkRetries(attempts: self.networkAttempts(), initialDelayMs: 500) {
             do {
                 let (data, response) = try await URLSession.shared.data(for: req)
                 if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
@@ -782,6 +782,15 @@ final class OpenClawLiteTools {
             } catch {
                 return .init(ok: false, output: "brave_search error: \(error.localizedDescription)")
             }
+        }
+    }
+
+    private func networkAttempts() -> Int {
+        if config.isLowPowerModeEnabled() { return 2 }
+        switch LocalRuntimeConfig.shared.loadRunProfile() {
+        case .stable: return 2
+        case .balanced: return 3
+        case .turbo: return 4
         }
     }
 

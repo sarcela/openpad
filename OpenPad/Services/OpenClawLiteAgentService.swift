@@ -80,7 +80,10 @@ final class OpenClawLiteAgentService {
     }
 
     private func buildPlannerPrompt(userPrompt: String, recentMessages: [ChatMessage]) -> String {
-        let memoryContext = String(tools.recentMemories(limit: OpenClawLiteConfig.shared.isLowPowerModeEnabled() ? 4 : 6).prefix(OpenClawLiteConfig.shared.isLowPowerModeEnabled() ? 900 : 1600))
+        let profile = runtimeConfig.loadRunProfile()
+        let memoryLimit = OpenClawLiteConfig.shared.isLowPowerModeEnabled() ? 4 : (profile == .turbo ? 10 : 6)
+        let memoryChars = OpenClawLiteConfig.shared.isLowPowerModeEnabled() ? 900 : (profile == .turbo ? 2600 : 1600)
+        let memoryContext = String(tools.recentMemories(limit: memoryLimit).prefix(memoryChars))
         let attachmentContext = buildAttachmentContext(from: userPrompt)
         let recentContext = buildRecentContext(from: recentMessages)
         let languageInstruction = preferredLanguageInstruction()

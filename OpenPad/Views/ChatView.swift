@@ -953,6 +953,13 @@ private struct SettingsView: View {
                                 Text("Más RAM: puede causar cierres por memoria en iPad si ambos modelos son pesados.")
                                     .font(.caption2)
                                     .foregroundColor(.orange)
+                                Text("Tools activo: \(mlxToolsModelName.isEmpty ? "(sin definir)" : mlxToolsModelName)")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            } else {
+                                Text("Tools activo: mismo modelo de chat")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
                             }
 
                             if isCurrentMLXModelDownloaded() {
