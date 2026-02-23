@@ -574,7 +574,7 @@ final class OpenClawLiteTools {
                     issues.append("Línea \(i + 1): salto abrupto de encabezado H\(prev) -> H\(lvl)")
                 }
             }
-            if trimmed.contains("	") {
+            if trimmed.contains("\\t") {
                 issues.append("Línea \(i + 1): contiene tabulaciones")
             }
         }
