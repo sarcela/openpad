@@ -96,8 +96,8 @@ final class LocalModelService {
         var out = text
 
         // Remove chain-of-thought blocks emitted by some reasoning models.
-        out = out.replacingOccurrences(of: "(?is)<think>.*?</think>", with: "", options: .regularExpression)
-        out = out.replacingOccurrences(of: "(?im)^\s*thinking:\s*$[\s\S]*", with: "", options: .regularExpression)
+        out = out.replacingOccurrences(of: #"(?is)<think>.*?</think>"#, with: "", options: .regularExpression)
+        out = out.replacingOccurrences(of: #"(?im)^\s*thinking:\s*.*$"#, with: "", options: .regularExpression)
 
         out = out.trimmingCharacters(in: .whitespacesAndNewlines)
         if out.isEmpty {
