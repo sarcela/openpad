@@ -49,11 +49,13 @@ final class ChatViewModel: ObservableObject {
 
         inputText = ""
         messages.append(ChatMessage(role: "user", text: prompt))
+        trimMessagesIfNeeded()
         isLoading = true
 
         Task {
             let responseText = await runPipeline(prompt: prompt)
             messages.append(ChatMessage(role: "assistant", text: responseText))
+            trimMessagesIfNeeded()
             isLoading = false
         }
     }
@@ -137,6 +139,13 @@ final class ChatViewModel: ObservableObject {
             }
             group.cancelAll()
             return first
+        }
+    }
+
+    private func trimMessagesIfNeeded() {
+        let maxMessages = 80
+        if messages.count > maxMessages {
+            messages = Array(messages.suffix(maxMessages))
         }
     }
 }

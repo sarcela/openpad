@@ -41,6 +41,11 @@ final class MLXLocalModelService {
 
         let session = try await getOrCreateSession(modelId: useModelId)
         let text = try await session.respond(to: prompt).trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Modo estabilidad: liberar sesión/modelo entre turnos para evitar crecimiento de memoria (OOM en iPad).
+        self.session = nil
+        self.loadedModelId = nil
+
         guard !text.isEmpty else { throw MLXServiceError.emptyResponse }
         return text
         #else
