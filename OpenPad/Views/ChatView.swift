@@ -94,7 +94,11 @@ struct ChatView: View {
                                     Button {
                                         if let last = vm.messages.last {
                                             withAnimation(.easeOut(duration: 0.2)) {
-                                                proxy.scrollTo(vm.isLoading ? "typing-indicator" : last.id, anchor: .bottom)
+                                                if vm.isLoading {
+                                                    proxy.scrollTo("typing-indicator", anchor: .bottom)
+                                                } else {
+                                                    proxy.scrollTo(last.id, anchor: .bottom)
+                                                }
                                             }
                                         }
                                     } label: {
@@ -111,13 +115,21 @@ struct ChatView: View {
                             .defaultScrollAnchor(.bottom)
                             .onAppear {
                                 if let last = vm.messages.last {
-                                    proxy.scrollTo(vm.isLoading ? "typing-indicator" : last.id, anchor: .bottom)
+                                    if vm.isLoading {
+                                        proxy.scrollTo("typing-indicator", anchor: .bottom)
+                                    } else {
+                                        proxy.scrollTo(last.id, anchor: .bottom)
+                                    }
                                 }
                             }
                              .onChange(of: vm.messages.count) { _ in
                                 if let last = vm.messages.last {
                                     withAnimation(.easeOut(duration: 0.2)) {
-                                        proxy.scrollTo(vm.isLoading ? "typing-indicator" : last.id, anchor: .bottom)
+                                        if vm.isLoading {
+                                        proxy.scrollTo("typing-indicator", anchor: .bottom)
+                                    } else {
+                                        proxy.scrollTo(last.id, anchor: .bottom)
+                                    }
                                     }
                                 }
                             }
