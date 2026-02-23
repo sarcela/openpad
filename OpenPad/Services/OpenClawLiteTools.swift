@@ -194,6 +194,18 @@ final class OpenClawLiteTools {
         }
     }
 
+
+    func readAttachmentSnippet(fileName: String, maxChars: Int = 4000) -> String {
+        let clean = fileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return "" }
+        do {
+            let text = try readAppFile(relativePath: "Attachments/\(clean)")
+            return String(text.prefix(maxChars))
+        } catch {
+            return ""
+        }
+    }
+
     func listAllMemories() -> [String] {
         (try? readMemoryLines(limit: 500)) ?? []
     }

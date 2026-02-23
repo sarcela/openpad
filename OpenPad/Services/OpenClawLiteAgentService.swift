@@ -72,6 +72,7 @@ final class OpenClawLiteAgentService {
 
     private func buildPlannerPrompt(userPrompt: String) -> String {
         let memoryContext = tools.recentMemories(limit: 8)
+        let attachmentContext = buildAttachmentContext(from: userPrompt)
         let languageInstruction = preferredLanguageInstruction()
         return """
         Eres OpenClaw Lite en iPad.
@@ -83,6 +84,9 @@ final class OpenClawLiteAgentService {
 
         Memoria reciente persistida (sobrevive reinicios):
         \(memoryContext)
+
+        Contexto de adjuntos detectados en este mensaje:
+        \(attachmentContext)
 
         Herramientas disponibles:
         1) get_time(arguments: {})
