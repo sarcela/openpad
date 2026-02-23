@@ -1,73 +1,72 @@
 # Local Model Setup (iPad)
 
-Este setup deja el proyecto listo para correr local con un `.gguf`.
+This setup gets the project ready to run locally with a `.gguf` model.
 
-## 1) Integrar backend llama.cpp en Xcode
+## 1) Integrate a llama.cpp backend in Xcode
 
-1. Abre tu proyecto en Xcode.
-2. Ve a **File > Add Package Dependencies...**
-3. Agrega el paquete de llama.cpp Swift que vayas a usar.
-4. Asigna el package a tu target `OpenClawPad`.
+1. Open your project in Xcode.
+2. Go to **File > Add Package Dependencies...**
+3. Add the Swift llama.cpp package you want to use.
+4. Assign the package to your `OpenClawPad` target.
 
-> Nota: el scaffold actual usa `#if canImport(LlamaCpp)`.
-> Si tu package expone otro módulo, ajusta ese nombre en `LlamaLocalModelService.swift`.
+> Note: the current scaffold uses `#if canImport(LlamaCpp)`.
+> If your package exposes a different module name, update it in `LlamaLocalModelService.swift`.
 
 ---
 
-## 2) Copiar modelo al iPad
+## 2) Copy the model to iPad
 
-Rutas reconocidas por defecto (en este orden):
+Default recognized paths (in this order):
 
 1. `Files > On My iPad > OpenClawPad > Models > Qwen2.5-0.5B-Instruct-Q4_K_M.gguf`
 2. `Files > On My iPad > OpenClawPad > Models > model.gguf`
 
-Pasos:
-1. En iPad abre app **Files**.
-2. Ve a **On My iPad**.
-3. Entra a carpeta de tu app (`OpenClawPad`).
-4. Crea carpeta `Models` si no existe.
-5. Copia tu archivo `.gguf` (recomendado: `Qwen2.5-0.5B-Instruct-Q4_K_M.gguf`).
+Steps:
+1. Open the **Files** app on iPad.
+2. Go to **On My iPad**.
+3. Open your app folder (`OpenClawPad`).
+4. Create a `Models` folder if it does not exist.
+5. Copy your `.gguf` file (recommended: `Qwen2.5-0.5B-Instruct-Q4_K_M.gguf`).
 
 ---
 
-## 3) Archivos ya preparados
+## 3) Files already prepared
 
-- `Services/LocalModelService.swift` → intenta cargar automáticamente `Models/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf` y luego `Models/model.gguf`.
-- `Services/LlamaLocalModelService.swift` → punto de integración llama real.
-- `Services/LocalModelConfig.swift` → nombre/ruta de modelo por defecto.
+- `Services/LocalModelService.swift` → tries to auto-load `Models/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf` and then `Models/model.gguf`.
+- `Services/LlamaLocalModelService.swift` → real llama integration entry point.
+- `Services/LocalModelConfig.swift` → default model name/path handling.
 
 ---
 
-## 4) Qué falta para inferencia real
+## 4) What is still needed for real inference
 
-En `LlamaLocalModelService.swift`, dentro de:
+In `LlamaLocalModelService.swift`, inside:
 
 ```swift
 #if canImport(LlamaCpp)
-// TODO: Conectar aquí la API real
+// TODO: connect real API here
 #endif
 ```
 
-reemplaza el stub por:
-- carga de modelo GGUF,
-- creación de contexto,
-- inferencia con prompt,
-- retorno de texto generado.
+replace the stub with:
+- GGUF model loading,
+- context creation,
+- prompt inference,
+- generated text return.
 
 ---
 
-## 5) Verificación rápida
+## 5) Quick verification
 
-1. Corre app en iPad.
-2. Envía un prompt corto.
-3. Si no encuentra modelo: verás mensaje con tip de ruta.
-4. Si encuentra modelo + backend integrado: debe responder local.
+1. Run the app on iPad.
+2. Send a short prompt.
+3. If model is missing: you should see a path hint message.
+4. If model exists + backend is integrated: it should answer locally.
 
 ---
 
-## 6) Recomendación inicial de modelo
+## 6) Initial model recommendation
 
-- Tamaño: 3B a 8B
-- Quant: Q4_K_M (balance velocidad/calidad)
-- Contexto inicial: 8k–12k
-
+- Size: 3B to 8B
+- Quant: Q4_K_M (speed/quality balance)
+- Initial context: 8k–12k

@@ -1,31 +1,31 @@
-# 03 — Viabilidad por Dispositivo / Modelo (inicial)
+# 03 — Device/Model Viability Matrix (initial)
 
-> Nota: valores orientativos para decidir pruebas. Se refinan con benchmarks reales.
+> Note: these are directional values for test planning and should be refined with real benchmarks.
 
-## Perfiles sugeridos
+## Suggested Profiles
 
 ### iPad M1
-- Perfil local recomendado: 3B–7B cuantizado.
-- Uso ideal: chat general, resúmenes cortos, drafting.
-- Riesgo: throttling en sesiones largas.
+- Recommended local profile: quantized 3B–7B.
+- Ideal usage: general chat, short summaries, drafting.
+- Risk: thermal throttling during long sessions.
 
 ### iPad M2
-- Perfil local recomendado: 7B cuantizado estable; 8B según runtime.
-- Uso ideal: chat general + razonamiento moderado.
-- Riesgo: consumo de batería en cargas continuas.
+- Recommended local profile: stable quantized 7B; 8B depending on runtime.
+- Ideal usage: general chat + moderate reasoning.
+- Risk: battery draw under sustained load.
 
 ### iPad M4
-- Perfil local recomendado: 7B–8B más cómodo, mejor latencia.
-- Uso ideal: sesiones más largas locales.
-- Riesgo: aún limitado para flujos complejos estilo agente completo.
+- Recommended local profile: more comfortable 7B–8B, better latency.
+- Ideal usage: longer local sessions.
+- Risk: still limited for complex full-agent workflows.
 
-## Reglas de enrutamiento (propuesta)
-- Local si: prompt corto/medio + sin herramientas pesadas.
-- Delegado si: contexto largo, tareas multi-step, o necesidad de tools externas.
+## Routing Rules (proposal)
+- Local if: short/medium prompt + no heavy tool use.
+- Delegated if: long context, multi-step tasks, or external tool needs.
 
-## Métricas a medir en prototipo
-1. Tiempo a primer token.
-2. Tokens/segundo sostenidos.
-3. Uso de memoria pico.
-4. Caída de batería en 15 min.
-5. Temperatura percibida y estabilidad.
+## Prototype Metrics to Measure
+1. Time-to-first-token.
+2. Sustained tokens/sec.
+3. Peak memory usage.
+4. Battery drop over 15 minutes.
+5. Perceived temperature and overall stability.

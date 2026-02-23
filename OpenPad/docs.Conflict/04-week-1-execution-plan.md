@@ -1,95 +1,95 @@
-# 04 — Plan de Ejecución (Semana 1)
+# 04 — Execution Plan (Week 1)
 
-Objetivo de la semana: llegar a un prototipo funcional de app iPad con chat básico, ruta local simulada/real mínima y ruta delegada definida.
+Week goal: reach a functional iPad app prototype with basic chat, minimal local path (mock or real), and defined delegated path.
 
-## Día 1 — Setup base del proyecto
-**Entregables**
-- Proyecto iPad (SwiftUI) creado.
-- Estructura inicial de módulos (`ChatUI`, `ConversationStore`, `InferenceEngine`, `DelegateClient`, `PolicyRouter`).
-- Documento corto de decisiones técnicas iniciales.
+## Day 1 — Project baseline setup
+**Deliverables**
+- iPad project (SwiftUI) created.
+- Initial module structure (`ChatUI`, `ConversationStore`, `InferenceEngine`, `DelegateClient`, `PolicyRouter`).
+- Short document with initial technical decisions.
 
 **Checklist**
-- [ ] Crear repo/app base
-- [ ] Configurar targets y build settings
-- [ ] Definir interfaces/protocolos
+- [ ] Create base repo/app
+- [ ] Configure targets and build settings
+- [ ] Define interfaces/protocols
 
 ---
 
-## Día 2 — Chat UI + estado local
-**Entregables**
-- Pantalla de chat funcional (input, lista de mensajes, estados de carga).
-- Persistencia mínima local para conversaciones recientes.
+## Day 2 — Chat UI + local state
+**Deliverables**
+- Functional chat screen (input, message list, loading states).
+- Minimal local persistence for recent conversations.
 
 **Checklist**
-- [ ] Vista chat con streaming simulado
-- [ ] Guardado/carga local de historial
-- [ ] Manejo de errores UX básico
+- [ ] Chat view with simulated streaming
+- [ ] Local history save/load
+- [ ] Basic UX error handling
 
 ---
 
-## Día 3 — Motor local (PoC)
-**Entregables**
-- Integración inicial de runtime local (PoC) o mock con interfaz real.
-- Primera respuesta local end-to-end.
+## Day 3 — Local engine (PoC)
+**Deliverables**
+- Initial local runtime integration (PoC) or realistic mock.
+- First end-to-end local response.
 
 **Checklist**
-- [ ] Implementar `InferenceEngine` v0
-- [ ] Cargar modelo pequeño o mock equivalente
-- [ ] Medir tiempo a primera respuesta
+- [ ] Implement `InferenceEngine` v0
+- [ ] Load a small model or equivalent mock
+- [ ] Measure first-response latency
 
 ---
 
-## Día 4 — Ruta delegada (handoff)
-**Entregables**
-- `DelegateClient` con endpoint configurable.
-- Botón/selector para forzar respuesta delegada.
+## Day 4 — Delegated path (handoff)
+**Deliverables**
+- `DelegateClient` with configurable endpoint.
+- Button/selector to force delegated responses.
 
 **Checklist**
-- [ ] Conexión segura al backend/Mac
-- [ ] UX clara de "Local" vs "Delegado"
-- [ ] Reintento y timeout básico
+- [ ] Secure connection to backend/Mac
+- [ ] Clear UX for "Local" vs "Delegated"
+- [ ] Basic retry + timeout
 
 ---
 
-## Día 5 — Router de políticas
-**Entregables**
-- Reglas básicas para decidir local vs delegado automáticamente.
-- Logs de decisión para depuración.
+## Day 5 — Policy router
+**Deliverables**
+- Basic automatic rules for local vs delegated routing.
+- Decision logs for debugging.
 
 **Checklist**
-- [ ] Heurísticas por tamaño de prompt/contexto
-- [ ] Fallback automático a delegado ante error local
-- [ ] Métricas simples por ruta
+- [ ] Heuristics by prompt/context size
+- [ ] Automatic fallback to delegated on local error
+- [ ] Basic per-route metrics
 
 ---
 
-## Día 6 — Medición en dispositivo (M1/M2/M4)
-**Entregables**
-- Mini benchmark interno (TTFT, fluidez, estabilidad).
-- Ajustes de parámetros iniciales por perfil de iPad.
+## Day 6 — On-device measurement (M1/M2/M4)
+**Deliverables**
+- Mini internal benchmark (TTFT, fluency, stability).
+- Initial parameter tuning per iPad profile.
 
 **Checklist**
-- [ ] Prueba de 10–15 min por ruta
-- [ ] Observación de batería/temperatura
-- [ ] Ajuste de límites para evitar throttling
+- [ ] 10–15 minute test per route
+- [ ] Battery/temperature observation
+- [ ] Tune limits to reduce throttling
 
 ---
 
-## Día 7 — Cierre de sprint + backlog
-**Entregables**
-- Demo interna funcional.
-- Lista priorizada para Semana 2.
-- Decisión: runtime final candidato para v1.
+## Day 7 — Sprint close + backlog
+**Deliverables**
+- Working internal demo.
+- Prioritized list for Week 2.
+- Decision on final runtime candidate for v1.
 
 **Checklist**
-- [ ] Demo script (3 escenarios)
-- [ ] Riesgos abiertos documentados
-- [ ] Próximos pasos aprobados
+- [ ] Demo script (3 scenarios)
+- [ ] Open risks documented
+- [ ] Next steps approved
 
 ---
 
-## Definición de "hecho" de Semana 1
-1. App abre y mantiene conversaciones locales.
-2. Puede responder por ruta local (aunque sea limitada) y ruta delegada.
-3. Existe criterio automático básico para enrutar.
-4. Se tienen primeras métricas reales en al menos un iPad M-series.
+## Definition of "done" for Week 1
+1. App opens and maintains local conversations.
+2. App can answer via both local route (even if limited) and delegated route.
+3. There is a basic automatic routing criterion.
+4. First real metrics exist on at least one M-series iPad.

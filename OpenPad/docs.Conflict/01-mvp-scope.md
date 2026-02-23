@@ -1,24 +1,24 @@
 # 01 — MVP Scope (iPad M1/M2/M4)
 
-## Objetivo del MVP
-Entregar una app iPad funcional para chat asistido, con inferencia local para tareas rápidas y fallback/handoff para tareas pesadas.
+## MVP Goal
+Deliver a functional iPad app for assisted chat, with local inference for fast tasks and fallback/handoff for heavier tasks.
 
-## Incluye (v1)
-1. Chat local (historial en dispositivo).
-2. Modelo local cuantizado (3B–8B según dispositivo).
-3. Ajustes de respuesta (rápida/balanceada).
-4. Memoria corta local (sesión actual + últimas conversaciones).
-5. Adjuntos simples locales (texto, imagen estática para contexto básico).
-6. Modo híbrido: botón para delegar respuesta pesada a backend/Mac.
+## Includes (v1)
+1. Local chat (on-device history).
+2. Quantized local model (3B–8B depending on device).
+3. Response modes (fast/balanced).
+4. Short local memory (current session + recent conversations).
+5. Simple local attachments (text, static images for basic context).
+6. Hybrid mode: button to delegate heavy responses to backend/Mac.
 
-## No incluye (v1)
-1. Ejecución completa de herramientas del ecosistema OpenClaw en iPad.
-2. Automatización en background prolongada (limitaciones iPadOS).
-3. Multiagente persistente local.
-4. Fine-tuning local en dispositivo.
+## Excludes (v1)
+1. Full OpenClaw tools ecosystem execution on iPad.
+2. Long-running background automation (iPadOS limitations).
+3. Persistent local multi-agent orchestration.
+4. On-device local fine-tuning.
 
-## Criterios de éxito
-- Tiempo a primer token aceptable para chat casual.
-- UX estable sin crashes por memoria.
-- Cambio explícito entre "local" y "delegado".
-- Batería/temperatura dentro de niveles razonables en sesiones de 10–20 min.
+## Success Criteria
+- Acceptable time-to-first-token for casual chat.
+- Stable UX without memory-related crashes.
+- Explicit switching between "local" and "delegated".
+- Battery/temperature within reasonable ranges during 10–20 minute sessions.

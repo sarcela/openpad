@@ -1,28 +1,28 @@
-# 02 — Stack Técnico Propuesto
+# 02 — Proposed Technical Stack
 
 ## App
 - **UI:** SwiftUI
-- **Plataforma:** iPadOS (M1/M2/M4)
-- **Persistencia local:** SQLite o SwiftData (historial + settings)
+- **Platform:** iPadOS (M1/M2/M4)
+- **Local persistence:** SQLite or SwiftData (history + settings)
 
-## Inference local (candidatos)
-1. **MLX (preferido para ecosistema Apple Silicon)**
-   - Pros: buen rendimiento en Apple Silicon, comunidad creciendo.
-   - Contras: integración iPad específica a validar.
-2. **MLC / runtime compatible iOS/iPadOS**
-   - Pros: enfoque mobile deployment.
-   - Contras: complejidad de pipeline/model conversion.
-3. **Core ML (modelos convertidos)**
-   - Pros: integración nativa Apple.
-   - Contras: conversión y soporte de modelos LLM variable.
+## Local Inference (candidates)
+1. **MLX (preferred for Apple Silicon ecosystem)**
+   - Pros: strong Apple Silicon performance, growing community.
+   - Cons: iPad-specific integration still needs validation.
+2. **MLC / iOS-iPadOS compatible runtime**
+   - Pros: mobile deployment focus.
+   - Cons: model conversion/pipeline complexity.
+3. **Core ML (converted models)**
+   - Pros: native Apple integration.
+   - Cons: variable conversion and support across LLM families.
 
-## Estrategia recomendada
-- Empezar con runtime que tenga mejor camino de integración real en iPad hoy.
-- Mantener capa de abstracción `InferenceEngine` para poder cambiar runtime sin reescribir UI.
+## Recommended Strategy
+- Start with the runtime that has the most practical integration path on iPad today.
+- Keep an `InferenceEngine` abstraction layer so runtimes can be swapped without rewriting UI.
 
-## Arquitectura (alto nivel)
+## High-Level Architecture
 - `ChatUI` (SwiftUI)
-- `ConversationStore` (historial local)
+- `ConversationStore` (local history)
 - `InferenceEngine` (local)
-- `DelegateClient` (handoff a Mac/servidor)
-- `PolicyRouter` (decide local vs delegado según contexto y tamaño de tarea)
+- `DelegateClient` (handoff to Mac/server)
+- `PolicyRouter` (decides local vs delegated based on context/task size)
