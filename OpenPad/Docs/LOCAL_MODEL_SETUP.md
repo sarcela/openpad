@@ -9,8 +9,8 @@ This setup gets the project ready to run locally with a `.gguf` model.
 3. Add the Swift llama.cpp package you want to use.
 4. Assign the package to your `OpenClawPad` target.
 
-> Note: the current scaffold uses `#if canImport(LlamaCpp)`.
-> If your package exposes a different module name, update it in `LlamaLocalModelService.swift`.
+> Note: the adapter now supports both `#if canImport(LlamaCpp)` and `#if canImport(llama)`.
+> If your package exposes a different module name/API, bind it inside `LlamaNativeAdapter.generate(...)` in `LlamaLocalModelService.swift`.
 
 ---
 
@@ -40,15 +40,16 @@ Steps:
 
 ## 4) What is still needed for real inference
 
-In `LlamaLocalModelService.swift`, inside:
+In `LlamaLocalModelService.swift`, wire your package API inside:
 
 ```swift
-#if canImport(LlamaCpp)
-// TODO: connect real API here
-#endif
+private struct LlamaNativeAdapter {
+    func generate(prompt:modelPath:) async throws -> String?
+}
 ```
 
-replace the stub with:
+The call flow is now native-first, with loopback-only fallback in offline strict mode.
+Bind your package-specific calls for:
 - GGUF model loading,
 - context creation,
 - prompt inference,
