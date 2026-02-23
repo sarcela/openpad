@@ -24,6 +24,10 @@ final class OpenClawLiteAgentService {
         ensureAppMemoryFilesIfNeeded()
         trace.append("model_used=provider:\(runtimeConfig.loadProvider().rawValue.lowercased()) chat:\(runtimeConfig.loadMLXModelName()) tools:\(runtimeConfig.isSeparateMLXToolsModelEnabled() ? runtimeConfig.loadMLXToolsModelName() : runtimeConfig.loadMLXModelName())")
 
+        if let routed = try await runDeterministicIntentRoute(userPrompt: userPrompt, recentMessages: recentMessages, trace: trace) {
+            return routed
+        }
+
         if shouldBypassPlannerForCurrentModel() {
             trace.append("Planner bypass: thinking model compatibility mode")
 
@@ -266,6 +270,59 @@ final class OpenClawLiteAgentService {
 
     private func normalizedForCompare(_ text: String) -> String {
         text.lowercased().replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func runDeterministicIntentRoute(userPrompt: String, recentMessages: [ChatMessage], trace: [String]) async throws -> OpenClawAgentOutput? {
+        let lower = userPrompt.lowercased()
+        let attachmentFiles = attachmentCandidates(from: userPrompt, recentMessages: recentMessages)
+        let directURL = extractFirstURL(from: userPrompt)?.absoluteString
+
+        // Intent: current time/date style queries should be deterministic.
+        if shouldForceTimeTool(userPrompt) {
+            var t = trace
+            t.append("intent_router: intent=time_query confidence=high tool=get_time")
+            let toolResult = await tools.execute(name: "get_time", arguments: [:])
+            let secondPrompt = buildFinalizePrompt(userPrompt: userPrompt, toolName: "get_time", toolResult: toolResult)
+            let finalReply = try await localModelService.runLocal(prompt: secondPrompt, purpose: .chat)
+            return .init(text: extractContentFromJsonLike(finalReply) ?? finalReply, trace: t)
+        }
+
+        // Intent: explicit local attachment questions should prioritize attachment tools.
+        let asksAttachmentContent = lower.contains("pdf") || lower.contains("adjunto") || lower.contains("attachment") || lower.contains("archivo") || lower.contains("factura") || lower.contains("recibo") || lower.contains("invoice") || lower.contains("de que trata") || lower.contains("what does it say") || lower.contains("resumen") || lower.contains("summary")
+        if asksAttachmentContent, let file = attachmentFiles.first {
+            var t = trace
+            t.append("intent_router: intent=attachment_query confidence=high tool=analyze_attachment file=\(file)")
+            var toolResult = await tools.execute(name: "analyze_attachment", arguments: ["fileName": file, "maxChars": "9000"])
+            if !toolResult.ok {
+                t.append("intent_router: corrective_pass=read_attachment")
+                toolResult = await tools.execute(name: "read_attachment", arguments: ["fileName": file, "maxChars": "9000"])
+            }
+            let secondPrompt = buildFinalizePrompt(userPrompt: userPrompt, toolName: "analyze_attachment", toolResult: toolResult)
+            let finalReply = try await localModelService.runLocal(prompt: secondPrompt, purpose: .chat)
+            return .init(text: extractContentFromJsonLike(finalReply) ?? finalReply, trace: t)
+        }
+
+        // Intent: direct URL in prompt should use URL summarization without planner drift.
+        if let directURL {
+            var t = trace
+            t.append("intent_router: intent=url_query confidence=high tool=summarize_url")
+            let toolResult = await tools.execute(name: "summarize_url", arguments: ["url": directURL])
+            let secondPrompt = buildFinalizePrompt(userPrompt: userPrompt, toolName: "summarize_url", toolResult: toolResult)
+            let finalReply = try await localModelService.runLocal(prompt: secondPrompt, purpose: .chat)
+            return .init(text: extractContentFromJsonLike(finalReply) ?? finalReply, trace: t)
+        }
+
+        // Intent: explicit request to list attachments.
+        if lower.contains("lista adj") || lower.contains("list attachments") {
+            var t = trace
+            t.append("intent_router: intent=attachment_list confidence=high tool=list_attachments")
+            let toolResult = await tools.execute(name: "list_attachments", arguments: [:])
+            let secondPrompt = buildFinalizePrompt(userPrompt: userPrompt, toolName: "list_attachments", toolResult: toolResult)
+            let finalReply = try await localModelService.runLocal(prompt: secondPrompt, purpose: .chat)
+            return .init(text: extractContentFromJsonLike(finalReply) ?? finalReply, trace: t)
+        }
+
+        return nil
     }
 
     private func shouldBypassPlannerForCurrentModel() -> Bool {
