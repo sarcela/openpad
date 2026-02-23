@@ -47,6 +47,11 @@ final class OpenClawLiteAgentService {
             }
         }
 
+        if toolName == "save_memory" && !userExplicitlyAskedMemorySave(in: userPrompt) {
+            trace.append("Tool blocked: save_memory no solicitado explícitamente")
+            return .init(text: "Entendido. No lo guardaré en memoria a menos que me lo pidas explícitamente.", trace: trace)
+        }
+
         let toolResult = await tools.execute(name: toolName, arguments: toolArgs)
         trace.append("Tool result: \(toolResult.ok ? "ok" : "error")")
 
@@ -56,6 +61,12 @@ final class OpenClawLiteAgentService {
         if let finalDecision = parseDecision(from: finalReply), let content = finalDecision.content, !content.isEmpty {
             return .init(text: content, trace: trace)
         }
+
+        if let extracted = extractContentFromJsonLike(finalReply), !extracted.isEmpty {
+            trace.append("Finalize fallback: contenido extraído de JSON malformado")
+            return .init(text: extracted, trace: trace)
+        }
+
         return .init(text: finalReply, trace: trace)
     }
 
@@ -68,6 +79,7 @@ final class OpenClawLiteAgentService {
         Decide tu siguiente acción y responde SOLO en JSON válido.
         Puedes usar internet cuando sea útil para responder mejor.
         Si el usuario comparte una URL completa, prioriza `http_get` para leerla/resumirla directamente.
+        Regla de memoria: SOLO usa `save_memory` cuando el usuario lo pida explícitamente (ej: "guarda en memoria", "recuerda esto", "memoriza").
 
         Memoria reciente persistida (sobrevive reinicios):
         \(memoryContext)
@@ -180,6 +192,39 @@ final class OpenClawLiteAgentService {
             return nil
         }
         return URL(string: String(text[matchRange]))
+    }
+
+    private func extractContentFromJsonLike(_ text: String) -> String? {
+        if let decision = parseDecision(from: text), let content = decision.content, !content.isEmpty {
+            return content
+        }
+
+        let patterns = [
+            #""content"\s*:\s*"((?:\.|[^"])*)""#,
+            #"content\s*[:=]\s*"([^"]+)""#
+        ]
+
+        for pattern in patterns {
+            if let regex = try? NSRegularExpression(pattern: pattern),
+               let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+               let range = Range(match.range(at: 1), in: text) {
+                return String(text[range])
+                    .replacingOccurrences(of: "\\n", with: "
+")
+                    .replacingOccurrences(of: "\"", with: """)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
+        return nil
+    }
+
+    private func userExplicitlyAskedMemorySave(in prompt: String) -> Bool {
+        let p = prompt.lowercased()
+        let triggers = [
+            "guarda en memoria", "guardar en memoria", "recuerda esto", "memoriza", "acuérdate", "acuerdate",
+            "remember this", "save this"
+        ]
+        return triggers.contains { p.contains($0) }
     }
 
     private func preferredLanguageInstruction() -> String {
