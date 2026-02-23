@@ -41,10 +41,16 @@ final class OpenClawLiteAgentService {
         var toolName = name
         var toolArgs = decision.arguments ?? [:]
 
-        if name == "brave_search", let directURL = extractFirstURL(from: userPrompt)?.absoluteString {
-            toolName = "http_get"
-            toolArgs = ["url": directURL]
-            trace.append("Tool rewrite: brave_search -> http_get (URL directa)")
+        if let directURL = extractFirstURL(from: userPrompt)?.absoluteString {
+            if name == "brave_search" {
+                toolName = "http_get"
+                toolArgs = ["url": directURL, "allow_host": "true"]
+                trace.append("Tool rewrite: brave_search -> http_get (URL directa)")
+            } else if name == "http_get" {
+                toolArgs["url"] = toolArgs["url"] ?? directURL
+                toolArgs["allow_host"] = "true"
+                trace.append("Tool override: allow_host=true por solicitud explícita con URL directa")
+            }
         }
 
         let toolResult = await tools.execute(name: toolName, arguments: toolArgs)

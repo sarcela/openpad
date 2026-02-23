@@ -139,8 +139,9 @@ final class OpenClawLiteTools {
 
         case "http_get":
             let urlString = (arguments["url"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let allowDirect = (arguments["allow_host"] ?? "false").lowercased() == "true"
             guard !urlString.isEmpty else { return .init(ok: false, output: "Missing argument: url") }
-            return await fetchHTTP(urlString: urlString)
+            return await fetchHTTP(urlString: urlString, allowDirectHostBypass: allowDirect)
 
         case "brave_search":
             let query = (arguments["query"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -266,14 +267,14 @@ final class OpenClawLiteTools {
         return candidate
     }
 
-    private func fetchHTTP(urlString: String) async -> OpenClawToolResult {
+    private func fetchHTTP(urlString: String, allowDirectHostBypass: Bool = false) async -> OpenClawToolResult {
         guard let url = URL(string: urlString), url.scheme == "https", let host = url.host?.lowercased() else {
             return .init(ok: false, output: "Only https URLs are allowed")
         }
         let allowedHosts = Set(config.loadAllowlistHosts())
         let isKnownSafeHost = allowedHosts.contains(host)
         let isDirectFileURL = url.pathExtension.lowercased() == "pdf"
-        guard isKnownSafeHost || isDirectFileURL else {
+        guard isKnownSafeHost || isDirectFileURL || allowDirectHostBypass else {
             return .init(ok: false, output: "Host not allowed: \(host)")
         }
 
