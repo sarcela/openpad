@@ -9,6 +9,7 @@ struct OpenClawAgentOutput {
 final class OpenClawLiteAgentService {
     private let localModelService = LocalModelService()
     private let tools = OpenClawLiteTools()
+    private let runtimeConfig = LocalRuntimeConfig.shared
 
     func respond(to userPrompt: String, recentMessages: [ChatMessage] = []) async throws -> OpenClawAgentOutput {
         var trace: [String] = []
@@ -254,7 +255,8 @@ final class OpenClawLiteAgentService {
 
     private func buildRecentContext(from messages: [ChatMessage]) -> String {
         guard !messages.isEmpty else { return "(sin historial reciente)" }
-        let rows = messages.suffix(10).map { msg in
+        let window = runtimeConfig.loadRecentContextWindow()
+        let rows = messages.suffix(window).map { msg in
             "\(msg.role.uppercased()): \(msg.text)"
         }
         return rows.joined(separator: "\n")

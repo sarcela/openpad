@@ -25,6 +25,7 @@ struct LocalRuntimeConfig {
         static let ollamaModel = "local.ollama.model"
         static let mlxModel = "local.mlx.model"
         static let mlxToolsModel = "local.mlx.tools.model"
+        static let recentContextWindow = "agent.recent.context.window"
     }
 
     func loadProvider() -> LocalRuntimeProvider {
@@ -64,5 +65,14 @@ struct LocalRuntimeConfig {
 
     func saveMLXToolsModelName(_ name: String) {
         UserDefaults.standard.set(name.trimmingCharacters(in: .whitespacesAndNewlines), forKey: Keys.mlxToolsModel)
+    }
+
+    func loadRecentContextWindow() -> Int {
+        let value = UserDefaults.standard.integer(forKey: Keys.recentContextWindow)
+        return value == 0 ? 10 : max(2, min(30, value))
+    }
+
+    func saveRecentContextWindow(_ value: Int) {
+        UserDefaults.standard.set(max(2, min(30, value)), forKey: Keys.recentContextWindow)
     }
 }

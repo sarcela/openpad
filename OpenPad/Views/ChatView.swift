@@ -840,6 +840,7 @@ private struct SettingsView: View {
     @State private var showCronsManager = false
     @State private var showHeartbeatManager = false
     @State private var showFilesManager = false
+    @State private var recentContextWindow: Double = 10
 
     private let remoteConfig = RemoteModelConfig.shared
     private let localConfig = LocalModelConfig.shared
@@ -1066,6 +1067,17 @@ private struct SettingsView: View {
                             .foregroundColor(.secondary)
                     }
 
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text("Contexto reciente")
+                            Spacer()
+                            Text("\(Int(recentContextWindow)) msgs")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        Slider(value: $recentContextWindow, in: 2...30, step: 1)
+                    }
+
                     SecureField("Brave API Key", text: $braveApiKey)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
@@ -1115,6 +1127,7 @@ private struct SettingsView: View {
                         openClawLiteConfig.saveAllowlistHosts(allowlistHostsText)
                         openClawLiteConfig.saveBraveApiKey(braveApiKey)
                         openClawLiteConfig.setInternetOpenAccessEnabled(internetOpenAccess)
+                        runtimeConfig.saveRecentContextWindow(Int(recentContextWindow))
                         localConfig.saveSelectedModelPath(selectedModelPath.isEmpty ? nil : selectedModelPath)
                         localConfig.saveSelectedEmbeddingModelPath(selectedEmbeddingModelPath.isEmpty ? nil : selectedEmbeddingModelPath)
                         dismiss()
@@ -1137,6 +1150,7 @@ private struct SettingsView: View {
                 allowlistHostsText = openClawLiteConfig.allowlistHostsText()
                 braveApiKey = openClawLiteConfig.loadBraveApiKey()
                 internetOpenAccess = openClawLiteConfig.isInternetOpenAccessEnabled()
+                recentContextWindow = Double(runtimeConfig.loadRecentContextWindow())
                 mlxDownloadedModels = openClawLiteConfig.loadDownloadedMLXModels()
 
                 refreshModels()
