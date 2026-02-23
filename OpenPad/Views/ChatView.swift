@@ -342,14 +342,16 @@ struct ChatView: View {
         switch provider {
         case .llamaCpp:
             if let selectedPath = localConfig.loadSelectedModelPath(), !selectedPath.isEmpty {
-                return "Privado/offline • llama.cpp • \(URL(fileURLWithPath: selectedPath).deletingPathExtension().lastPathComponent)"
+                return "Private/offline • llama.cpp • \(URL(fileURLWithPath: selectedPath).deletingPathExtension().lastPathComponent)"
             }
             return "Private/offline • llama.cpp • no model selected"
         case .ollama:
             let cfg = runtimeConfig.loadOllama()
             return "Local (Ollama) • \(cfg.model)"
         case .mlx:
-            return "Privado/offline • MLX • \(runtimeConfig.loadMLXModelName())"
+            let model = runtimeConfig.loadMLXModelName()
+            let compat = model.lowercased().contains("thinking") || model.lowercased().contains("lfm2.5")
+            return "Private/offline • MLX • \(model)\(compat ? " • compat" : "")"
         }
     }
 }

@@ -16,6 +16,14 @@ final class OpenClawLiteAgentService {
     func respond(to userPrompt: String, recentMessages: [ChatMessage] = []) async throws -> OpenClawAgentOutput {
         var trace: [String] = []
         ensureAppMemoryFilesIfNeeded()
+
+        if shouldBypassPlannerForCurrentModel() {
+            trace.append("Planner bypass: thinking model compatibility mode")
+            let directPrompt = buildDirectCompatPrompt(userPrompt: userPrompt, recentMessages: recentMessages)
+            let directReply = try await localModelService.runLocal(prompt: directPrompt, purpose: .chat)
+            return .init(text: directReply, trace: trace)
+        }
+
         let firstPrompt = buildPlannerPrompt(userPrompt: userPrompt, recentMessages: recentMessages)
         let modelReply = try await localModelService.runLocal(prompt: firstPrompt, purpose: .tools)
 
@@ -99,6 +107,37 @@ final class OpenClawLiteAgentService {
         }
 
         return .init(text: finalReply, trace: trace)
+    }
+
+    private func shouldBypassPlannerForCurrentModel() -> Bool {
+        guard runtimeConfig.loadProvider() == .mlx else { return false }
+        let model = runtimeConfig.loadMLXModelName().lowercased()
+        if model.contains("thinking") || model.contains("lfm2.5") {
+            return true
+        }
+        return false
+    }
+
+    private func buildDirectCompatPrompt(userPrompt: String, recentMessages: [ChatMessage]) -> String {
+        let recent = buildRecentContext(from: recentMessages)
+        let attachmentContext = buildAttachmentContext(from: userPrompt)
+        let languageInstruction = preferredLanguageInstruction()
+        return """
+        You are OpenClaw Lite running in compatibility mode for reasoning-heavy models.
+        \(languageInstruction)
+        Do not output JSON schemas or planning structures.
+        Do not include <think> blocks.
+        If attachments are present, prioritize them.
+
+        Attachment context:
+        \(attachmentContext)
+
+        Recent context:
+        \(recent)
+
+        User message:
+        \(userPrompt)
+        """
     }
 
     private func buildPlannerPrompt(userPrompt: String, recentMessages: [ChatMessage]) -> String {
