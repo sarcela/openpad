@@ -164,20 +164,20 @@ final class ChatViewModel: ObservableObject {
         activeTask?.cancel()
         activeTask = Task { [weak self] in
             guard let self else { return }
-            let responseText = await runPipeline(prompt: prompt)
+            let responseText = await self.runPipeline(prompt: prompt)
             if Task.isCancelled {
-                isLoading = false
+                self.isLoading = false
                 return
             }
-            messages.append(ChatMessage(role: "assistant", text: responseText))
-            trimMessagesIfNeeded()
-            persistActiveSession()
-            appMemory.appendInteraction(user: prompt, assistant: responseText)
-            appMemory.appendToolTrace(toolTrace)
-            notificationService.notifyAssistantReplyIfAppInBackground(responseText)
-            isLoading = false
-            inFlightPrompt = nil
-            activeTask = nil
+            self.messages.append(ChatMessage(role: "assistant", text: responseText))
+            self.trimMessagesIfNeeded()
+            self.persistActiveSession()
+            self.appMemory.appendInteraction(user: prompt, assistant: responseText)
+            self.appMemory.appendToolTrace(self.toolTrace)
+            self.notificationService.notifyAssistantReplyIfAppInBackground(responseText)
+            self.isLoading = false
+            self.inFlightPrompt = nil
+            self.activeTask = nil
         }
     }
 
