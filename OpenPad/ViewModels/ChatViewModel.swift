@@ -260,9 +260,9 @@ final class ChatViewModel: ObservableObject {
                 return "Remote error: \(error.localizedDescription)"
             }
 
-            if routePreference == .local {
+            if routePreference == .local || runtimeConfig.isOfflineStrictModeEnabled() {
                 lastRoute = "LOCAL"
-                lastReason = "forced_local_error"
+                lastReason = runtimeConfig.isOfflineStrictModeEnabled() ? "offline_strict_local_error" : "forced_local_error"
                 self.lastLatencyMs = Int(Date().timeIntervalSince(started) * 1000)
                 self.lastErrorText = error.localizedDescription
                 self.errorCount += 1
@@ -300,6 +300,9 @@ final class ChatViewModel: ObservableObject {
     }
 
     private func selectPrimaryTarget(autoTarget: String) -> String {
+        if runtimeConfig.isOfflineStrictModeEnabled() {
+            return "LOCAL"
+        }
         switch routePreference {
         case .auto: return autoTarget
         case .local: return "LOCAL"

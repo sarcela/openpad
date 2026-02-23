@@ -59,6 +59,8 @@ struct LocalRuntimeConfig {
         static let intentRouteURLEnabled = "agent.intent.route.url.enabled"
         static let intentRouteListAttachmentsEnabled = "agent.intent.route.list_attachments.enabled"
         static let selfImprovingAgentEnabled = "agent.self_improving.enabled"
+        static let offlineStrictMode = "agent.offline.strict.enabled"
+        static let forceAttachmentFirst = "agent.attachment.first.enabled"
     }
 
     func loadProvider() -> LocalRuntimeProvider {
@@ -255,5 +257,21 @@ struct LocalRuntimeConfig {
 
     func setSelfImprovingAgentEnabled(_ enabled: Bool) {
         UserDefaults.standard.set(enabled, forKey: Keys.selfImprovingAgentEnabled)
+    }
+
+    func isOfflineStrictModeEnabled() -> Bool {
+        UserDefaults.standard.object(forKey: Keys.offlineStrictMode) as? Bool ?? false
+    }
+
+    func setOfflineStrictModeEnabled(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: Keys.offlineStrictMode)
+    }
+
+    func isForceAttachmentFirstEnabled() -> Bool {
+        UserDefaults.standard.object(forKey: Keys.forceAttachmentFirst) as? Bool ?? true
+    }
+
+    func setForceAttachmentFirstEnabled(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: Keys.forceAttachmentFirst)
     }
 }

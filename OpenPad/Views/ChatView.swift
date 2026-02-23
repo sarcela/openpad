@@ -1719,6 +1719,8 @@ private struct SettingsView: View {
     @State private var autodevEnabled = false
     @State private var qualityGateStrictness = "balanced"
     @State private var selfImprovingAgentEnabled = true
+    @State private var offlineStrictModeEnabled = false
+    @State private var forceAttachmentFirstEnabled = true
     @State private var toolPermissions: [String: Bool] = [:]
     @State private var settingsSearch = ""
     @State private var settingsCategory: SettingsCategory = .all
@@ -2110,8 +2112,10 @@ private struct SettingsView: View {
                     }
 
                     Toggle("Self-improving agent", isOn: $selfImprovingAgentEnabled)
+                    Toggle("Offline strict mode (never fallback to remote)", isOn: $offlineStrictModeEnabled)
+                    Toggle("Force attachment-first answers", isOn: $forceAttachmentFirstEnabled)
 
-                    if lowPowerModeEnabled || emergencyMemoryModeEnabled {
+                    if lowPowerModeEnabled || emergencyMemoryModeEnabled || offlineStrictModeEnabled {
                         Text("Reduces context, OCR, and retries. Emergency mode also enforces stricter prompt condensation and smaller context windows.")
                             .font(.caption2)
                             .foregroundColor(.secondary)
@@ -2231,6 +2235,8 @@ private struct SettingsView: View {
                         runtimeConfig.setEmergencyMemoryModeEnabled(emergencyMemoryModeEnabled)
                         runtimeConfig.saveQualityGateStrictness(qualityGateStrictness)
                         runtimeConfig.setSelfImprovingAgentEnabled(selfImprovingAgentEnabled)
+                        runtimeConfig.setOfflineStrictModeEnabled(offlineStrictModeEnabled)
+                        runtimeConfig.setForceAttachmentFirstEnabled(forceAttachmentFirstEnabled)
                         openClawLiteConfig.setAutodevEnabled(autodevEnabled)
                         for (tool, enabled) in toolPermissions {
                             openClawLiteConfig.setToolEnabled(tool, enabled: enabled)
@@ -2275,6 +2281,8 @@ private struct SettingsView: View {
                 emergencyMemoryModeEnabled = runtimeConfig.isEmergencyMemoryModeEnabled()
                 qualityGateStrictness = runtimeConfig.loadQualityGateStrictness()
                 selfImprovingAgentEnabled = runtimeConfig.isSelfImprovingAgentEnabled()
+                offlineStrictModeEnabled = runtimeConfig.isOfflineStrictModeEnabled()
+                forceAttachmentFirstEnabled = runtimeConfig.isForceAttachmentFirstEnabled()
                 mlxDownloadedModels = openClawLiteConfig.loadDownloadedMLXModels()
 
                 refreshModels()

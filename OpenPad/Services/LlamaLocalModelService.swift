@@ -7,6 +7,8 @@ enum LlamaServiceError: LocalizedError {
     case invalidBaseURL
     case badStatus(Int, String)
     case emptyResponse
+    case nonLocalEndpointBlocked
+    case nativeBackendRequired
 
     var errorDescription: String? {
         switch self {
@@ -22,6 +24,10 @@ enum LlamaServiceError: LocalizedError {
             return "llama.cpp HTTP \(code): \(body.prefix(180))"
         case .emptyResponse:
             return "llama.cpp returned an empty response"
+        case .nonLocalEndpointBlocked:
+            return "llama.cpp endpoint must be local (127.0.0.1/localhost) in offline strict mode"
+        case .nativeBackendRequired:
+            return "Offline strict mode requires native llama.cpp backend or local llama-server on loopback"
         }
     }
 }
@@ -44,14 +50,27 @@ final class LlamaLocalModelService {
             throw LlamaServiceError.modelNotConfigured
         }
 
+        // En modo estricto offline, bloqueamos endpoints no locales.
+        if runtimeConfig.isOfflineStrictModeEnabled() {
+            let cfg = runtimeConfig.loadLlama()
+            guard let base = URL(string: cfg.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)),
+                  isLocalEndpoint(base) else {
+                throw LlamaServiceError.nonLocalEndpointBlocked
+            }
+        }
+
         // Siempre intentamos primero backend nativo (si existe en el build).
         #if canImport(LlamaCpp)
-        // Placeholder: integrate the real llama.cpp native package call here.
-        // Mientras tanto, cae al llama-server HTTP para no bloquear el flujo.
+        // Adapter hook: si integras un paquete con APIs nativas, enrútalo aquí.
+        // Hoy mantenemos el camino llama-server local para compatibilidad.
         _ = modelPath
         #endif
 
-        return try await runViaLlamaServer(prompt: prompt, modelPath: modelPath)
+        let out = try await runViaLlamaServer(prompt: prompt, modelPath: modelPath)
+        if runtimeConfig.isOfflineStrictModeEnabled(), out.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            throw LlamaServiceError.nativeBackendRequired
+        }
+        return out
     }
 
     private func runViaLlamaServer(prompt: String, modelPath: String) async throws -> String {
@@ -111,6 +130,12 @@ final class LlamaLocalModelService {
         } catch {
             throw LlamaServiceError.backendUnavailable
         }
+    }
+
+    private func isLocalEndpoint(_ url: URL) -> Bool {
+        guard let host = url.host?.lowercased() else { return false }
+        if host == "localhost" || host == "127.0.0.1" || host == "::1" { return true }
+        return false
     }
 
     private func extractContentField(from text: String) -> String? {

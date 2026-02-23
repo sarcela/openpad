@@ -102,6 +102,21 @@ final class OpenClawLiteAgentService {
         }
 
         if decision.type == "final" {
+            let forceAttachmentFirst = runtimeConfig.isForceAttachmentFirstEnabled()
+            if forceAttachmentFirst && !attachmentCandidates(from: userPrompt, recentMessages: recentMessages).isEmpty {
+                trace.append("Planner override: force attachment-first tool")
+                let candidates = attachmentCandidates(from: userPrompt, recentMessages: recentMessages)
+                if let file = candidates.first {
+                    lastAttachmentFileName = file
+                    var toolResult = await tools.execute(name: "analyze_attachment", arguments: ["fileName": file, "maxChars": "10000"])
+                    if !toolResult.ok {
+                        toolResult = await tools.execute(name: "read_attachment", arguments: ["fileName": file, "maxChars": "10000"])
+                    }
+                    let secondPrompt = buildFinalizePrompt(userPrompt: userPrompt, toolName: "analyze_attachment", toolResult: toolResult)
+                    let finalReply = try await localModelService.runLocal(prompt: secondPrompt, purpose: .chat)
+                    return .init(text: extractContentFromJsonLike(finalReply) ?? finalReply, trace: trace)
+                }
+            }
             if shouldForceTimeTool(userPrompt) {
                 trace.append("Planner override: force get_time tool")
                 let toolResult = await tools.execute(name: "get_time", arguments: [:])
@@ -188,6 +203,13 @@ final class OpenClawLiteAgentService {
             trace.append("Retry policy: second tool attempt")
             toolResult = await tools.execute(name: toolName, arguments: toolArgs)
             trace.append("Retry result: \(toolResult.ok ? "ok" : "error")")
+        }
+
+        if !toolResult.ok, ["analyze_attachment", "read_attachment"].contains(toolName) {
+            let fallbackTool = (toolName == "analyze_attachment") ? "read_attachment" : "analyze_attachment"
+            trace.append("Attachment fallback: \(toolName) -> \(fallbackTool)")
+            toolResult = await tools.execute(name: fallbackTool, arguments: toolArgs)
+            trace.append("Attachment fallback result: \(toolResult.ok ? "ok" : "error")")
         }
 
         let secondPrompt = buildFinalizePrompt(userPrompt: userPrompt, toolName: toolName, toolResult: toolResult)
@@ -298,7 +320,8 @@ final class OpenClawLiteAgentService {
 
         // Intent: explicit local attachment questions should prioritize attachment tools.
         let asksAttachmentContent = lower.contains("pdf") || lower.contains("adjunto") || lower.contains("attachment") || lower.contains("archivo") || lower.contains("factura") || lower.contains("recibo") || lower.contains("invoice") || lower.contains("de que trata") || lower.contains("what does it say") || lower.contains("resumen") || lower.contains("summary")
-        if runtimeConfig.isIntentRouteAttachmentEnabled(), asksAttachmentContent, let file = attachmentFiles.first {
+        let shouldForceAttachmentFirst = runtimeConfig.isForceAttachmentFirstEnabled() && directURL == nil && !attachmentFiles.isEmpty
+        if runtimeConfig.isIntentRouteAttachmentEnabled(), (asksAttachmentContent || shouldForceAttachmentFirst), let file = attachmentFiles.first {
             lastAttachmentFileName = file
             var t = trace
             t.append("intent_router: intent=attachment_query confidence=high tool=analyze_attachment file=\(file)")
