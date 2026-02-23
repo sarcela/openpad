@@ -1269,6 +1269,71 @@ private struct FilesManagerView: View {
     }
 }
 
+private struct EmbeddingInspectorView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var stats = ""
+
+    private let memoryDirName = "OpenClawMemory"
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Embedding backend") {
+                    Text("Primary: Ollama embeddings when available")
+                    Text("Fallback: Local hash embedding")
+                        .foregroundColor(.secondary)
+                }
+
+                Section("Cache") {
+                    Text(stats.isEmpty ? "Loading..." : stats)
+                        .font(.caption)
+                    Button("Refresh") { loadStats() }
+                    Button("Clear embedding cache", role: .destructive) {
+                        clearCache()
+                    }
+                }
+            }
+            .navigationTitle("Embeddings")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+            .onAppear { loadStats() }
+        }
+    }
+
+    private func loadStats() {
+        do {
+            let docs = try LocalModelConfig.shared.documentsDirectory()
+            let url = docs.appendingPathComponent(memoryDirName, isDirectory: true).appendingPathComponent("embedding_cache.json")
+            if !FileManager.default.fileExists(atPath: url.path) {
+                stats = "Cache file not created yet."
+                return
+            }
+            let data = try Data(contentsOf: url)
+            let arr = (try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]) ?? []
+            let sizeKB = Double(data.count) / 1024.0
+            stats = "Entries: \(arr.count)\nSize: \(String(format: "%.1f", sizeKB)) KB\nPath: \(url.lastPathComponent)"
+        } catch {
+            stats = "Error: \(error.localizedDescription)"
+        }
+    }
+
+    private func clearCache() {
+        do {
+            let docs = try LocalModelConfig.shared.documentsDirectory()
+            let url = docs.appendingPathComponent(memoryDirName, isDirectory: true).appendingPathComponent("embedding_cache.json")
+            if FileManager.default.fileExists(atPath: url.path) {
+                try FileManager.default.removeItem(at: url)
+            }
+            stats = "Cache cleared."
+        } catch {
+            stats = "Error clearing cache: \(error.localizedDescription)"
+        }
+    }
+}
+
 private struct DownloadsManagerView: View {
     @Environment(\.dismiss) private var dismiss
 
@@ -1632,6 +1697,7 @@ private struct SettingsView: View {
     @State private var showDownloadsManager = false
     @State private var showPolicyEditor = false
     @State private var showIntentRouterInspector = false
+    @State private var showEmbeddingInspector = false
     @State private var showAdvancedModelIDs = false
     @State private var showAdvancedNetwork = false
     @State private var recentContextWindow: Double = 10
@@ -2035,27 +2101,53 @@ private struct SettingsView: View {
                         showMemoryManager = true
                     } label: {
                         Label("Open memory manager", systemImage: "brain.head.profile")
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
+                    .buttonStyle(.bordered)
 
                     Button {
                         showPolicyEditor = true
                     } label: {
                         Label("Open policy editor", systemImage: "doc.text.magnifyingglass")
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
+                    .buttonStyle(.bordered)
 
                     Button {
                         showIntentRouterInspector = true
                     } label: {
                         Label("Open intent router inspector", systemImage: "point.3.connected.trianglepath.dotted")
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
+                    .buttonStyle(.bordered)
 
-                    VStack(alignment: .leading, spacing: 8) {
-                        Button("Skills") { quickPanel = .skills }
-                        Button("Crons") { quickPanel = .crons }
-                        Button("Heartbeat") { quickPanel = .heartbeat }
-                        Button("Files") { quickPanel = .files }
+                    Button {
+                        showEmbeddingInspector = true
+                    } label: {
+                        Label("Open embeddings inspector", systemImage: "square.stack.3d.up")
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .font(.caption)
+                    .buttonStyle(.bordered)
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Button { quickPanel = .skills } label: {
+                            Label("Skills", systemImage: "wand.and.stars")
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        Button { quickPanel = .crons } label: {
+                            Label("Crons", systemImage: "clock.arrow.circlepath")
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        Button { quickPanel = .heartbeat } label: {
+                            Label("Heartbeat", systemImage: "heart.text.square")
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        Button { quickPanel = .files } label: {
+                            Label("Files", systemImage: "folder")
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                    .buttonStyle(.bordered)
                 } header: {
                     Text("OpenClaw Lite")
                 } footer: {
@@ -2209,6 +2301,9 @@ private struct SettingsView: View {
             }
             .sheet(isPresented: $showIntentRouterInspector) {
                 IntentRouterInspectorView()
+            }
+            .sheet(isPresented: $showEmbeddingInspector) {
+                EmbeddingInspectorView()
             }
             .fileImporter(
                 isPresented: $showFileImporter,
