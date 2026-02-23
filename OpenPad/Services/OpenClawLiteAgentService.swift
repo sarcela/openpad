@@ -1,29 +1,5 @@
 import Foundation
 
-
-struct ContextBudget {
-    let recentChars: Int
-    let memoryChars: Int
-    let attachmentChars: Int
-}
-
-@MainActor
-final class OpenClawLiteContextManager {
-    static let shared = OpenClawLiteContextManager()
-
-    func budget(profile: RunProfile, lowPower: Bool) -> ContextBudget {
-        if lowPower {
-            return .init(recentChars: 1400, memoryChars: 700, attachmentChars: 500)
-        }
-        switch profile {
-        case .stable: return .init(recentChars: 1800, memoryChars: 1000, attachmentChars: 700)
-        case .balanced: return .init(recentChars: 3200, memoryChars: 1600, attachmentChars: 1200)
-        case .turbo: return .init(recentChars: 5000, memoryChars: 2600, attachmentChars: 1800)
-        }
-    }
-}
-
-
 struct OpenClawAgentOutput {
     let text: String
     let trace: [String]
@@ -62,6 +38,7 @@ final class OpenClawLiteAgentService {
         var toolName = name
         var toolArgs = decision.arguments ?? [:]
 
+        let hasLocalAttachmentHint = hasAttachmentHint(in: userPrompt)
         if let directURL = extractFirstURL(from: userPrompt)?.absoluteString {
             if name == "brave_search" {
                 toolName = "http_get"
@@ -72,6 +49,10 @@ final class OpenClawLiteAgentService {
                 toolArgs["allow_host"] = "true"
                 trace.append("Tool override: allow_host=true por solicitud explícita con URL directa")
             }
+        } else if hasLocalAttachmentHint, ["http_get", "summarize_url", "brave_search"].contains(name) {
+            toolName = "keyword_extract"
+            toolArgs = ["text": userPrompt, "top": "12"]
+            trace.append("Tool guard: web tool bloqueada por contexto de adjunto local")
         }
 
         if toolName == "save_memory" && !userExplicitlyAskedMemorySave(in: userPrompt) {
@@ -122,6 +103,7 @@ final class OpenClawLiteAgentService {
         \(liteConfig.isAutodevEnabled() ? "AutoDev: al final sugiere una micro-mejora concreta, reversible y de bajo riesgo." : "AutoDev desactivado.")
         Puedes usar internet cuando sea útil para responder mejor.
         Si el usuario comparte una URL completa, prioriza `http_get` para leerla/resumirla directamente.
+        Si el usuario menciona adjuntos locales (ej. [adjunto: ...], [foto: ...] o nombre de archivo), prioriza SIEMPRE el contexto de adjuntos ya inyectado y evita `http_get/summarize_url` salvo que también haya una URL explícita.
         Regla de memoria: SOLO usa `save_memory` cuando el usuario lo pida explícitamente (ej: "guarda en memoria", "recuerda esto", "memoriza").
 
         Memoria reciente persistida (sobrevive reinicios):
@@ -312,14 +294,49 @@ final class OpenClawLiteAgentService {
         return chunks.joined(separator: "\n\n")
     }
 
-    private func extractAttachmentNames(from text: String) -> [String] {
-        let pattern = #"\[(?:adjunto|foto|foto-camara)\s*:\s*([^\]]+)\]"#
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else { return [] }
+    private func hasAttachmentHint(in text: String) -> Bool {
+        let lower = text.lowercased()
+        if lower.contains("[adjunto:") || lower.contains("[foto:") || lower.contains("[foto-camara:") {
+            return true
+        }
+        let pattern = #"\b[A-Za-z0-9_\-\.]+\.(?:pdf|jpg|jpeg|png|heic|webp|txt|md|csv|log)\b"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else { return false }
         let range = NSRange(text.startIndex..., in: text)
-        let matches = regex.matches(in: text, options: [], range: range)
-        return matches.compactMap { m in
-            guard let r = Range(m.range(at: 1), in: text) else { return nil }
-            return String(text[r]).trimmingCharacters(in: .whitespacesAndNewlines)
+        return regex.firstMatch(in: text, options: [], range: range) != nil
+    }
+
+    private func extractAttachmentNames(from text: String) -> [String] {
+        var out: [String] = []
+
+        // Formato explícito: [adjunto: archivo.pdf], [foto: x.jpg], etc.
+        let bracketPattern = #"\[(?:adjunto|foto|foto-camara)\s*:\s*([^\]]+)\]"#
+        if let regex = try? NSRegularExpression(pattern: bracketPattern, options: .caseInsensitive) {
+            let range = NSRange(text.startIndex..., in: text)
+            let matches = regex.matches(in: text, options: [], range: range)
+            out += matches.compactMap { m in
+                guard let r = Range(m.range(at: 1), in: text) else { return nil }
+                return String(text[r]).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
+
+        // Formato libre: menciones tipo "archivo.pdf" en el mensaje.
+        let plainPattern = #"\b([A-Za-z0-9_\-\.]+\.(?:pdf|jpg|jpeg|png|heic|webp|txt|md|csv|log))\b"#
+        if let regex = try? NSRegularExpression(pattern: plainPattern, options: .caseInsensitive) {
+            let range = NSRange(text.startIndex..., in: text)
+            let matches = regex.matches(in: text, options: [], range: range)
+            out += matches.compactMap { m in
+                guard let r = Range(m.range(at: 1), in: text) else { return nil }
+                return String(text[r]).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
+
+        // Deduplicado preservando orden.
+        var seen = Set<String>()
+        return out.filter { name in
+            let key = name.lowercased()
+            if seen.contains(key) { return false }
+            seen.insert(key)
+            return true
         }
     }
 

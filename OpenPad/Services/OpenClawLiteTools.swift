@@ -141,6 +141,7 @@ final class OpenClawLiteTools {
     private let memoryFileName = "memory.log"
     private let filesDirName = "OpenClawFiles"
     private let config = OpenClawLiteConfig.shared
+    private let runtimeConfig = LocalRuntimeConfig.shared
 
     func execute(name: String, arguments: [String: String]) async -> OpenClawToolResult {
         if !config.isToolEnabled(name) {
@@ -187,7 +188,7 @@ final class OpenClawLiteTools {
                 return .init(ok: false, output: "Missing argument: query")
             }
             do {
-                let hits = try searchMemory(query: query, limit: max(1, min(10, limit)))
+                let hits = try await searchMemory(query: query, limit: max(1, min(10, limit)))
                 if hits.isEmpty { return .init(ok: true, output: "No matches") }
                 return .init(ok: true, output: hits.joined(separator: "\n"))
             } catch {
@@ -269,28 +270,68 @@ final class OpenClawLiteTools {
 
         let lower = clean.lowercased()
         let isImage = ["jpg", "jpeg", "png", "heic", "webp"].contains { lower.hasSuffix("." + $0) }
+        let isPDF = lower.hasSuffix(".pdf")
 
         do {
             let docs = try documentsDirectory()
-            let url = docs.appendingPathComponent("OpenClawFiles/Attachments", isDirectory: true).appendingPathComponent(clean)
+            let dir = docs.appendingPathComponent("OpenClawFiles/Attachments", isDirectory: true)
+            let url = try resolveAttachmentURL(fileName: clean, in: dir)
+            let data = try Data(contentsOf: url)
 
             if isImage {
-                let data = try Data(contentsOf: url)
                 if !config.isLowPowerModeEnabled() {
                     let ocr = extractTextFromImageData(data)
                     if !ocr.isEmpty {
-                        return String(ocr.prefix(maxChars))
+                        return "[extractor:vision_ocr file:\(url.lastPathComponent)]\n" + String(ocr.prefix(maxChars))
                     }
-                } else {
-                    return "(OCR omitido en modo ahorro de energía)"
+                    return "[extractor:vision_ocr file:\(url.lastPathComponent)] (Imagen sin texto OCR detectable)"
                 }
+                return "[extractor:vision_ocr file:\(url.lastPathComponent)] (OCR omitido en modo ahorro de energía)"
             }
 
-            let text = try String(contentsOf: url, encoding: .utf8)
-            return String(text.prefix(maxChars))
+            if isPDF {
+                let pdfText = extractTextFromPDFData(data)
+                if !pdfText.isEmpty {
+                    return "[extractor:pdfkit file:\(url.lastPathComponent)]\n" + String(pdfText.prefix(maxChars))
+                }
+                return "[extractor:pdfkit file:\(url.lastPathComponent)] (PDF sin texto extraíble; puede ser escaneado por imagen)"
+            }
+
+            if let text = decodeTextData(data) {
+                return "[extractor:text_decode file:\(url.lastPathComponent)]\n" + String(text.prefix(maxChars))
+            }
+
+            return "[extractor:binary file:\(url.lastPathComponent)] (Adjunto binario no textual: \(clean))"
         } catch {
             return ""
         }
+    }
+
+    private func resolveAttachmentURL(fileName: String, in dir: URL) throws -> URL {
+        let exact = dir.appendingPathComponent(fileName)
+        if FileManager.default.fileExists(atPath: exact.path) { return exact }
+
+        let items = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
+        guard !items.isEmpty else {
+            throw NSError(domain: "OpenClawLiteTools", code: 404, userInfo: [NSLocalizedDescriptionKey: "Attachments directory empty"])
+        }
+
+        let target = fileName.lowercased()
+        if let byExactCaseInsensitive = items.first(where: { $0.lastPathComponent.lowercased() == target }) {
+            return byExactCaseInsensitive
+        }
+
+        let stem = URL(fileURLWithPath: fileName).deletingPathExtension().lastPathComponent.lowercased()
+        if !stem.isEmpty {
+            if let byContains = items.first(where: {
+                let n = $0.lastPathComponent.lowercased()
+                return n.contains(stem)
+            }) {
+                return byContains
+            }
+        }
+
+        throw NSError(domain: "OpenClawLiteTools", code: 404, userInfo: [NSLocalizedDescriptionKey: "Attachment not found: \(fileName)"])
     }
 
     func listAllMemories() -> [String] {
@@ -368,28 +409,54 @@ final class OpenClawLiteTools {
         #endif
     }
 
-    private func searchMemory(query: String, limit: Int) throws -> [String] {
+    private func extractTextFromPDFData(_ data: Data) -> String {
+        #if canImport(PDFKit)
+        guard let pdf = PDFDocument(data: data) else { return "" }
+        var chunks: [String] = []
+        for i in 0..<pdf.pageCount {
+            if let pageText = pdf.page(at: i)?.string?.trimmingCharacters(in: .whitespacesAndNewlines), !pageText.isEmpty {
+                chunks.append(pageText)
+            }
+        }
+        return chunks.joined(separator: "\n\n")
+        #else
+        _ = data
+        return ""
+        #endif
+    }
+
+    private func decodeTextData(_ data: Data) -> String? {
+        if let utf8 = String(data: data, encoding: .utf8), !utf8.isEmpty { return utf8 }
+        if let utf16 = String(data: data, encoding: .utf16), !utf16.isEmpty { return utf16 }
+        if let latin1 = String(data: data, encoding: .isoLatin1), !latin1.isEmpty { return latin1 }
+        if let win = String(data: data, encoding: .windowsCP1252), !win.isEmpty { return win }
+        return nil
+    }
+
+    private func searchMemory(query: String, limit: Int) async throws -> [String] {
         let rows = try readMemoryLines(limit: 300)
         let qTokens = normalizedTokens(query)
         if qTokens.isEmpty { return [] }
 
-        let qEmbedding = localEmbedding(query)
+        let qEmbedding = await embeddingVector(for: query, allowRemote: true)
 
-        let scored: [(Double, String)] = rows.map { row in
+        var scored: [(Double, String)] = []
+        scored.reserveCapacity(rows.count)
+
+        for row in rows {
             let rTokens = normalizedTokens(row)
             let overlap = Double(qTokens.intersection(rTokens).count)
             let denom = Double(max(1, qTokens.union(rTokens).count))
             let jaccard = overlap / denom
 
-            // Embeddings locales (hash vector) para similitud semántica ligera sin red.
-            let semantic = cosineSimilarity(qEmbedding, localEmbedding(row))
+            // Embedding semántico: query puede venir de backend real; filas usan vector local para costo estable.
+            let semantic = cosineSimilarity(qEmbedding, await embeddingVector(for: row, allowRemote: false))
 
-            // bonus por frase parcial para hacerlo más robusto.
+            // Bonus por frase parcial.
             let phraseBonus = row.lowercased().contains(query.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)) ? 0.20 : 0.0
 
-            // Peso híbrido: semántica + overlap léxico + frase exacta parcial.
             let score = (semantic * 0.60) + (jaccard * 0.40) + phraseBonus
-            return (score, row)
+            scored.append((score, row))
         }
 
         return scored
@@ -477,6 +544,13 @@ final class OpenClawLiteTools {
         return Set(cleaned.filter { $0.count > 2 && !stop.contains($0) })
     }
 
+    private func embeddingVector(for text: String, allowRemote: Bool) async -> [Double] {
+        if allowRemote, let remote = await remoteEmbeddingFromOllama(text: text) {
+            return remote
+        }
+        return localEmbedding(text)
+    }
+
     private func localEmbedding(_ text: String, dimensions: Int = 256) -> [Double] {
         var vec = Array(repeating: 0.0, count: dimensions)
         let tokens = normalizedTokens(text)
@@ -499,6 +573,57 @@ final class OpenClawLiteTools {
             vec = vec.map { $0 / norm }
         }
         return vec
+    }
+
+    private func remoteEmbeddingFromOllama(text: String) async -> [Double]? {
+        let cfg = runtimeConfig.loadOllama()
+        let base = cfg.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let baseURL = URL(string: base), !cfg.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+
+        let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanText.isEmpty else { return nil }
+
+        let endpoints = ["/api/embed", "/api/embeddings"]
+        for endpoint in endpoints {
+            guard let url = URL(string: endpoint, relativeTo: baseURL) else { continue }
+            var req = URLRequest(url: url)
+            req.httpMethod = "POST"
+            req.timeoutInterval = 8
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+            let payload: [String: Any] = [
+                "model": cfg.model,
+                "input": cleanText,
+                "prompt": cleanText
+            ]
+            req.httpBody = try? JSONSerialization.data(withJSONObject: payload)
+
+            do {
+                let (data, resp) = try await URLSession.shared.data(for: req)
+                guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { continue }
+
+                if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    if let e = obj["embedding"] as? [Double], !e.isEmpty {
+                        return normalizeEmbedding(e)
+                    }
+                    if let arr = obj["embeddings"] as? [[Double]], let first = arr.first, !first.isEmpty {
+                        return normalizeEmbedding(first)
+                    }
+                }
+            } catch {
+                continue
+            }
+        }
+
+        return nil
+    }
+
+    private func normalizeEmbedding(_ v: [Double]) -> [Double] {
+        let norm = sqrt(v.reduce(0.0) { $0 + ($1 * $1) })
+        guard norm > 0 else { return v }
+        return v.map { $0 / norm }
     }
 
     private func cosineSimilarity(_ a: [Double], _ b: [Double]) -> Double {
