@@ -22,6 +22,7 @@ final class OpenClawLiteAgentService {
     func respond(to userPrompt: String, recentMessages: [ChatMessage] = []) async throws -> OpenClawAgentOutput {
         var trace: [String] = []
         ensureAppMemoryFilesIfNeeded()
+        trace.append("model_used=provider:\(runtimeConfig.loadProvider().rawValue.lowercased()) chat:\(runtimeConfig.loadMLXModelName()) tools:\(runtimeConfig.isSeparateMLXToolsModelEnabled() ? runtimeConfig.loadMLXToolsModelName() : runtimeConfig.loadMLXModelName())")
 
         if shouldBypassPlannerForCurrentModel() {
             trace.append("Planner bypass: thinking model compatibility mode")
@@ -547,22 +548,40 @@ final class OpenClawLiteAgentService {
 
         guard let recognizer = SFSpeechRecognizer(locale: .current), recognizer.isAvailable else { return nil }
 
-        return await withCheckedContinuation { (cont: CheckedContinuation<String?, Never>) in
-            let req = SFSpeechURLRecognitionRequest(url: url)
-            req.shouldReportPartialResults = false
-            var resumed = false
-            recognizer.recognitionTask(with: req) { result, error in
-                if resumed { return }
-                if error != nil {
-                    resumed = true
-                    cont.resume(returning: nil)
-                    return
-                }
-                if let result, result.isFinal {
-                    resumed = true
-                    cont.resume(returning: result.bestTranscription.formattedString)
+        return await withTaskGroup(of: String?.self) { group in
+            group.addTask {
+                await withCheckedContinuation { (cont: CheckedContinuation<String?, Never>) in
+                    let req = SFSpeechURLRecognitionRequest(url: url)
+                    req.shouldReportPartialResults = false
+                    var resumed = false
+                    recognizer.recognitionTask(with: req) { result, error in
+                        if resumed { return }
+                        if error != nil {
+                            resumed = true
+                            cont.resume(returning: nil)
+                            return
+                        }
+                        if let result, result.isFinal {
+                            resumed = true
+                            cont.resume(returning: result.bestTranscription.formattedString)
+                        }
+                    }
+
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 12) {
+                        if !resumed {
+                            resumed = true
+                            cont.resume(returning: nil)
+                        }
+                    }
                 }
             }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: 13_000_000_000)
+                return nil
+            }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first
         }
         #else
         _ = url

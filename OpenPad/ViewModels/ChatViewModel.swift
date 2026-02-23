@@ -32,6 +32,7 @@ final class ChatViewModel: ObservableObject {
         didSet { UserDefaults.standard.set(routePreference.rawValue, forKey: Self.routePreferenceKey) }
     }
     @Published var toolTrace: [String] = []
+    @Published var lastModelUsedBadge: String = ""
     @Published var lastLatencyMs: Int = 0
     @Published var lastErrorText: String = ""
     @Published var successCount: Int = 0
@@ -320,10 +321,16 @@ final class ChatViewModel: ObservableObject {
 
             let output = try await openClawLite.respond(to: prompt, recentMessages: messages)
             self.toolTrace = output.trace
+            if let line = output.trace.last(where: { $0.contains("model_used=") }) {
+                self.lastModelUsedBadge = line.replacingOccurrences(of: "model_used=", with: "")
+            } else {
+                self.lastModelUsedBadge = "LOCAL/agent"
+            }
             return output.text
         }
 
         self.toolTrace = []
+        self.lastModelUsedBadge = "REMOTE/api"
         return try await withTimeout(milliseconds: timeoutMs) { [self] in
             try await self.remoteService.runRemote(prompt: prompt)
         }

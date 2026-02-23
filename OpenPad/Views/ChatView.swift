@@ -1,6 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import PhotosUI
+import AVFoundation
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -37,6 +38,7 @@ struct ChatView: View {
     @State private var showAttachmentFileImporter = false
     @State private var showPhotoPicker = false
     @State private var showCameraPicker = false
+    @State private var showAudioRecorder = false
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var attachmentStatus = ""
 
@@ -80,6 +82,15 @@ struct ChatView: View {
 
                             if !attachmentStatus.isEmpty {
                                 Text(attachmentStatus)
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.horizontal)
+                                    .padding(.top, 2)
+                            }
+
+                            if !vm.lastModelUsedBadge.isEmpty {
+                                Text("Model used: \(vm.lastModelUsedBadge)")
                                     .font(.caption2)
                                     .foregroundColor(.secondary)
                                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -244,11 +255,12 @@ struct ChatView: View {
         .sheet(isPresented: $showSettings) {
             SettingsView(vm: vm)
         }
-        .confirmationDialog("Adjuntar", isPresented: $showAttachmentOptions, titleVisibility: .visible) {
-            Button("Archivo") { showAttachmentFileImporter = true }
-            Button("Foto") { showPhotoPicker = true }
-            Button("Tomar foto") { showCameraPicker = true }
-            Button("Cancelar", role: .cancel) {}
+        .confirmationDialog("Attach", isPresented: $showAttachmentOptions, titleVisibility: .visible) {
+            Button("File") { showAttachmentFileImporter = true }
+            Button("Photo from library") { showPhotoPicker = true }
+            Button("Take photo") { showCameraPicker = true }
+            Button("Record audio") { showAudioRecorder = true }
+            Button("Cancel", role: .cancel) {}
         }
         .fileImporter(isPresented: $showAttachmentFileImporter, allowedContentTypes: [.data], allowsMultipleSelection: false) { result in
             handleFileImport(result)
@@ -261,6 +273,11 @@ struct ChatView: View {
         .sheet(isPresented: $showCameraPicker) {
             CameraPicker { image in
                 handleCapturedImage(image)
+            }
+        }
+        .sheet(isPresented: $showAudioRecorder) {
+            AudioRecorderSheet { url in
+                handleRecordedAudio(url)
             }
         }
         .onAppear {
@@ -319,11 +336,22 @@ struct ChatView: View {
     private func handleCapturedImage(_ image: UIImage) {
         guard let data = image.jpegData(compressionQuality: 0.9) else { return }
         do {
-            let saved = try saveAttachment(data: data, preferredName: "camara_\(Int(Date().timeIntervalSince1970)).jpg")
-            attachmentStatus = "Foto tomada: \(saved.lastPathComponent)"
+            let saved = try saveAttachment(data: data, preferredName: "camera_\(Int(Date().timeIntervalSince1970)).jpg")
+            attachmentStatus = "Photo captured: \(saved.lastPathComponent)"
             vm.inputText += " [foto-camara: \(saved.lastPathComponent)]"
         } catch {
             attachmentStatus = "Error saving photo: \(error.localizedDescription)"
+        }
+    }
+
+    private func handleRecordedAudio(_ sourceURL: URL) {
+        do {
+            let data = try Data(contentsOf: sourceURL)
+            let saved = try saveAttachment(data: data, preferredName: "audio_\(Int(Date().timeIntervalSince1970)).m4a")
+            attachmentStatus = "Audio attached: \(saved.lastPathComponent)"
+            vm.inputText += " [audio: \(saved.lastPathComponent)]"
+        } catch {
+            attachmentStatus = "Error attaching audio: \(error.localizedDescription)"
         }
     }
 
@@ -548,6 +576,88 @@ private struct TypingIndicatorRow: View {
             Spacer(minLength: 24)
         }
         .padding(.vertical, 4)
+    }
+}
+
+private struct AudioRecorderSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var recorder: AVAudioRecorder?
+    @State private var isRecording = false
+    @State private var status = "Ready"
+
+    let onSaved: (URL) -> Void
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 16) {
+                Text(status)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                Button(isRecording ? "Stop recording" : "Start recording") {
+                    if isRecording {
+                        stopRecording(save: true)
+                    } else {
+                        Task { await startRecording() }
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+
+                Button("Cancel", role: .cancel) {
+                    stopRecording(save: false)
+                    dismiss()
+                }
+            }
+            .padding()
+            .navigationTitle("Record audio")
+        }
+    }
+
+    private func startRecording() async {
+        let granted = await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
+            AVAudioSession.sharedInstance().requestRecordPermission { ok in
+                cont.resume(returning: ok)
+            }
+        }
+        guard granted else {
+            status = "Microphone permission denied"
+            return
+        }
+
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playAndRecord, mode: .default)
+            try session.setActive(true)
+
+            let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("rec_\(UUID().uuidString).m4a")
+            let settings: [String: Any] = [
+                AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
+                AVSampleRateKey: 44100,
+                AVNumberOfChannelsKey: 1,
+                AVEncoderAudioQualityKey: AVAudioQuality.medium.rawValue
+            ]
+            let rec = try AVAudioRecorder(url: tmp, settings: settings)
+            rec.prepareToRecord()
+            rec.record()
+            recorder = rec
+            isRecording = true
+            status = "Recording..."
+        } catch {
+            status = "Recorder error: \(error.localizedDescription)"
+        }
+    }
+
+    private func stopRecording(save: Bool) {
+        guard let rec = recorder else { return }
+        rec.stop()
+        isRecording = false
+        let url = rec.url
+        recorder = nil
+
+        if save {
+            onSaved(url)
+            dismiss()
+        }
     }
 }
 
