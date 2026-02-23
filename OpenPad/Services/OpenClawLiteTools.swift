@@ -106,7 +106,8 @@ struct OpenClawLiteConfig {
         [
             "get_time", "save_memory", "list_memories", "search_memories", "clear_memories",
             "read_file", "write_file", "append_file", "delete_file", "list_files", "file_exists",
-            "calendar_today", "summarize_url", "http_get", "brave_search", "calculate", "make_uuid"
+            "calendar_today", "summarize_url", "http_get", "brave_search", "calculate", "make_uuid",
+            "json_parse", "csv_preview", "markdown_toc", "diff_text"
         ]
     }
 
@@ -502,6 +503,61 @@ final class OpenClawLiteTools {
             return value.stringValue
         }
         return "No pude calcular"
+    }
+
+    private func jsonPrettyInfo(_ text: String) -> String {
+        guard let data = text.data(using: .utf8) else { return "Texto inválido" }
+        do {
+            let obj = try JSONSerialization.jsonObject(with: data)
+            let pretty = try JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted])
+            let out = String(data: pretty, encoding: .utf8) ?? ""
+            return String(out.prefix(4000))
+        } catch {
+            return "JSON inválido: \(error.localizedDescription)"
+        }
+    }
+
+    private func csvPreview(text: String, maxRows: Int) -> String {
+        let rows = text.split(separator: "
+", omittingEmptySubsequences: false).map(String.init)
+        guard !rows.isEmpty else { return "CSV vacío" }
+        let shown = rows.prefix(maxRows)
+        let cols = rows.first?.split(separator: ",").count ?? 0
+        let header = "Filas: \(rows.count), columnas (estimadas): \(cols)"
+        return header + "
+
+" + shown.joined(separator: "
+")
+    }
+
+    private func markdownTOC(_ text: String) -> String {
+        let lines = text.split(separator: "
+").map(String.init)
+        let items = lines.compactMap { line -> String? in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard trimmed.hasPrefix("#") else { return nil }
+            let level = trimmed.prefix { $0 == "#" }.count
+            let title = trimmed.drop { $0 == "#" || $0 == " " }
+            guard !title.isEmpty else { return nil }
+            let indent = String(repeating: "  ", count: max(0, level - 1))
+            return "\(indent)- \(title)"
+        }
+        return items.isEmpty ? "Sin encabezados markdown" : items.joined(separator: "
+")
+    }
+
+    private func simpleDiff(old: String, new: String) -> String {
+        let oldLines = old.split(separator: "
+", omittingEmptySubsequences: false).map(String.init)
+        let newLines = new.split(separator: "
+", omittingEmptySubsequences: false).map(String.init)
+        let oldSet = Set(oldLines)
+        let newSet = Set(newLines)
+        let removed = oldSet.subtracting(newSet).prefix(50).map { "- \($0)" }
+        let added = newSet.subtracting(oldSet).prefix(50).map { "+ \($0)" }
+        if removed.isEmpty && added.isEmpty { return "Sin diferencias detectables por línea" }
+        return (["Cambios detectados:"] + removed + added).joined(separator: "
+")
     }
 
     private func normalizedURL(from input: String) -> URL? {

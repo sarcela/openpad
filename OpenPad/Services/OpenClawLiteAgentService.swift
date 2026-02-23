@@ -122,12 +122,16 @@ final class OpenClawLiteAgentService {
         15) brave_search(arguments: {"query":"...","count":"5"}) [requiere API key]
         16) calculate(arguments: {"expression":"2+2*10"})
         17) make_uuid(arguments: {})
+        18) json_parse(arguments: {"text":"{...}"})
+        19) csv_preview(arguments: {"text":"a,b\n1,2","rows":"8"})
+        20) markdown_toc(arguments: {"text":"# Titulo"})
+        21) diff_text(arguments: {"old":"...","new":"..."})
 
         Esquema de salida:
         - respuesta final:
           {"type":"final","content":"..."}
         - llamada de herramienta:
-          {"type":"tool_call","name":"get_time|save_memory|list_memories|search_memories|clear_memories|read_file|write_file|list_files|file_exists|append_file|delete_file|calendar_today|summarize_url|http_get|brave_search|calculate|make_uuid","arguments":{"key":"value"}}
+          {"type":"tool_call","name":"get_time|save_memory|list_memories|search_memories|clear_memories|read_file|write_file|list_files|file_exists|append_file|delete_file|calendar_today|summarize_url|http_get|brave_search|calculate|make_uuid|json_parse|csv_preview|markdown_toc|diff_text","arguments":{"key":"value"}}
 
         Mensaje del usuario:
         \(userPrompt)
@@ -194,7 +198,7 @@ final class OpenClawLiteAgentService {
     private func heuristicDecision(from text: String) -> AgentDecision? {
         let lower = text.lowercased()
         if lower.contains("tool_call") {
-            for name in ["get_time", "save_memory", "list_memories", "search_memories", "clear_memories", "read_file", "write_file", "list_files", "file_exists", "append_file", "delete_file", "calendar_today", "summarize_url", "http_get", "brave_search", "calculate", "make_uuid"] {
+            for name in ["get_time", "save_memory", "list_memories", "search_memories", "clear_memories", "read_file", "write_file", "list_files", "file_exists", "append_file", "delete_file", "calendar_today", "summarize_url", "http_get", "brave_search", "calculate", "make_uuid", "json_parse", "csv_preview", "markdown_toc", "diff_text"] {
                 if lower.contains(name) {
                     return AgentDecision(type: "tool_call", content: nil, name: name, arguments: [:])
                 }
