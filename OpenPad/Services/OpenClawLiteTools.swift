@@ -104,12 +104,12 @@ struct OpenClawLiteConfig {
 
     func availableToolNames() -> [String] {
         [
-            "get_time", "save_memory", "list_memories", "search_memories", "clear_memories",
+            "get_time", "calendar_today",
+            "save_memory", "list_memories", "search_memories", "clear_memories",
             "read_file", "write_file", "append_file", "delete_file", "list_files", "file_exists",
-            "calendar_today", "summarize_url", "http_get", "brave_search", "calculate", "make_uuid",
-            "json_parse", "csv_preview", "markdown_toc", "diff_text",
-            "regex_extract", "base64_encode", "base64_decode", "url_encode", "url_decode",
-            "json_path", "csv_filter", "html_to_text", "keyword_extract", "chunk_text",
+            "http_get", "summarize_url", "brave_search",
+            "calculate", "make_uuid", "json_parse", "csv_preview", "markdown_toc", "diff_text",
+            "regex_extract", "json_path", "csv_filter", "html_to_text", "keyword_extract", "chunk_text",
             "extract_code_blocks", "lint_markdown", "table_to_bullets", "normalize_whitespace"
         ]
     }
@@ -247,6 +247,101 @@ final class OpenClawLiteTools {
             guard !query.isEmpty else { return .init(ok: false, output: "Missing argument: query") }
             let count = Int(arguments["count"] ?? "5") ?? 5
             return await braveSearch(query: query, count: max(1, min(10, count)))
+
+        case "calendar_today":
+            return .init(ok: true, output: todayString())
+
+        case "summarize_url":
+            let urlString = (arguments["url"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !urlString.isEmpty else { return .init(ok: false, output: "Missing argument: url") }
+            let fetched = await fetchHTTP(urlString: urlString, allowDirectHostBypass: true)
+            guard fetched.ok else { return fetched }
+            return .init(ok: true, output: summarizeText(fetched.output))
+
+        case "calculate":
+            let expression = (arguments["expression"] ?? arguments["expr"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !expression.isEmpty else { return .init(ok: false, output: "Missing argument: expression") }
+            return .init(ok: true, output: evaluateMath(expression))
+
+        case "make_uuid":
+            return .init(ok: true, output: UUID().uuidString)
+
+        case "json_parse":
+            let text = arguments["text"] ?? ""
+            guard !text.isEmpty else { return .init(ok: false, output: "Missing argument: text") }
+            return .init(ok: true, output: jsonPrettyInfo(text))
+
+        case "csv_preview":
+            let text = arguments["text"] ?? ""
+            guard !text.isEmpty else { return .init(ok: false, output: "Missing argument: text") }
+            let maxRows = Int(arguments["max_rows"] ?? arguments["rows"] ?? "10") ?? 10
+            return .init(ok: true, output: csvPreview(text: text, maxRows: max(1, min(100, maxRows))))
+
+        case "markdown_toc":
+            let text = arguments["text"] ?? ""
+            guard !text.isEmpty else { return .init(ok: false, output: "Missing argument: text") }
+            return .init(ok: true, output: markdownTOC(text))
+
+        case "diff_text":
+            let oldText = arguments["old"] ?? arguments["old_text"] ?? ""
+            let newText = arguments["new"] ?? arguments["new_text"] ?? ""
+            guard !oldText.isEmpty || !newText.isEmpty else { return .init(ok: false, output: "Missing argument: old/new text") }
+            return .init(ok: true, output: simpleDiff(old: oldText, new: newText))
+
+        case "regex_extract":
+            let pattern = arguments["pattern"] ?? ""
+            let text = arguments["text"] ?? ""
+            guard !pattern.isEmpty, !text.isEmpty else { return .init(ok: false, output: "Missing argument: pattern/text") }
+            return .init(ok: true, output: regexExtract(pattern: pattern, text: text))
+
+        case "json_path":
+            let text = arguments["text"] ?? ""
+            let path = arguments["path"] ?? ""
+            guard !text.isEmpty, !path.isEmpty else { return .init(ok: false, output: "Missing argument: text/path") }
+            return .init(ok: true, output: jsonPath(text: text, path: path))
+
+        case "csv_filter":
+            let text = arguments["text"] ?? ""
+            let contains = arguments["contains"] ?? arguments["query"] ?? ""
+            guard !text.isEmpty else { return .init(ok: false, output: "Missing argument: text") }
+            return .init(ok: true, output: csvFilter(text: text, contains: contains))
+
+        case "html_to_text":
+            let html = arguments["html"] ?? arguments["text"] ?? ""
+            guard !html.isEmpty else { return .init(ok: false, output: "Missing argument: html") }
+            return .init(ok: true, output: htmlToText(html))
+
+        case "keyword_extract":
+            let text = arguments["text"] ?? ""
+            guard !text.isEmpty else { return .init(ok: false, output: "Missing argument: text") }
+            let top = Int(arguments["top"] ?? "10") ?? 10
+            return .init(ok: true, output: keywordExtract(text: text, top: max(1, min(50, top))))
+
+        case "chunk_text":
+            let text = arguments["text"] ?? ""
+            guard !text.isEmpty else { return .init(ok: false, output: "Missing argument: text") }
+            let size = Int(arguments["size"] ?? "1200") ?? 1200
+            return .init(ok: true, output: chunkText(text: text, size: max(120, min(8000, size))))
+
+        case "extract_code_blocks":
+            let text = arguments["text"] ?? ""
+            guard !text.isEmpty else { return .init(ok: false, output: "Missing argument: text") }
+            return .init(ok: true, output: extractCodeBlocks(text))
+
+        case "lint_markdown":
+            let text = arguments["text"] ?? ""
+            guard !text.isEmpty else { return .init(ok: false, output: "Missing argument: text") }
+            return .init(ok: true, output: lintMarkdown(text))
+
+        case "table_to_bullets":
+            let text = arguments["text"] ?? ""
+            guard !text.isEmpty else { return .init(ok: false, output: "Missing argument: text") }
+            return .init(ok: true, output: tableToBullets(text))
+
+        case "normalize_whitespace":
+            let text = arguments["text"] ?? ""
+            guard !text.isEmpty else { return .init(ok: false, output: "Missing argument: text") }
+            return .init(ok: true, output: normalizeWhitespace(text))
 
         default:
             return .init(ok: false, output: "Unknown tool: \(name)")
