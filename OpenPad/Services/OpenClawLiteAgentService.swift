@@ -15,6 +15,7 @@ final class OpenClawLiteAgentService {
 
     func respond(to userPrompt: String, recentMessages: [ChatMessage] = []) async throws -> OpenClawAgentOutput {
         var trace: [String] = []
+        ensureAppMemoryFilesIfNeeded()
         let firstPrompt = buildPlannerPrompt(userPrompt: userPrompt, recentMessages: recentMessages)
         let modelReply = try await localModelService.runLocal(prompt: firstPrompt, purpose: .tools)
 
@@ -106,6 +107,7 @@ final class OpenClawLiteAgentService {
         let budget = contextManager.budget(profile: profile, lowPower: lowPower)
         let memoryLimit = lowPower ? 4 : (profile == .turbo ? 10 : 6)
         let memoryContext = String(tools.recentMemories(limit: memoryLimit).prefix(budget.memoryChars))
+        let appIdentityContext = String(appMemoryContext(maxChars: lowPower ? 1200 : 2600).prefix(budget.memoryChars))
         let attachmentContext = buildAttachmentContext(from: userPrompt)
         let recentContext = buildRecentContext(from: recentMessages)
         let languageInstruction = preferredLanguageInstruction()
@@ -121,10 +123,13 @@ final class OpenClawLiteAgentService {
         If the user mentions local attachments (e.g. [attachment: ...], [photo: ...], or filename), ALWAYS prioritize injected attachment context and avoid `http_get/summarize_url` unless an explicit URL is also present.
         Memory rule: ONLY use `save_memory` when the user explicitly asks (e.g., "save to memory", "remember this").
 
-        Memoria reciente persistida (sobrevive reinicios):
+        Persistent recent memory (survives restarts):
         \(memoryContext)
 
-        Contexto de adjuntos detectados en este mensaje:
+        Identity/role context (SOUL/IDENTITY/USER/TOOLS/HEARTBEAT):
+        \(appIdentityContext)
+
+        Attachment context detected in this message:
         \(attachmentContext)
 
         Recent conversation context:
@@ -388,6 +393,50 @@ final class OpenClawLiteAgentService {
         default:
             return "Respond in the iPad preferred language (\(languageCode)) by default, unless the user asks for another language."
         }
+    }
+
+    private func ensureAppMemoryFilesIfNeeded() {
+        do {
+            let dir = try appMemoryDirectory()
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try ensureFile(named: "SOUL.md", in: dir, defaultText: "# SOUL\nBe genuinely helpful, concise when possible, and thorough when needed.\n")
+            try ensureFile(named: "IDENTITY.md", in: dir, defaultText: "# IDENTITY\nName: OpenPad\nRole: Local-first iPad assistant\n")
+            try ensureFile(named: "USER.md", in: dir, defaultText: "# USER\nName:\nPreferences:\n")
+            try ensureFile(named: "TOOLS.md", in: dir, defaultText: "# TOOLS\nLocal notes and environment-specific details.\n")
+            try ensureFile(named: "HEARTBEAT.md", in: dir, defaultText: "# HEARTBEAT\nKeep checks lightweight and avoid unnecessary background work.\n")
+        } catch {
+            // Non-fatal.
+        }
+    }
+
+    private func appMemoryContext(maxChars: Int) -> String {
+        do {
+            let dir = try appMemoryDirectory()
+            let files = ["SOUL.md", "IDENTITY.md", "USER.md", "TOOLS.md", "HEARTBEAT.md"]
+            var chunks: [String] = []
+            for f in files {
+                let url = dir.appendingPathComponent(f)
+                if let text = try? String(contentsOf: url, encoding: .utf8),
+                   !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    chunks.append("[\(f)]\n\(text)")
+                }
+            }
+            if chunks.isEmpty { return "(no app memory files yet)" }
+            return String(chunks.joined(separator: "\n\n").prefix(maxChars))
+        } catch {
+            return "(app memory unavailable)"
+        }
+    }
+
+    private func appMemoryDirectory() throws -> URL {
+        let docs = try LocalModelConfig.shared.documentsDirectory()
+        return docs.appendingPathComponent("OpenClawMemory/AppMemory", isDirectory: true)
+    }
+
+    private func ensureFile(named file: String, in dir: URL, defaultText: String) throws {
+        let url = dir.appendingPathComponent(file)
+        guard !FileManager.default.fileExists(atPath: url.path) else { return }
+        try defaultText.write(to: url, atomically: true, encoding: .utf8)
     }
 
     private func extractFirstJSONObject(from text: String) -> String? {
