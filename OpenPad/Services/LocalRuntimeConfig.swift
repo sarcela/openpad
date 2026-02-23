@@ -46,6 +46,7 @@ struct LocalRuntimeConfig {
         static let mlxSeparateToolsModelEnabled = "local.mlx.tools.separate.enabled"
         static let recentContextWindow = "agent.recent.context.window"
         static let runProfile = "agent.run.profile"
+        static let emergencyMemoryMode = "agent.memory.emergency.mode"
     }
 
     func loadProvider() -> LocalRuntimeProvider {
@@ -126,5 +127,13 @@ struct LocalRuntimeConfig {
 
     func saveRecentContextWindow(_ value: Int) {
         UserDefaults.standard.set(max(2, min(30, value)), forKey: Keys.recentContextWindow)
+    }
+
+    func isEmergencyMemoryModeEnabled() -> Bool {
+        UserDefaults.standard.bool(forKey: Keys.emergencyMemoryMode)
+    }
+
+    func setEmergencyMemoryModeEnabled(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: Keys.emergencyMemoryMode)
     }
 }

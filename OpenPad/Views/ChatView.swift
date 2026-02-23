@@ -1190,6 +1190,7 @@ private struct SettingsView: View {
     @State private var recentContextWindow: Double = 10
     @State private var automationLoopEnabled = false
     @State private var lowPowerModeEnabled = false
+    @State private var emergencyMemoryModeEnabled = false
     @State private var autodevEnabled = false
     @State private var toolPermissions: [String: Bool] = [:]
 
@@ -1463,8 +1464,12 @@ private struct SettingsView: View {
                         Label("Low-power mode (less heat/battery use)", systemImage: "bolt.horizontal.circle")
                     }
 
-                    if lowPowerModeEnabled {
-                        Text("Reduces context, OCR, and network retries for better thermal stability.")
+                    Toggle(isOn: $emergencyMemoryModeEnabled) {
+                        Label("Emergency memory mode (aggressive RAM limits)", systemImage: "exclamationmark.triangle")
+                    }
+
+                    if lowPowerModeEnabled || emergencyMemoryModeEnabled {
+                        Text("Reduces context, OCR, and retries. Emergency mode also enforces stricter prompt condensation and smaller context windows.")
                             .font(.caption2)
                             .foregroundColor(.secondary)
                     }
@@ -1540,6 +1545,7 @@ private struct SettingsView: View {
                         runtimeConfig.saveRecentContextWindow(Int(recentContextWindow))
                         openClawLiteConfig.setAutomationLoopEnabled(automationLoopEnabled)
                         openClawLiteConfig.setLowPowerModeEnabled(lowPowerModeEnabled)
+                        runtimeConfig.setEmergencyMemoryModeEnabled(emergencyMemoryModeEnabled)
                         openClawLiteConfig.setAutodevEnabled(autodevEnabled)
                         for (tool, enabled) in toolPermissions {
                             openClawLiteConfig.setToolEnabled(tool, enabled: enabled)
@@ -1573,6 +1579,7 @@ private struct SettingsView: View {
                 recentContextWindow = Double(runtimeConfig.loadRecentContextWindow())
                 automationLoopEnabled = openClawLiteConfig.isAutomationLoopEnabled()
                 lowPowerModeEnabled = openClawLiteConfig.isLowPowerModeEnabled()
+                emergencyMemoryModeEnabled = runtimeConfig.isEmergencyMemoryModeEnabled()
                 mlxDownloadedModels = openClawLiteConfig.loadDownloadedMLXModels()
 
                 refreshModels()

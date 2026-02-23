@@ -260,6 +260,10 @@ final class ChatViewModel: ObservableObject {
                 self.lastLatencyMs = Int(Date().timeIntervalSince(started) * 1000)
                 self.lastErrorText = error.localizedDescription
                 self.errorCount += 1
+                if maybeActivateEmergencyMemoryMode(from: error.localizedDescription) {
+                    refreshHealth()
+                    return "Local memory guard activated after a memory-pressure error. Try again; the app switched to safer limits."
+                }
                 refreshHealth()
                 return "Local error: \(error.localizedDescription)"
             }
@@ -279,6 +283,10 @@ final class ChatViewModel: ObservableObject {
                 self.lastLatencyMs = Int(Date().timeIntervalSince(started) * 1000)
                 self.lastErrorText = error.localizedDescription
                 self.errorCount += 1
+                if maybeActivateEmergencyMemoryMode(from: error.localizedDescription) {
+                    refreshHealth()
+                    return "Both paths failed and memory pressure was detected. Emergency memory mode is now ON; retry with safer limits."
+                }
                 refreshHealth()
                 return "I could not respond (local failed and remote fallback also failed): \(error.localizedDescription)"
             }
@@ -342,10 +350,34 @@ final class ChatViewModel: ObservableObject {
     }
 
     private func trimMessagesIfNeeded() {
-        let maxMessages = 80
+        let maxMessages = runtimeConfig.isEmergencyMemoryModeEnabled() ? 40 : 80
         if messages.count > maxMessages {
             messages = Array(messages.suffix(maxMessages))
         }
+    }
+
+    @discardableResult
+    private func maybeActivateEmergencyMemoryMode(from errorText: String) -> Bool {
+        let lower = errorText.lowercased()
+        let looksLikeMemoryPressure =
+            lower.contains("memory") ||
+            lower.contains("out of memory") ||
+            lower.contains("terminated") ||
+            lower.contains("oom") ||
+            lower.contains("exceeded")
+
+        guard looksLikeMemoryPressure else { return false }
+        if runtimeConfig.isEmergencyMemoryModeEnabled() { return true }
+
+        runtimeConfig.setEmergencyMemoryModeEnabled(true)
+        runtimeConfig.saveRunProfile(.stable)
+        runtimeConfig.setSeparateMLXToolsModelEnabled(false)
+        OpenClawLiteConfig.shared.setLowPowerModeEnabled(true)
+        runtimeConfig.saveRecentContextWindow(6)
+
+        backgroundStatus = "Emergency memory mode ON (stable profile + low-power + shorter context)."
+        appMemory.noteHeartbeat("emergency memory mode activated")
+        return true
     }
 }
 

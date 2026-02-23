@@ -20,8 +20,12 @@ final class OpenClawLiteHealthService {
                 out.append(.init(level: "warn", message: "MLX without low-power mode may heat up the iPad."))
             }
             if runtime.isSeparateMLXToolsModelEnabled() {
-                out.append(.init(level: "warn", message: "Modelo separado para tools aumenta riesgo de OOM."))
+                out.append(.init(level: "warn", message: "Separate tools model increases OOM risk."))
             }
+        }
+
+        if runtime.isEmergencyMemoryModeEnabled() {
+            out.append(.init(level: "warn", message: "Emergency memory mode is ON (safer but lower quality)."))
         }
 
         if errorCount > successCount && errorCount >= 3 {

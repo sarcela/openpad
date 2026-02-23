@@ -15,7 +15,8 @@ final class LocalModelService {
 
     func runLocal(prompt: String, purpose: LocalInferencePurpose = .chat) async throws -> String {
         let prepared = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        let largePromptThreshold = liteConfig.isLowPowerModeEnabled() ? 7000 : 12000
+        let emergency = runtimeConfig.isEmergencyMemoryModeEnabled()
+        let largePromptThreshold = emergency ? 4200 : (liteConfig.isLowPowerModeEnabled() ? 7000 : 12000)
 
         if prepared.count > largePromptThreshold {
             let reduced = try await reducePromptMemory(prepared, purpose: purpose)
@@ -56,8 +57,9 @@ final class LocalModelService {
     }
 
     private func reducePromptMemory(_ prompt: String, purpose: LocalInferencePurpose) async throws -> String {
-        let chunkSize = liteConfig.isLowPowerModeEnabled() ? 2200 : 3200
-        let maxChunks = liteConfig.isLowPowerModeEnabled() ? 4 : 6
+        let emergency = runtimeConfig.isEmergencyMemoryModeEnabled()
+        let chunkSize = emergency ? 1500 : (liteConfig.isLowPowerModeEnabled() ? 2200 : 3200)
+        let maxChunks = emergency ? 3 : (liteConfig.isLowPowerModeEnabled() ? 4 : 6)
         let chunks = splitText(prompt, size: chunkSize).prefix(maxChunks)
 
         var summaries: [String] = []
