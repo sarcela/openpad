@@ -363,26 +363,28 @@ final class OpenClawLiteTools {
             return .init(ok: false, output: "Host no permitido: \(host). Activa acceso abierto o agrega el dominio en Settings.")
         }
 
-        do {
-            let (data, response) = try await URLSession.shared.data(from: url)
-            if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-                return .init(ok: false, output: "HTTP status \(http.statusCode)")
-            }
+        return await withNetworkRetries(attempts: 3, initialDelayMs: 500) {
+            do {
+                let (data, response) = try await URLSession.shared.data(from: url)
+                if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+                    return .init(ok: false, output: "HTTP status \(http.statusCode)")
+                }
 
-            let contentType = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Type")?.lowercased() ?? ""
-            if contentType.contains("application/pdf") || url.pathExtension.lowercased() == "pdf" {
-                let text = extractPDFText(from: data)
-                return .init(ok: true, output: text)
-            }
+                let contentType = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Type")?.lowercased() ?? ""
+                if contentType.contains("application/pdf") || url.pathExtension.lowercased() == "pdf" {
+                    let text = extractPDFText(from: data)
+                    return .init(ok: true, output: text)
+                }
 
-            let text = String(data: data, encoding: .utf8) ?? ""
-            return .init(ok: true, output: String(text.prefix(6000)))
-        } catch {
-            return .init(ok: false, output: "http_get error: \(error.localizedDescription)")
+                let text = String(data: data, encoding: .utf8) ?? ""
+                return .init(ok: true, output: String(text.prefix(6000)))
+            } catch {
+                return .init(ok: false, output: "http_get error: \(error.localizedDescription)")
+            }
         }
     }
 
-    private func braveSearch(query: String, count: Int) async -> OpenClawToolResult {
+    private func braveSearch    private func braveSearch(query: String, count: Int) async -> OpenClawToolResult {
         let key = config.loadBraveApiKey()
         guard !key.isEmpty else {
             return .init(ok: false, output: "Brave API key no configurada")
@@ -401,15 +403,17 @@ final class OpenClawLiteTools {
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         req.setValue(key, forHTTPHeaderField: "X-Subscription-Token")
 
-        do {
-            let (data, response) = try await URLSession.shared.data(for: req)
-            if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-                let body = String(data: data, encoding: .utf8) ?? ""
-                return .init(ok: false, output: "Brave HTTP \(http.statusCode): \(body.prefix(300))")
+        return await withNetworkRetries(attempts: 3, initialDelayMs: 500) {
+            do {
+                let (data, response) = try await URLSession.shared.data(for: req)
+                if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+                    let body = String(data: data, encoding: .utf8) ?? ""
+                    return .init(ok: false, output: "Brave HTTP \(http.statusCode): \(body.prefix(300))")
+                }
+                return .init(ok: true, output: formatBraveResults(from: data))
+            } catch {
+                return .init(ok: false, output: "brave_search error: \(error.localizedDescription)")
             }
-            return .init(ok: true, output: formatBraveResults(from: data))
-        } catch {
-            return .init(ok: false, output: "brave_search error: \(error.localizedDescription)")
         }
     }
 

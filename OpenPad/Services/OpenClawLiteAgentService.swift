@@ -53,8 +53,15 @@ final class OpenClawLiteAgentService {
             return .init(text: "Entendido. No lo guardaré en memoria a menos que me lo pidas explícitamente.", trace: trace)
         }
 
-        let toolResult = await tools.execute(name: toolName, arguments: toolArgs)
+        var toolResult = await tools.execute(name: toolName, arguments: toolArgs)
         trace.append("Tool result: \(toolResult.ok ? "ok" : "error")")
+
+        // Persistencia: un intento adicional antes de rendirse.
+        if !toolResult.ok {
+            trace.append("Retry policy: segundo intento de herramienta")
+            toolResult = await tools.execute(name: toolName, arguments: toolArgs)
+            trace.append("Retry result: \(toolResult.ok ? "ok" : "error")")
+        }
 
         let secondPrompt = buildFinalizePrompt(userPrompt: userPrompt, toolName: toolName, toolResult: toolResult)
         let finalReply = try await localModelService.runLocal(prompt: secondPrompt, purpose: .chat)
@@ -80,6 +87,7 @@ final class OpenClawLiteAgentService {
         Eres OpenClaw Lite en iPad.
         \(languageInstruction)
         Decide tu siguiente acción y responde SOLO en JSON válido.
+        Política de ejecución: sé persistente. Antes de concluir que algo falló, intenta al menos un enfoque alterno o un reintento razonable.
         Puedes usar internet cuando sea útil para responder mejor.
         Si el usuario comparte una URL completa, prioriza `http_get` para leerla/resumirla directamente.
         Regla de memoria: SOLO usa `save_memory` cuando el usuario lo pida explícitamente (ej: "guarda en memoria", "recuerda esto", "memoriza").
