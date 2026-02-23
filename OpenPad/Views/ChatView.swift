@@ -1573,6 +1573,7 @@ private struct SettingsView: View {
     @State private var lowPowerModeEnabled = false
     @State private var emergencyMemoryModeEnabled = false
     @State private var autodevEnabled = false
+    @State private var qualityGateStrictness = "balanced"
     @State private var toolPermissions: [String: Bool] = [:]
     @State private var settingsSearch = ""
     @State private var settingsCategory: SettingsCategory = .all
@@ -1944,6 +1945,12 @@ private struct SettingsView: View {
                         Label("Emergency memory mode (aggressive RAM limits)", systemImage: "exclamationmark.triangle")
                     }
 
+                    Picker("Quality gate strictness", selection: $qualityGateStrictness) {
+                        Text("Relaxed").tag("relaxed")
+                        Text("Balanced").tag("balanced")
+                        Text("Strict").tag("strict")
+                    }
+
                     if lowPowerModeEnabled || emergencyMemoryModeEnabled {
                         Text("Reduces context, OCR, and retries. Emergency mode also enforces stricter prompt condensation and smaller context windows.")
                             .font(.caption2)
@@ -2030,6 +2037,7 @@ private struct SettingsView: View {
                         openClawLiteConfig.setAutomationLoopEnabled(automationLoopEnabled)
                         openClawLiteConfig.setLowPowerModeEnabled(lowPowerModeEnabled)
                         runtimeConfig.setEmergencyMemoryModeEnabled(emergencyMemoryModeEnabled)
+                        runtimeConfig.saveQualityGateStrictness(qualityGateStrictness)
                         openClawLiteConfig.setAutodevEnabled(autodevEnabled)
                         for (tool, enabled) in toolPermissions {
                             openClawLiteConfig.setToolEnabled(tool, enabled: enabled)
@@ -2069,6 +2077,7 @@ private struct SettingsView: View {
                 automationLoopEnabled = openClawLiteConfig.isAutomationLoopEnabled()
                 lowPowerModeEnabled = openClawLiteConfig.isLowPowerModeEnabled()
                 emergencyMemoryModeEnabled = runtimeConfig.isEmergencyMemoryModeEnabled()
+                qualityGateStrictness = runtimeConfig.loadQualityGateStrictness()
                 mlxDownloadedModels = openClawLiteConfig.loadDownloadedMLXModels()
 
                 refreshModels()

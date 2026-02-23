@@ -203,6 +203,15 @@ final class OpenClawLiteAgentService {
         var score = 100
         var reasons: [String] = []
 
+        let strictness = runtimeConfig.loadQualityGateStrictness()
+        let threshold: Int = {
+            switch strictness {
+            case "relaxed": return 45
+            case "strict": return 75
+            default: return 60
+            }
+        }()
+
         if clean.count < 8 {
             score -= 25
             reasons.append("too_short")
@@ -224,9 +233,9 @@ final class OpenClawLiteAgentService {
             }
         }
 
-        traceOut.append("quality_gate: score=\(score) reasons=\(reasons.isEmpty ? "ok" : reasons.joined(separator: ","))")
+        traceOut.append("quality_gate: strictness=\(strictness) score=\(score) threshold=\(threshold) reasons=\(reasons.isEmpty ? "ok" : reasons.joined(separator: ","))")
 
-        guard score < 60 else {
+        guard score < threshold else {
             return .init(text: clean, trace: traceOut)
         }
 

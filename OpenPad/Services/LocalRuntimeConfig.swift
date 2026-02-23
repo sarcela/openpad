@@ -52,6 +52,7 @@ struct LocalRuntimeConfig {
         static let mlxAudioModel = "local.mlx.audio.model"
         static let dualPassReasoningEnabled = "agent.dualpass.reasoning.enabled"
         static let multimodalRoutingEnabled = "agent.multimodal.routing.enabled"
+        static let qualityGateStrictness = "agent.qualitygate.strictness"
     }
 
     func loadProvider() -> LocalRuntimeProvider {
@@ -180,5 +181,15 @@ struct LocalRuntimeConfig {
 
     func setMultimodalRoutingEnabled(_ enabled: Bool) {
         UserDefaults.standard.set(enabled, forKey: Keys.multimodalRoutingEnabled)
+    }
+
+    func loadQualityGateStrictness() -> String {
+        UserDefaults.standard.string(forKey: Keys.qualityGateStrictness) ?? "balanced"
+    }
+
+    func saveQualityGateStrictness(_ value: String) {
+        let clean = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let allowed = ["relaxed", "balanced", "strict"]
+        UserDefaults.standard.set(allowed.contains(clean) ? clean : "balanced", forKey: Keys.qualityGateStrictness)
     }
 }
