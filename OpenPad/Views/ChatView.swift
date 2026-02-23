@@ -13,6 +13,7 @@ struct ChatView: View {
     @StateObject private var vm = ChatViewModel()
     @State private var showSettings = false
     @State private var showSidebar = true
+    @State private var showToolTrace = false
 
     private let localConfig = LocalModelConfig.shared
     private let runtimeConfig = LocalRuntimeConfig.shared
@@ -41,17 +42,21 @@ struct ChatView: View {
                     .background(Color(.secondarySystemBackground))
 
                     if !vm.toolTrace.isEmpty {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Tool Trace")
+                        DisclosureGroup(isExpanded: $showToolTrace) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                ForEach(vm.toolTrace, id: \.self) { line in
+                                    Text("• \(line)")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                            }
+                            .padding(.top, 4)
+                        } label: {
+                            Label("Tool Trace", systemImage: "wrench.and.screwdriver")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
-                            ForEach(vm.toolTrace, id: \.self) { line in
-                                Text("• \(line)")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                            }
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal)
                         .padding(.top, 6)
                     }
@@ -103,18 +108,28 @@ struct ChatView: View {
                                 }
                             }
                         }
+                        .frame(maxHeight: .infinity)
                     }
 
-                    HStack {
+                    HStack(spacing: 8) {
                         TextField("Escribe un prompt...", text: $vm.inputText, axis: .vertical)
                             .textFieldStyle(.roundedBorder)
+                            .lineLimit(1...4)
 
-                        Button(vm.isLoading ? "..." : "Enviar") {
+                        Button {
                             vm.send()
+                        } label: {
+                            Image(systemName: vm.isLoading ? "hourglass" : "paperplane.fill")
+                                .font(.headline)
+                                .frame(width: 36, height: 36)
                         }
+                        .buttonStyle(.borderedProminent)
                         .disabled(vm.isLoading || vm.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
-                    .padding()
+                    .padding(.horizontal)
+                    .padding(.top, 8)
+                    .padding(.bottom, 10)
+                    .background(.ultraThinMaterial)
                 }
             }
             .animation(.easeInOut(duration: 0.2), value: showSidebar)
@@ -164,35 +179,54 @@ struct ChatView: View {
 private struct MessageRowView: View {
     let msg: ChatMessage
 
+    private var isUser: Bool { msg.role.lowercased() == "user" }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(msg.role.uppercased()).font(.caption).foregroundColor(.secondary)
-            Text(msg.text)
+            HStack {
+                if isUser { Spacer(minLength: 36) }
 
-            if msg.role == "assistant" {
-                let urls = detectURLs(in: msg.text)
-                if !urls.isEmpty {
-                    VStack(alignment: .leading, spacing: 6) {
-                        ForEach(urls, id: \.absoluteString) { url in
-                            HStack {
-                                Link(destination: url) {
-                                    Label("Abrir enlace", systemImage: "link")
-                                        .font(.caption)
-                                }
-                                Spacer()
-                                Button {
-                                    copyToClipboard(url.absoluteString)
-                                } label: {
-                                    Label("Copiar", systemImage: "doc.on.doc")
-                                        .font(.caption)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(msg.role.uppercased())
+                        .font(.caption2)
+                        .foregroundColor(isUser ? .white.opacity(0.85) : .secondary)
+
+                    Text(msg.text)
+                        .foregroundColor(isUser ? .white : .primary)
+                        .textSelection(.enabled)
+
+                    if !isUser {
+                        let urls = detectURLs(in: msg.text)
+                        if !urls.isEmpty {
+                            VStack(alignment: .leading, spacing: 6) {
+                                ForEach(urls, id: \.absoluteString) { url in
+                                    HStack {
+                                        Link(destination: url) {
+                                            Label("Abrir", systemImage: "link")
+                                                .font(.caption)
+                                        }
+                                        Spacer()
+                                        Button {
+                                            copyToClipboard(url.absoluteString)
+                                        } label: {
+                                            Label("Copiar", systemImage: "doc.on.doc")
+                                                .font(.caption)
+                                        }
+                                    }
+                                    .padding(8)
+                                    .background(Color(.secondarySystemBackground))
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
                                 }
                             }
-                            .padding(8)
-                            .background(Color(.secondarySystemBackground))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
                         }
                     }
                 }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(isUser ? Color.accentColor : Color(.secondarySystemBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+
+                if !isUser { Spacer(minLength: 36) }
             }
         }
     }
