@@ -228,7 +228,19 @@ struct ChatView: View {
             }
         }
         .onAppear {
-            cronRunner.start()
+            if openClawLiteConfig.isAutomationLoopEnabled() {
+                cronRunner.start()
+            } else {
+                cronRunner.stop()
+            }
+        }
+        .onChange(of: automationLoopEnabled) { enabled in
+            if enabled {
+                cronRunner.start()
+            } else {
+                cronRunner.stop()
+            }
+            openClawLiteConfig.setAutomationLoopEnabled(enabled)
         }
         .onDisappear {
             cronRunner.stop()
@@ -842,6 +854,7 @@ private struct SettingsView: View {
     @State private var showHeartbeatManager = false
     @State private var showFilesManager = false
     @State private var recentContextWindow: Double = 10
+    @State private var automationLoopEnabled = false
 
     private let remoteConfig = RemoteModelConfig.shared
     private let localConfig = LocalModelConfig.shared
@@ -1086,6 +1099,10 @@ private struct SettingsView: View {
                         Slider(value: $recentContextWindow, in: 2...30, step: 1)
                     }
 
+                    Toggle(isOn: $automationLoopEnabled) {
+                        Label("Automatización en segundo plano (cron loop)", systemImage: "clock.arrow.circlepath")
+                    }
+
                     SecureField("Brave API Key", text: $braveApiKey)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
@@ -1137,6 +1154,7 @@ private struct SettingsView: View {
                         openClawLiteConfig.saveBraveApiKey(braveApiKey)
                         openClawLiteConfig.setInternetOpenAccessEnabled(internetOpenAccess)
                         runtimeConfig.saveRecentContextWindow(Int(recentContextWindow))
+                        openClawLiteConfig.setAutomationLoopEnabled(automationLoopEnabled)
                         localConfig.saveSelectedModelPath(selectedModelPath.isEmpty ? nil : selectedModelPath)
                         localConfig.saveSelectedEmbeddingModelPath(selectedEmbeddingModelPath.isEmpty ? nil : selectedEmbeddingModelPath)
                         dismiss()
@@ -1161,6 +1179,7 @@ private struct SettingsView: View {
                 braveApiKey = openClawLiteConfig.loadBraveApiKey()
                 internetOpenAccess = openClawLiteConfig.isInternetOpenAccessEnabled()
                 recentContextWindow = Double(runtimeConfig.loadRecentContextWindow())
+                automationLoopEnabled = openClawLiteConfig.isAutomationLoopEnabled()
                 mlxDownloadedModels = openClawLiteConfig.loadDownloadedMLXModels()
 
                 refreshModels()

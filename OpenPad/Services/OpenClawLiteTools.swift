@@ -17,6 +17,7 @@ struct OpenClawLiteConfig {
         static let braveApiKey = "openclawlite.brave.api.key"
         static let internetOpenAccess = "openclawlite.internet.open.access"
         static let mlxDownloadedModels = "openclawlite.mlx.downloaded.models"
+        static let automationLoopEnabled = "openclawlite.automation.loop.enabled"
     }
 
     private let defaultHosts = ["docs.openclaw.ai", "api.github.com", "wttr.in"]
@@ -57,6 +58,14 @@ struct OpenClawLiteConfig {
 
     func loadDownloadedMLXModels() -> [String] {
         UserDefaults.standard.stringArray(forKey: Keys.mlxDownloadedModels) ?? []
+    }
+
+    func isAutomationLoopEnabled() -> Bool {
+        UserDefaults.standard.bool(forKey: Keys.automationLoopEnabled)
+    }
+
+    func setAutomationLoopEnabled(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: Keys.automationLoopEnabled)
     }
 
     func markMLXModelDownloaded(_ modelId: String) {
@@ -352,7 +361,7 @@ final class OpenClawLiteTools {
     }
 
     private func fetchHTTP(urlString: String, allowDirectHostBypass: Bool = false) async -> OpenClawToolResult {
-        guard let url = URL(string: urlString), ["https", "http"].contains(url.scheme?.lowercased() ?? "") else {
+        guard let url = normalizedURL(from: urlString) else {
             return .init(ok: false, output: "URL inválida")
         }
 
@@ -363,7 +372,36 @@ final class OpenClawLiteTools {
             return .init(ok: false, output: "Host no permitido: \(host). Activa acceso abierto o agrega el dominio en Settings.")
         }
 
-        return await withNetworkRetries(attempts: 3, initialDelayMs: 500) {
+        var result = await fetchURLWithRetries(url)
+        if result.ok { return result }
+
+        // Plan B: alterna host www/non-www antes de rendirse.
+        if let alt = alternateURLVariant(for: url), alt != url {
+            result = await fetchURLWithRetries(alt)
+        }
+        return result
+    }
+
+    private func braveSearch    private func normalizedURL(from input: String) -> URL? {
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let u = URL(string: trimmed), ["http", "https"].contains(u.scheme?.lowercased() ?? "") {
+            return u
+        }
+        return URL(string: "https://" + trimmed)
+    }
+
+    private func alternateURLVariant(for url: URL) -> URL? {
+        guard var comp = URLComponents(url: url, resolvingAgainstBaseURL: false), let host = comp.host else { return nil }
+        if host.hasPrefix("www.") {
+            comp.host = String(host.dropFirst(4))
+        } else {
+            comp.host = "www." + host
+        }
+        return comp.url
+    }
+
+    private func fetchURLWithRetries(_ url: URL) async -> OpenClawToolResult {
+        await withNetworkRetries(attempts: 3, initialDelayMs: 500) {
             do {
                 let (data, response) = try await URLSession.shared.data(from: url)
                 if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
@@ -384,7 +422,7 @@ final class OpenClawLiteTools {
         }
     }
 
-    private func braveSearch    private func braveSearch(query: String, count: Int) async -> OpenClawToolResult {
+    private func braveSearch(query: String, count: Int) async -> OpenClawToolResult {
         let key = config.loadBraveApiKey()
         guard !key.isEmpty else {
             return .init(ok: false, output: "Brave API key no configurada")
