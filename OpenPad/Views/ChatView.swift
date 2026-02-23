@@ -1392,6 +1392,29 @@ private struct SettingsView: View {
                             Toggle("Enable dual-pass reasoning (Thinking → Instruct)", isOn: $dualPassReasoningEnabled)
                             Toggle("Enable multimodal routing (Vision/Audio)", isOn: $multimodalRoutingEnabled)
 
+                            if !mlxDownloadedModels.isEmpty {
+                                Picker("Reasoning model", selection: $mlxReasoningModelName) {
+                                    Text("(none)").tag("")
+                                    ForEach(mlxDownloadedModels, id: \.self) { modelId in
+                                        Text(modelId).tag(modelId)
+                                    }
+                                }
+
+                                Picker("Vision model", selection: $mlxVisionModelName) {
+                                    Text("(none)").tag("")
+                                    ForEach(mlxDownloadedModels, id: \.self) { modelId in
+                                        Text(modelId).tag(modelId)
+                                    }
+                                }
+
+                                Picker("Audio model", selection: $mlxAudioModelName) {
+                                    Text("(none)").tag("")
+                                    ForEach(mlxDownloadedModels, id: \.self) { modelId in
+                                        Text(modelId).tag(modelId)
+                                    }
+                                }
+                            }
+
                             TextField("MLX reasoning model (optional)", text: $mlxReasoningModelName)
                                 .textInputAutocapitalization(.never)
                                 .autocorrectionDisabled()
