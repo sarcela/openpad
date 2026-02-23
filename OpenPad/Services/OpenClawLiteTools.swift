@@ -447,6 +447,28 @@ final class OpenClawLiteTools {
         return result
     }
 
+
+    private func isDestructiveConfirmed(_ arguments: [String: String]) -> Bool {
+        let v = (arguments["confirm"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        return v == "YES" || v == "TRUE"
+    }
+
+    private func normalizedTokens(_ text: String) -> Set<String> {
+        let stop: Set<String> = ["de","la","el","y","en","a","que","los","las","un","una","por","para","con","the","and","for","to","of","in","on","is","are","it"]
+        let raw = text.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init)
+        let cleaned = raw.map { token -> String in
+            var t = token
+            for suf in ["mente","ciones","cion","ados","adas","ado","ada","ing","ed","es","s"] {
+                if t.count > 4 && t.hasSuffix(suf) {
+                    t = String(t.dropLast(suf.count))
+                    break
+                }
+            }
+            return t
+        }
+        return Set(cleaned.filter { $0.count > 2 && !stop.contains($0) })
+    }
+
     private func appFileExists(relativePath: String) -> Bool {
         do {
             let url = try sandboxedFileURL(relativePath: relativePath)

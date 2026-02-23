@@ -11,14 +11,16 @@ final class OpenClawLiteCronRunner: ObservableObject {
     @Published private(set) var lastRunSummary: String = ""
 
     private var loopTask: Task<Void, Never>?
+    private let lastTickKey = "openclawlite.cron.lastTick"
 
     func start() {
         stop()
+        runMissedIfNeeded()
         tick()
         loopTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 60_000_000_000)
-                await self?.tick()
+                self?.tick()
             }
         }
     }
@@ -76,6 +78,21 @@ final class OpenClawLiteCronRunner: ObservableObject {
 
         if !fired.isEmpty {
             lastRunSummary = "Ejecutados: " + fired.joined(separator: ", ")
+        }
+        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: lastTickKey)
+    }
+
+    private func runMissedIfNeeded() {
+        let last = UserDefaults.standard.double(forKey: lastTickKey)
+        guard last > 0 else { return }
+        let delta = Date().timeIntervalSince1970 - last
+        if delta > 3600 {
+            // App estuvo inactiva mucho tiempo: ejecuta una pasada al reabrir.
+            let rows = OpenClawLiteAutomationStore.shared.loadCrons().filter { $0.enabled }
+            for cron in rows.prefix(3) {
+                execute(cron: cron, source: "resume")
+            }
+            lastRunSummary = "Cron resume: ejecutados al reabrir"
         }
     }
 
