@@ -10,10 +10,26 @@ private enum ImportTarget {
     case embedding
 }
 
+private enum SidebarPanel: String, CaseIterable, Identifiable {
+    case chat = "Chat"
+    case overview = "Overview"
+    case channels = "Channels"
+    case instances = "Instances"
+    case sessions = "Sessions"
+    case usage = "Usage"
+    case cronJobs = "Cron Jobs"
+    case agents = "Agents"
+    case skills = "Skills"
+    case nodes = "Nodes"
+
+    var id: String { rawValue }
+}
+
 struct ChatView: View {
     @StateObject private var vm = ChatViewModel()
     @State private var showSettings = false
     @State private var showSidebar = true
+    @State private var activePanel: SidebarPanel = .chat
     @State private var showToolTrace = false
     @StateObject private var cronRunner = OpenClawLiteCronRunner.shared
     @State private var showAttachmentOptions = false
@@ -31,11 +47,12 @@ struct ChatView: View {
         NavigationStack {
             HStack(spacing: 0) {
                 if showSidebar {
-                    SidebarMenuView(vm: vm)
+                    SidebarMenuView(vm: vm, selection: $activePanel)
                         .frame(width: 260)
                         .transition(.move(edge: .leading))
                 }
 
+                if activePanel == .chat {
                 VStack(spacing: 0) {
                     HStack(spacing: 8) {
                         Image(systemName: "cpu")
@@ -184,6 +201,12 @@ struct ChatView: View {
                     .background(.ultraThinMaterial)
                 }
             }
+                }
+                else {
+                    SidebarContentView(panel: activePanel, vm: vm)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Color(.systemBackground))
+                }
             .animation(.easeInOut(duration: 0.2), value: showSidebar)
             .navigationTitle("OpenPad")
             .toolbar {
@@ -466,26 +489,28 @@ private struct CameraPicker: UIViewControllerRepresentable {
 
 private struct SidebarMenuView: View {
     @ObservedObject var vm: ChatViewModel
+    @Binding var selection: SidebarPanel
 
     private struct Item: Identifiable {
         let id = UUID()
         let icon: String
         let title: String
+        let panel: SidebarPanel
     }
 
     private let sections: [(String, [Item])] = [
         ("Control", [
-            Item(icon: "chart.bar", title: "Overview"),
-            Item(icon: "link", title: "Channels"),
-            Item(icon: "dot.radiowaves.left.and.right", title: "Instances"),
-            Item(icon: "doc.text", title: "Sessions"),
-            Item(icon: "chart.xyaxis.line", title: "Usage"),
-            Item(icon: "clock.arrow.circlepath", title: "Cron Jobs")
+            Item(icon: "chart.bar", title: "Overview", panel: .overview),
+            Item(icon: "link", title: "Channels", panel: .channels),
+            Item(icon: "dot.radiowaves.left.and.right", title: "Instances", panel: .instances),
+            Item(icon: "doc.text", title: "Sessions", panel: .sessions),
+            Item(icon: "chart.xyaxis.line", title: "Usage", panel: .usage),
+            Item(icon: "clock.arrow.circlepath", title: "Cron Jobs", panel: .cronJobs)
         ]),
         ("Agent", [
-            Item(icon: "folder", title: "Agents"),
-            Item(icon: "bolt", title: "Skills"),
-            Item(icon: "desktopcomputer", title: "Nodes")
+            Item(icon: "folder", title: "Agents", panel: .agents),
+            Item(icon: "bolt", title: "Skills", panel: .skills),
+            Item(icon: "desktopcomputer", title: "Nodes", panel: .nodes)
         ])
     ]
 
@@ -516,6 +541,7 @@ private struct SidebarMenuView: View {
                                 .foregroundColor(.white.opacity(0.6))
                             Spacer()
                             Button {
+                                selection = .chat
                                 vm.createNewChat()
                             } label: {
                                 Image(systemName: "plus")
@@ -525,6 +551,7 @@ private struct SidebarMenuView: View {
 
                         ForEach(vm.chatSessions.prefix(12)) { chat in
                             Button {
+                                selection = .chat
                                 vm.selectChat(sessionId: chat.id)
                             } label: {
                                 HStack(spacing: 10) {
@@ -557,24 +584,78 @@ private struct SidebarMenuView: View {
                             }
 
                             ForEach(section.1) { item in
-                                HStack(spacing: 12) {
-                                    Image(systemName: item.icon)
-                                        .frame(width: 18)
-                                        .foregroundColor(.white.opacity(0.75))
-                                    Text(item.title)
-                                        .foregroundColor(.white.opacity(0.9))
-                                    Spacer()
+                                Button {
+                                    selection = item.panel
+                                } label: {
+                                    HStack(spacing: 12) {
+                                        Image(systemName: item.icon)
+                                            .frame(width: 18)
+                                            .foregroundColor(.white.opacity(0.75))
+                                        Text(item.title)
+                                            .foregroundColor(.white.opacity(0.9))
+                                        Spacer()
+                                    }
+                                    .font(.subheadline)
+                                    .padding(.vertical, 10)
+                                    .padding(.horizontal, 10)
+                                    .background(selection == item.panel ? Color.white.opacity(0.14) : Color.clear)
+                                    .clipShape(RoundedRectangle(cornerRadius: 10))
                                 }
-                                .font(.subheadline)
-                                .padding(.vertical, 10)
-                                .padding(.horizontal, 10)
-                                .clipShape(RoundedRectangle(cornerRadius: 10))
                             }
                         }
                     }
                 }
                 .padding(14)
             }
+        }
+    }
+}
+
+private struct SidebarContentView: View {
+    let panel: SidebarPanel
+    @ObservedObject var vm: ChatViewModel
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section(panel.rawValue) {
+                    switch panel {
+                    case .overview:
+                        Text("Resumen rápido del sistema")
+                        Text("Sesiones: \(vm.chatSessions.count)")
+                        Text("Éxitos: \(vm.successCount) • Errores: \(vm.errorCount)")
+                        Text("Latencia: \(vm.lastLatencyMs) ms")
+                    case .channels:
+                        Text("Channels (MVP)")
+                        Text("Configura aquí conectores futuros (WhatsApp/Telegram/etc)")
+                    case .instances:
+                        Text("Instances (MVP)")
+                        Text("Estado de runtimes locales/remotos")
+                    case .sessions:
+                        ForEach(vm.chatSessions) { c in
+                            Text(c.title)
+                        }
+                    case .usage:
+                        Text("Usage (MVP)")
+                        Text("Tokens/costos locales próximamente")
+                    case .cronJobs:
+                        Text("Cron Jobs")
+                        Text("Configura jobs desde Settings > Crons")
+                    case .agents:
+                        Text("Agents (MVP)")
+                        Text("Subagentes locales próximamente")
+                    case .skills:
+                        Text("Skills")
+                        Text("Gestiona skills en Settings > Skills")
+                    case .nodes:
+                        Text("Nodes (MVP)")
+                        Text("Integración de dispositivos próximamente")
+                    case .chat:
+                        Text("Selecciona Chat en sidebar")
+                    }
+                }
+            }
+            .navigationTitle(panel.rawValue)
         }
     }
 }
