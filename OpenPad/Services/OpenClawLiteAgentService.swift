@@ -383,9 +383,9 @@ final class OpenClawLiteAgentService {
         case "en":
             return "Respond in English by default, unless the user asks for another language."
         case "pt":
-            return "Responda em português por padrão, a menos que o usuário peça outro idioma."
+            return "Respond in Portuguese by default, unless the user asks for another language."
         case "fr":
-            return "Réponds en français par défaut, sauf si l'utilisateur demande une autre langue."
+            return "Respond in French by default, unless the user asks for another language."
         default:
             return "Respond in the iPad preferred language (\(languageCode)) by default, unless the user asks for another language."
         }
