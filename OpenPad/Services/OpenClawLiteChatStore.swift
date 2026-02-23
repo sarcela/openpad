@@ -5,6 +5,7 @@ struct ChatSessionSummary: Identifiable, Codable {
     var title: String
     var updatedAt: Date
     var pinned: Bool = false
+    var archived: Bool? = false
 }
 
 private struct ChatSessionRecord: Codable {
@@ -12,6 +13,7 @@ private struct ChatSessionRecord: Codable {
     var title: String
     var updatedAt: Date
     var pinned: Bool = false
+    var archived: Bool? = false
     var messages: [ChatMessage]
 }
 
@@ -53,21 +55,22 @@ final class OpenClawLiteChatStore {
         } catch {}
     }
 
-    func loadSummaries() -> [ChatSessionSummary] {
+    func loadSummaries(includeArchived: Bool = false) -> [ChatSessionSummary] {
         loadRecords()
+            .filter { includeArchived || !($0.archived ?? false) }
             .sorted {
                 if $0.pinned != $1.pinned { return $0.pinned && !$1.pinned }
                 return $0.updatedAt > $1.updatedAt
             }
-            .map { .init(id: $0.id, title: $0.title, updatedAt: $0.updatedAt, pinned: $0.pinned) }
+            .map { .init(id: $0.id, title: $0.title, updatedAt: $0.updatedAt, pinned: $0.pinned, archived: ($0.archived ?? false)) }
     }
 
     func createSession(title: String = "Nuevo chat") -> ChatSessionSummary {
         var rows = loadRecords()
-        let record = ChatSessionRecord(id: UUID(), title: title, updatedAt: Date(), pinned: false, messages: [])
+        let record = ChatSessionRecord(id: UUID(), title: title, updatedAt: Date(), pinned: false, archived: false, messages: [])
         rows.append(record)
         saveRecords(rows)
-        return .init(id: record.id, title: record.title, updatedAt: record.updatedAt, pinned: record.pinned)
+        return .init(id: record.id, title: record.title, updatedAt: record.updatedAt, pinned: record.pinned, archived: record.archived)
     }
 
 
@@ -93,6 +96,31 @@ final class OpenClawLiteChatStore {
         rows[idx].pinned = pinned
         rows[idx].updatedAt = Date()
         saveRecords(rows)
+    }
+
+
+    func setArchived(sessionId: UUID, archived: Bool) {
+        var rows = loadRecords()
+        guard let idx = rows.firstIndex(where: { $0.id == sessionId }) else { return }
+        rows[idx].archived = archived
+        rows[idx].updatedAt = Date()
+        saveRecords(rows)
+    }
+
+    func exportSessionMarkdown(sessionId: UUID) -> String {
+        guard let rec = loadRecords().first(where: { $0.id == sessionId }) else { return "" }
+        var out = "# \(rec.title)
+
+"
+        let f = DateFormatter(); f.dateStyle = .short; f.timeStyle = .short
+        for m in rec.messages {
+            out += "## [\(f.string(from: m.date))] \(m.role.uppercased())
+
+\(m.text)
+
+"
+        }
+        return out
     }
 
     func loadMessages(sessionId: UUID) -> [ChatMessage] {

@@ -133,6 +133,24 @@ final class ChatViewModel: ObservableObject {
         }
     }
 
+
+    func archiveChat(sessionId: UUID, archived: Bool) {
+        chatStore.setArchived(sessionId: sessionId, archived: archived)
+        refreshSessions()
+        if archived && activeSessionId == sessionId {
+            if let first = chatSessions.first {
+                activeSessionId = first.id
+                messages = chatStore.loadMessages(sessionId: first.id)
+            } else {
+                createNewChat()
+            }
+        }
+    }
+
+    func exportChatMarkdown(sessionId: UUID) -> String {
+        chatStore.exportSessionMarkdown(sessionId: sessionId)
+    }
+
     func togglePinChat(sessionId: UUID) {
         guard let current = chatSessions.first(where: { $0.id == sessionId }) else { return }
         chatStore.setPinned(sessionId: sessionId, pinned: !current.pinned)
@@ -183,8 +201,8 @@ final class ChatViewModel: ObservableObject {
         }
     }
 
-    private func refreshSessions() {
-        chatSessions = chatStore.loadSummaries()
+    func refreshSessions(includeArchived: Bool = false) {
+        chatSessions = chatStore.loadSummaries(includeArchived: includeArchived)
     }
 
     private func persistActiveSession() {

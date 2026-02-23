@@ -616,6 +616,10 @@ private struct SidebarContentView: View {
     @ObservedObject var vm: ChatViewModel
     @State private var renameTarget: ChatSessionSummary?
     @State private var renameText: String = ""
+    @State private var sessionSearch = ""
+    @State private var includeArchived = false
+    @State private var exportPreview = ""
+    @State private var showExport = false
 
     var body: some View {
         NavigationStack {
@@ -729,7 +733,9 @@ private struct SidebarContentView: View {
                     }
                 }
             }
-            .navigationTitle(panel.rawValue)
+             .navigationTitle(panel.rawValue)
+            .onChange(of: includeArchived) { v in vm.refreshSessions(includeArchived: v) }
+            .onAppear { vm.refreshSessions(includeArchived: includeArchived) }
             .sheet(item: $renameTarget) { chat in
                 NavigationStack {
                     Form {
@@ -744,6 +750,29 @@ private struct SidebarContentView: View {
                             Button("Guardar") {
                                 vm.renameChat(sessionId: chat.id, title: renameText)
                                 renameTarget = nil
+                            }
+                        }
+                    }
+                }
+            }
+            .sheet(isPresented: $showExport) {
+                NavigationStack {
+                    VStack {
+                        TextEditor(text: $exportPreview)
+                            .padding(8)
+                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.2)))
+                            .padding()
+                    }
+                    .navigationTitle("Exportar Markdown")
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Cerrar") { showExport = false }
+                        }
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Copiar") {
+                                #if canImport(UIKit)
+                                UIPasteboard.general.string = exportPreview
+                                #endif
                             }
                         }
                     }
