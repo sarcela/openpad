@@ -108,7 +108,8 @@ struct OpenClawLiteConfig {
             "read_file", "write_file", "append_file", "delete_file", "list_files", "file_exists",
             "calendar_today", "summarize_url", "http_get", "brave_search", "calculate", "make_uuid",
             "json_parse", "csv_preview", "markdown_toc", "diff_text",
-            "regex_extract", "base64_encode", "base64_decode", "url_encode", "url_decode"
+            "regex_extract", "base64_encode", "base64_decode", "url_encode", "url_decode",
+            "json_path", "csv_filter", "html_to_text", "keyword_extract", "chunk_text"
         ]
     }
 
@@ -539,6 +540,80 @@ final class OpenClawLiteTools {
         let added = newSet.subtracting(oldSet).prefix(50).map { "+ \($0)" }
         if removed.isEmpty && added.isEmpty { return "Sin diferencias detectables por línea" }
         return (["Cambios detectados:"] + removed + added).joined(separator: "\n")
+    }
+
+    private func jsonPath(text: String, path: String) -> String {
+        guard let data = text.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) else {
+            return "JSON inválido"
+        }
+        let cleanPath = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard cleanPath.hasPrefix("$.") else { return "Path inválido (usa formato $.campo.subcampo)" }
+        let parts = cleanPath.dropFirst(2).split(separator: ".").map(String.init)
+        var current: Any = obj
+        for part in parts {
+            if let dict = current as? [String: Any], let next = dict[part] {
+                current = next
+            } else {
+                return "Path no encontrado"
+            }
+        }
+        if let data = try? JSONSerialization.data(withJSONObject: current, options: [.prettyPrinted]),
+           let out = String(data: data, encoding: .utf8) {
+            return String(out.prefix(4000))
+        }
+        return String(describing: current)
+    }
+
+    private func csvFilter(text: String, contains: String) -> String {
+        let rows = text.split(separator: "
+", omittingEmptySubsequences: false).map(String.init)
+        guard !rows.isEmpty else { return "CSV vacío" }
+        guard !contains.isEmpty else { return rows.prefix(50).joined(separator: "
+") }
+        let filtered = rows.filter { $0.localizedCaseInsensitiveContains(contains) }
+        if filtered.isEmpty { return "Sin filas coincidentes" }
+        return filtered.prefix(80).joined(separator: "
+")
+    }
+
+    private func htmlToText(_ html: String) -> String {
+        guard let data = html.data(using: .utf8) else { return html }
+        if let attr = try? NSAttributedString(data: data, options: [.documentType: NSAttributedString.DocumentType.html], documentAttributes: nil) {
+            return String(attr.string.prefix(6000))
+        }
+        return html.replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
+    }
+
+    private func keywordExtract(text: String, top: Int) -> String {
+        let stop: Set<String> = ["de","la","el","y","en","a","que","los","las","un","una","por","para","con","the","and","for","to","of","in","on","is","are","it"]
+        let words = text.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init)
+        var freq: [String:Int] = [:]
+        for w in words where w.count > 2 && !stop.contains(w) {
+            freq[w, default: 0] += 1
+        }
+        let ranked = freq.sorted { $0.value > $1.value }.prefix(top)
+        if ranked.isEmpty { return "Sin keywords" }
+        return ranked.map { "\($0.key): \($0.value)" }.joined(separator: "
+")
+    }
+
+    private func chunkText(text: String, size: Int) -> String {
+        if text.isEmpty { return "Texto vacío" }
+        var out: [String] = []
+        var idx = text.startIndex
+        var i = 1
+        while idx < text.endIndex {
+            let end = text.index(idx, offsetBy: size, limitedBy: text.endIndex) ?? text.endIndex
+            out.append("[Chunk \(i)]
+" + text[idx..<end])
+            idx = end
+            i += 1
+            if out.count >= 12 { break }
+        }
+        return out.joined(separator: "
+
+")
     }
 
     private func regexExtract(pattern: String, text: String) -> String {

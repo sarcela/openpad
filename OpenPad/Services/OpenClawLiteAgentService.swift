@@ -131,12 +131,17 @@ final class OpenClawLiteAgentService {
         24) base64_decode(arguments: {"text":"..."})
         25) url_encode(arguments: {"text":"..."})
         26) url_decode(arguments: {"text":"..."})
+        27) json_path(arguments: {"text":"{...}","path":"$.a.b"})
+        28) csv_filter(arguments: {"text":"csv...","contains":"foo"})
+        29) html_to_text(arguments: {"text":"<html...>"})
+        30) keyword_extract(arguments: {"text":"...","top":"12"})
+        31) chunk_text(arguments: {"text":"...","size":"1200"})
 
         Esquema de salida:
         - respuesta final:
           {"type":"final","content":"..."}
         - llamada de herramienta:
-          {"type":"tool_call","name":"get_time|save_memory|list_memories|search_memories|clear_memories|read_file|write_file|list_files|file_exists|append_file|delete_file|calendar_today|summarize_url|http_get|brave_search|calculate|make_uuid|json_parse|csv_preview|markdown_toc|diff_text|regex_extract|base64_encode|base64_decode|url_encode|url_decode","arguments":{"key":"value"}}
+          {"type":"tool_call","name":"get_time|save_memory|list_memories|search_memories|clear_memories|read_file|write_file|list_files|file_exists|append_file|delete_file|calendar_today|summarize_url|http_get|brave_search|calculate|make_uuid|json_parse|csv_preview|markdown_toc|diff_text|regex_extract|base64_encode|base64_decode|url_encode|url_decode|json_path|csv_filter|html_to_text|keyword_extract|chunk_text","arguments":{"key":"value"}}
 
         Mensaje del usuario:
         \(userPrompt)
@@ -203,7 +208,7 @@ final class OpenClawLiteAgentService {
     private func heuristicDecision(from text: String) -> AgentDecision? {
         let lower = text.lowercased()
         if lower.contains("tool_call") {
-            for name in ["get_time", "save_memory", "list_memories", "search_memories", "clear_memories", "read_file", "write_file", "list_files", "file_exists", "append_file", "delete_file", "calendar_today", "summarize_url", "http_get", "brave_search", "calculate", "make_uuid", "json_parse", "csv_preview", "markdown_toc", "diff_text", "regex_extract", "base64_encode", "base64_decode", "url_encode", "url_decode"] {
+            for name in ["get_time", "save_memory", "list_memories", "search_memories", "clear_memories", "read_file", "write_file", "list_files", "file_exists", "append_file", "delete_file", "calendar_today", "summarize_url", "http_get", "brave_search", "calculate", "make_uuid", "json_parse", "csv_preview", "markdown_toc", "diff_text", "regex_extract", "base64_encode", "base64_decode", "url_encode", "url_decode", "json_path", "csv_filter", "html_to_text", "keyword_extract", "chunk_text"] {
                 if lower.contains(name) {
                     return AgentDecision(type: "tool_call", content: nil, name: name, arguments: [:])
                 }
