@@ -801,6 +801,11 @@ private struct SettingsView: View {
                                 Text("Progreso estimado: \(Int(mlxDownloadProgress * 100))%")
                                     .font(.caption2)
                                     .foregroundColor(.secondary)
+                                if mlxDownloadProgress >= 0.90 {
+                                    Text("Finalizando descarga… esto puede tardar algunos minutos.")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                }
                             }
 
                             Text("Puedes elegir uno sugerido o escribir un ID manual si ya sabes cuál usar.")
@@ -1146,7 +1151,12 @@ private struct SettingsView: View {
                 try? await Task.sleep(nanoseconds: 450_000_000)
                 await MainActor.run {
                     if isDownloadingMLXModel {
-                        mlxDownloadProgress = min(0.92, mlxDownloadProgress + 0.04)
+                        if mlxDownloadProgress < 0.92 {
+                            mlxDownloadProgress = min(0.92, mlxDownloadProgress + 0.04)
+                        } else {
+                            // fase final: animación suave para indicar actividad mientras finaliza.
+                            mlxDownloadProgress = (mlxDownloadProgress >= 0.98) ? 0.93 : (mlxDownloadProgress + 0.01)
+                        }
                     }
                 }
             }
