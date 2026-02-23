@@ -73,11 +73,36 @@ final class OpenClawLiteAgentService {
         let modelReply = try await localModelService.runLocal(prompt: firstPrompt, purpose: .tools)
 
         guard let decision = parseDecision(from: modelReply) else {
+            if shouldForceAttachmentTool(userPrompt: userPrompt, recentMessages: recentMessages) {
+                trace.append("Planner fallback: force attachment tool")
+                let candidates = attachmentCandidates(from: userPrompt, recentMessages: recentMessages)
+                if let file = candidates.first {
+                    let toolResult = await tools.execute(name: "analyze_attachment", arguments: ["fileName": file, "maxChars": "8000"])
+                    trace.append("Tool result: \(toolResult.ok ? "ok" : "error")")
+                    let secondPrompt = buildFinalizePrompt(userPrompt: userPrompt, toolName: "analyze_attachment", toolResult: toolResult)
+                    let finalReply = try await localModelService.runLocal(prompt: secondPrompt, purpose: .chat)
+                    return .init(text: extractContentFromJsonLike(finalReply) ?? finalReply, trace: trace)
+                }
+            }
+            if shouldForceTimeTool(userPrompt) {
+                trace.append("Planner fallback: force get_time tool")
+                let toolResult = await tools.execute(name: "get_time", arguments: [:])
+                let secondPrompt = buildFinalizePrompt(userPrompt: userPrompt, toolName: "get_time", toolResult: toolResult)
+                let finalReply = try await localModelService.runLocal(prompt: secondPrompt, purpose: .chat)
+                return .init(text: extractContentFromJsonLike(finalReply) ?? finalReply, trace: trace)
+            }
             trace.append("Planner: no valid JSON, direct answer")
             return .init(text: modelReply, trace: trace)
         }
 
         if decision.type == "final" {
+            if shouldForceTimeTool(userPrompt) {
+                trace.append("Planner override: force get_time tool")
+                let toolResult = await tools.execute(name: "get_time", arguments: [:])
+                let secondPrompt = buildFinalizePrompt(userPrompt: userPrompt, toolName: "get_time", toolResult: toolResult)
+                let finalReply = try await localModelService.runLocal(prompt: secondPrompt, purpose: .chat)
+                return .init(text: extractContentFromJsonLike(finalReply) ?? finalReply, trace: trace)
+            }
             if shouldForceAttachmentTool(userPrompt: userPrompt, recentMessages: recentMessages) {
                 trace.append("Planner override: force attachment tool for follow-up question")
                 let candidates = attachmentCandidates(from: userPrompt, recentMessages: recentMessages)
@@ -363,7 +388,7 @@ final class OpenClawLiteAgentService {
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return nil
         }
-        let keys = ["content", "response", "answer", "message", "output", "text"]
+        let keys = ["content", "response", "answer", "message", "output", "text", "respuesta", "respuesta final", "respuesta_final", "final_answer"]
         for k in keys {
             if let v = obj[k] as? String, !v.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 return v.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -429,8 +454,12 @@ final class OpenClawLiteAgentService {
             #"\"response\"\s*:\s*\"((?:\\.|[^\"])*)\""#,
             #"\"answer\"\s*:\s*\"((?:\\.|[^\"])*)\""#,
             #"\"message\"\s*:\s*\"((?:\\.|[^\"])*)\""#,
+            #"\"respuesta\"\s*:\s*\"((?:\\.|[^\"])*)\""#,
+            #"\"respuesta final\"\s*:\s*\"((?:\\.|[^\"])*)\""#,
+            #"\"respuesta_final\"\s*:\s*\"((?:\\.|[^\"])*)\""#,
             #"content\s*[:=]\s*\"([^\"]+)\""#,
-            #"response\s*[:=]\s*\"([^\"]+)\""#
+            #"response\s*[:=]\s*\"([^\"]+)\""#,
+            #"respuesta\s*[:=]\s*\"([^\"]+)\""#
         ]
 
         for pattern in patterns {
@@ -528,6 +557,11 @@ final class OpenClawLiteAgentService {
         }
         // Follow-up questions like "what does it say?" should still use the latest attachment.
         return lower.contains("de que") || lower.contains("qué") || lower.contains("what") || lower.contains("resume") || lower.contains("summary")
+    }
+
+    private func shouldForceTimeTool(_ prompt: String) -> Bool {
+        let lower = prompt.lowercased()
+        return lower.contains("hora") || lower.contains("qué hora") || lower.contains("que hora") || lower.contains("time") || lower.contains("current time") || lower.contains("fecha") || lower.contains("date today")
     }
 
     private func extractAttachmentNames(from text: String) -> [String] {
