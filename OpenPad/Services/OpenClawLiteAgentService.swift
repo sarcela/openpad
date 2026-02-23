@@ -27,35 +27,33 @@ final class OpenClawLiteAgentService {
         if shouldBypassPlannerForCurrentModel() {
             trace.append("Planner bypass: thinking model compatibility mode")
 
-            if hasAttachmentHint(in: userPrompt) {
-                var attachmentContext = buildAttachmentContext(from: userPrompt)
-                let audioContext = await buildAudioContext(from: userPrompt)
-                if !audioContext.isEmpty {
-                    attachmentContext += "\n\n[audio transcript]\n\(audioContext)"
-                    trace.append("Compat audio mode: attached transcription context")
-                }
+            var attachmentContext = buildAttachmentContext(from: userPrompt, recentMessages: recentMessages)
+            let audioContext = await buildAudioContext(from: userPrompt)
+            if !audioContext.isEmpty {
+                attachmentContext += "\n\n[audio transcript]\n\(audioContext)"
+                trace.append("Compat audio mode: attached transcription context")
+            }
 
-                if !attachmentContext.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                   attachmentContext != "(no attachments)" {
-                    trace.append("Compat attachment mode: using injected attachment context")
-                    let prompt = """
-                    You are OpenClaw Lite in compatibility mode.
-                    Use ONLY the attachment context below to answer the user's question precisely.
-                    If required info is missing in the attachment text, say exactly what is missing.
-                    Do not output JSON schemas.
-                    Do not include <think> blocks.
+            if !attachmentContext.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+               attachmentContext != "(no attachments)" {
+                trace.append("Compat attachment mode: using injected attachment context")
+                let prompt = """
+                You are OpenClaw Lite in compatibility mode.
+                Use ONLY the attachment context below to answer the user's question precisely.
+                If required info is missing in the attachment text, say exactly what is missing.
+                Do not output JSON schemas.
+                Do not include <think> blocks.
 
-                    Attachment context:
-                    \(attachmentContext)
+                Attachment context:
+                \(attachmentContext)
 
-                    User question:
-                    \(userPrompt)
-                    """
-                    let override = multimodalOverrideModel(for: userPrompt)
-                    if let override { trace.append("Compat override model: \(override)") }
-                    let reply = try await localModelService.runLocal(prompt: prompt, purpose: .chat, modelOverride: override)
-                    return .init(text: reply, trace: trace)
-                }
+                User question:
+                \(userPrompt)
+                """
+                let override = multimodalOverrideModel(for: userPrompt)
+                if let override { trace.append("Compat override model: \(override)") }
+                let reply = try await localModelService.runLocal(prompt: prompt, purpose: .chat, modelOverride: override)
+                return .init(text: reply, trace: trace)
             }
 
             let directPrompt = buildDirectCompatPrompt(userPrompt: userPrompt, recentMessages: recentMessages)
@@ -179,7 +177,7 @@ final class OpenClawLiteAgentService {
 
     private func buildDirectCompatPrompt(userPrompt: String, recentMessages: [ChatMessage]) -> String {
         let recent = buildRecentContext(from: recentMessages)
-        let attachmentContext = buildAttachmentContext(from: userPrompt)
+        let attachmentContext = buildAttachmentContext(from: userPrompt, recentMessages: recentMessages)
         let languageInstruction = preferredLanguageInstruction()
         return """
         You are OpenClaw Lite running in compatibility mode for reasoning-heavy models.
@@ -207,7 +205,7 @@ final class OpenClawLiteAgentService {
         guard !reasoningModel.isEmpty else { return "" }
 
         let recent = buildRecentContext(from: recentMessages)
-        let attachmentContext = buildAttachmentContext(from: userPrompt)
+        let attachmentContext = buildAttachmentContext(from: userPrompt, recentMessages: recentMessages)
         let prompt = """
         Create a concise reasoning draft for another assistant that will execute tools.
         Return ONLY short bullets with concrete facts, constraints, unknowns, and recommended next action.
@@ -235,7 +233,7 @@ final class OpenClawLiteAgentService {
         let memoryLimit = lowPower ? 4 : (profile == .turbo ? 10 : 6)
         let memoryContext = String(tools.recentMemories(limit: memoryLimit).prefix(budget.memoryChars))
         let appIdentityContext = String(appMemoryContext(maxChars: lowPower ? 1200 : 2600).prefix(budget.memoryChars))
-        let attachmentContext = buildAttachmentContext(from: userPrompt)
+        let attachmentContext = buildAttachmentContext(from: userPrompt, recentMessages: recentMessages)
         let recentContext = buildRecentContext(from: recentMessages)
         let languageInstruction = preferredLanguageInstruction()
         return """
@@ -429,8 +427,17 @@ final class OpenClawLiteAgentService {
         return nil
     }
 
-    private func buildAttachmentContext(from prompt: String) -> String {
-        let names = extractAttachmentNames(from: prompt)
+    private func buildAttachmentContext(from prompt: String, recentMessages: [ChatMessage]) -> String {
+        var names = extractAttachmentNames(from: prompt)
+
+        if names.isEmpty {
+            let lower = prompt.lowercased()
+            let genericAttachmentAsk = lower.contains("pdf") || lower.contains("adjunto") || lower.contains("archivo") || lower.contains("attachment")
+            if genericAttachmentAsk {
+                names = recentAttachmentNames(from: recentMessages)
+            }
+        }
+
         guard !names.isEmpty else { return "(no attachments)" }
 
         var chunks: [String] = []
@@ -459,6 +466,15 @@ final class OpenClawLiteAgentService {
         guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else { return false }
         let range = NSRange(text.startIndex..., in: text)
         return regex.firstMatch(in: text, options: [], range: range) != nil
+    }
+
+    private func recentAttachmentNames(from messages: [ChatMessage]) -> [String] {
+        for msg in messages.reversed() {
+            if msg.role.lowercased() != "user" { continue }
+            let names = extractAttachmentNames(from: msg.text)
+            if !names.isEmpty { return names }
+        }
+        return []
     }
 
     private func extractAttachmentNames(from text: String) -> [String] {
