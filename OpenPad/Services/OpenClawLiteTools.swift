@@ -766,6 +766,15 @@ final class OpenClawLiteTools {
         return v == "YES" || v == "TRUE"
     }
 
+    private struct EmbeddingCacheEntry: Codable {
+        let key: String
+        let backend: String
+        let model: String
+        let dims: Int
+        let vector: [Double]
+        let updatedAt: TimeInterval
+    }
+
     private func normalizedTokens(_ text: String) -> Set<String> {
         let stop: Set<String> = ["de","la","el","y","en","a","que","los","las","un","una","por","para","con","the","and","for","to","of","in","on","is","are","it"]
         let raw = text.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init)
@@ -783,10 +792,39 @@ final class OpenClawLiteTools {
     }
 
     private func embeddingVector(for text: String, allowRemote: Bool) async -> [Double] {
-        if allowRemote, let remote = await remoteEmbeddingFromOllama(text: text) {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return [] }
+
+        let remoteModel = runtimeConfig.loadOllama().model.trimmingCharacters(in: .whitespacesAndNewlines)
+        let remoteKey = embeddingCacheKey(backend: "ollama", model: remoteModel, text: clean)
+        let localKey = embeddingCacheKey(backend: "local_hash", model: "v1", text: clean)
+
+        if allowRemote,
+           !remoteModel.isEmpty,
+           let cached = cachedEmbedding(for: remoteKey),
+           !cached.isEmpty {
+            return cached
+        }
+
+        if let cachedLocal = cachedEmbedding(for: localKey), !cachedLocal.isEmpty {
+            if allowRemote {
+                // still try remote for better semantic quality if available.
+                if let remote = await remoteEmbeddingFromOllama(text: clean) {
+                    saveCachedEmbedding(remote, key: remoteKey, backend: "ollama", model: remoteModel)
+                    return remote
+                }
+            }
+            return cachedLocal
+        }
+
+        if allowRemote, let remote = await remoteEmbeddingFromOllama(text: clean) {
+            saveCachedEmbedding(remote, key: remoteKey, backend: "ollama", model: remoteModel)
             return remote
         }
-        return localEmbedding(text)
+
+        let local = localEmbedding(clean)
+        saveCachedEmbedding(local, key: localKey, backend: "local_hash", model: "v1")
+        return local
     }
 
     private func localEmbedding(_ text: String, dimensions: Int = 256) -> [Double] {
@@ -862,6 +900,64 @@ final class OpenClawLiteTools {
         let norm = sqrt(v.reduce(0.0) { $0 + ($1 * $1) })
         guard norm > 0 else { return v }
         return v.map { $0 / norm }
+    }
+
+    private func embeddingCacheKey(backend: String, model: String, text: String) -> String {
+        let normalized = text.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        return "\(backend)|\(model)|\(stableHash(normalized))"
+    }
+
+    private func stableHash(_ text: String) -> String {
+        // FNV-1a 64-bit deterministic hash.
+        var hash: UInt64 = 14695981039346656037
+        for b in text.utf8 {
+            hash ^= UInt64(b)
+            hash = hash &* 1099511628211
+        }
+        return String(hash, radix: 16)
+    }
+
+    private func embeddingCacheURL() throws -> URL {
+        let docs = try documentsDirectory()
+        let dir = docs.appendingPathComponent(memoryDirName, isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("embedding_cache.json")
+    }
+
+    private func loadEmbeddingCache() -> [EmbeddingCacheEntry] {
+        do {
+            let url = try embeddingCacheURL()
+            guard FileManager.default.fileExists(atPath: url.path) else { return [] }
+            let data = try Data(contentsOf: url)
+            return (try? JSONDecoder().decode([EmbeddingCacheEntry].self, from: data)) ?? []
+        } catch {
+            return []
+        }
+    }
+
+    private func saveEmbeddingCache(_ rows: [EmbeddingCacheEntry]) {
+        do {
+            let url = try embeddingCacheURL()
+            let data = try JSONEncoder().encode(rows)
+            try data.write(to: url, options: .atomic)
+        } catch {
+            // best-effort cache; ignore errors.
+        }
+    }
+
+    private func cachedEmbedding(for key: String) -> [Double]? {
+        let rows = loadEmbeddingCache()
+        return rows.first(where: { $0.key == key })?.vector
+    }
+
+    private func saveCachedEmbedding(_ vector: [Double], key: String, backend: String, model: String) {
+        guard !vector.isEmpty else { return }
+        var rows = loadEmbeddingCache().filter { $0.key != key }
+        rows.append(.init(key: key, backend: backend, model: model, dims: vector.count, vector: vector, updatedAt: Date().timeIntervalSince1970))
+        if rows.count > 1200 {
+            rows = Array(rows.suffix(1200))
+        }
+        saveEmbeddingCache(rows)
     }
 
     private func cosineSimilarity(_ a: [Double], _ b: [Double]) -> Double {
