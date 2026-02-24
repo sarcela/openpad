@@ -298,6 +298,10 @@ final class LlamaLocalModelService {
             out = nonEcho.joined(separator: "\n")
         }
 
+        if out.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().hasPrefix("### response") {
+            out = out.components(separatedBy: .newlines).dropFirst().joined(separator: "\n")
+        }
+
         // Cut at repetitive junk tags like "tiempo:1 siri:1 paga:1".
         if let regex = try? NSRegularExpression(pattern: #"\b[\p{L}_-]{2,}:\d+\b"#, options: []) {
             let full = NSRange(out.startIndex..., in: out)
@@ -445,16 +449,16 @@ private struct LlamaNativeAdapter {
         let repetitionPenalty: Float
         if mode == .recovery {
             maxNewTokens = 160
-            temperature = 0.12
-            topP = 0.82
-            repetitionPenalty = 1.16
+            temperature = 0.0
+            topP = 0.8
+            repetitionPenalty = 1.18
         } else {
             switch profile {
             case .stable:
                 maxNewTokens = 192
-                temperature = 0.22
-                topP = 0.9
-                repetitionPenalty = 1.10
+                temperature = 0.18
+                topP = 0.88
+                repetitionPenalty = 1.12
             case .balanced:
                 maxNewTokens = 256
                 temperature = 0.32
@@ -533,9 +537,13 @@ private struct LlamaNativeAdapter {
 
     private func buildAssistantPrompt(from userPrompt: String) -> String {
         """
-        System: You are OpenPad, a concise and practical assistant. Answer directly and avoid hidden reasoning.
-        User: \(userPrompt)
-        Assistant:
+        You are OpenPad, a concise and practical assistant.
+        Give a direct, useful answer with no hidden reasoning.
+
+        ### Instruction
+        \(userPrompt)
+
+        ### Response
         """
     }
 
@@ -580,7 +588,8 @@ private struct LlamaNativeAdapter {
 
         guard !top.isEmpty else { return 0 }
 
-        if temperature <= 0.01 {
+        if temperature <= 0.2 {
+            // Favor deterministic decoding for low-temperature profiles to reduce drift/loops.
             return top[0].token
         }
 
@@ -741,6 +750,10 @@ private struct LlamaNativeAdapter {
                 return ""
             }
             out = nonEcho.joined(separator: "\n")
+        }
+
+        if out.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().hasPrefix("### response") {
+            out = out.components(separatedBy: .newlines).dropFirst().joined(separator: "\n")
         }
 
         // Cut at repetitive junk tags like "tiempo:1 siri:1 paga:1".
