@@ -258,7 +258,18 @@ final class LlamaLocalModelService {
 
     private func isLocalEndpoint(_ url: URL) -> Bool {
         guard let host = url.host?.lowercased() else { return false }
-        if host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "0.0.0.0" { return true }
+        if host == "localhost" || host.hasSuffix(".localhost") || host == "::1" || host == "0.0.0.0" {
+            return true
+        }
+
+        let parts = host.split(separator: ".")
+        if parts.count == 4,
+           let first = Int(parts[0]),
+           parts.dropFirst().allSatisfy({ Int($0) != nil }),
+           first == 127 {
+            return true
+        }
+
         return false
     }
 
@@ -279,12 +290,19 @@ final class LlamaLocalModelService {
     }
 
     private func completionsURL(from base: URL) -> URL {
-        let normalizedPath = base.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        if normalizedPath.hasSuffix("v1/chat/completions") {
+        let normalizedPath = base.path.trimmingCharacters(in: CharacterSet(charactersIn: "/")).lowercased()
+
+        if normalizedPath.hasSuffix("v1/chat/completions") || normalizedPath.hasSuffix("chat/completions") {
             return base
         }
-        if normalizedPath.hasSuffix("chat/completions") {
-            return base
+
+        // Some users paste /v1/completions or /completions from legacy examples.
+        // Normalize those to the chat endpoint instead of appending a second suffix.
+        if normalizedPath.hasSuffix("v1/completions") {
+            return replacingPath(of: base, with: "v1/chat/completions")
+        }
+        if normalizedPath.hasSuffix("completions") {
+            return replacingPath(of: base, with: "chat/completions")
         }
 
         var resolved = base
@@ -294,6 +312,21 @@ final class LlamaLocalModelService {
             resolved.append(path: "v1/chat/completions")
         }
         return resolved
+    }
+
+    private func replacingPath(of url: URL, with newSuffix: String) -> URL {
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        let path = url.path
+        let lowerPath = path.lowercased()
+
+        if let range = lowerPath.range(of: "completions", options: .backwards) {
+            let prefix = String(path[..<range.lowerBound]).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            components?.path = "/" + [prefix, newSuffix].filter { !$0.isEmpty }.joined(separator: "/")
+            return components?.url ?? url
+        }
+
+        components?.path = "/" + newSuffix
+        return components?.url ?? url
     }
 
     private func isLikelyLowQuality(_ text: String) -> Bool {
@@ -308,10 +341,20 @@ final class LlamaLocalModelService {
         // Prompt-echo junk sometimes leaks from native decode loops.
         if (lower.contains("system:") && lower.contains("user:")) ||
             lower.hasPrefix("assistant:") ||
+            lower.hasPrefix("user:") ||
+            lower.contains("\nassistant:") ||
             lower.contains("<|start_header_id|>") ||
             lower.contains("<|end_header_id|>") ||
             (lower.contains("### instruction") && lower.contains("### response")) {
             return true
+        }
+
+        let letterOrNumberCount = clean.unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }.count
+        if clean.count >= 24 {
+            let ratio = Double(letterOrNumberCount) / Double(clean.count)
+            if ratio < 0.33 {
+                return true
+            }
         }
 
         if let regex = try? NSRegularExpression(pattern: #"\b[\p{L}_-]{2,}:\d+\b"#, options: []) {
