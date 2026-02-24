@@ -70,12 +70,14 @@ final class LlamaLocalModelService {
         }
 
         let strictOffline = runtimeConfig.isOfflineStrictModeEnabled()
+        var nativeBestEffortOutput: String?
 
         // Native-first path (GGUF on-device) when module is present and adapter is wired.
         do {
             if let nativeOut = try await native.generate(prompt: prompt, modelPath: modelPath) {
                 let clean = sanitizeGeneratedText(nativeOut).trimmingCharacters(in: .whitespacesAndNewlines)
                 if !clean.isEmpty {
+                    nativeBestEffortOutput = clean
                     if !isLikelyLowQuality(clean) {
                         return clean
                     }
@@ -83,6 +85,9 @@ final class LlamaLocalModelService {
                     // One deterministic rescue pass improves quality when the first decode drifts.
                     if let rescued = try await native.generateRecovery(prompt: prompt, modelPath: modelPath) {
                         let rescuedClean = sanitizeGeneratedText(rescued).trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !rescuedClean.isEmpty {
+                            nativeBestEffortOutput = rescuedClean
+                        }
                         if !rescuedClean.isEmpty, !isLikelyLowQuality(rescuedClean) {
                             return rescuedClean
                         }
@@ -116,11 +121,26 @@ final class LlamaLocalModelService {
             }
         }
 
-        let out = try await runViaLlamaServer(prompt: prompt, modelPath: modelPath)
-        if strictOffline, out.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            throw LlamaServiceError.nativeBackendRequired
+        do {
+            let out = try await runViaLlamaServer(prompt: prompt, modelPath: modelPath)
+            let trimmed = out.trimmingCharacters(in: .whitespacesAndNewlines)
+            if strictOffline, trimmed.isEmpty {
+                throw LlamaServiceError.nativeBackendRequired
+            }
+            if !trimmed.isEmpty {
+                return out
+            }
+        } catch {
+            if !strictOffline, let fallback = nativeBestEffortOutput, !fallback.isEmpty {
+                return fallback
+            }
+            throw error
         }
-        return out
+
+        if !strictOffline, let fallback = nativeBestEffortOutput, !fallback.isEmpty {
+            return fallback
+        }
+        throw LlamaServiceError.emptyResponse
     }
 
     private func runViaLlamaServer(prompt: String, modelPath: String) async throws -> String {

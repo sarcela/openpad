@@ -2279,8 +2279,9 @@ private struct SettingsView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
                         let shouldUseLlamaFallback = !isNativeLlamaModuleAvailable || showLlamaFallbackSettings
-                        let effectiveLlamaBaseURL = shouldUseLlamaFallback ? llamaBaseURL : "http://127.0.0.1:8080"
-                        let effectiveLlamaModel = shouldUseLlamaFallback ? llamaModel : ""
+                        let persistedLlama = runtimeConfig.loadLlama()
+                        let effectiveLlamaBaseURL = shouldUseLlamaFallback ? llamaBaseURL : persistedLlama.baseURL
+                        let effectiveLlamaModel = shouldUseLlamaFallback ? llamaModel : persistedLlama.model
 
                         remoteConfig.save(provider: remoteProvider, baseURL: baseURL, token: token, model: model, organization: remoteOrganization, project: remoteProject)
                         runtimeConfig.saveProvider(runtimeProvider)
