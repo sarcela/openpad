@@ -672,7 +672,8 @@ private struct LlamaNativeAdapter {
                 recentTokens: recentTokens,
                 temperature: temperature,
                 topP: topP,
-                repetitionPenalty: repetitionPenalty
+                repetitionPenalty: repetitionPenalty,
+                avoidEarlyEOS: step < 8
             )
 
             if sampledToken == llama_vocab_eos(vocab) {
@@ -779,7 +780,8 @@ private struct LlamaNativeAdapter {
         recentTokens: [llama_token],
         temperature: Float,
         topP: Float,
-        repetitionPenalty: Float
+        repetitionPenalty: Float,
+        avoidEarlyEOS: Bool
     ) -> llama_token {
         let candidateCount = max(8, min(96, vocabSize))
         var top: [(token: llama_token, logit: Float)] = []
@@ -818,6 +820,26 @@ private struct LlamaNativeAdapter {
 
         guard !top.isEmpty else { return 0 }
 
+        let eosToken = vocab.map { llama_vocab_eos($0) }
+
+        func selectCandidate(_ candidate: llama_token, pool: [(token: llama_token, logit: Float)]) -> llama_token {
+            guard avoidEarlyEOS, let eosToken, candidate == eosToken else {
+                return candidate
+            }
+
+            if let nonEOS = pool.first(where: { entry in
+                entry.token != eosToken && isUsableContinuationToken(entry.token, vocab: vocab)
+            }) {
+                return nonEOS.token
+            }
+
+            if let nonEOS = pool.first(where: { $0.token != eosToken }) {
+                return nonEOS.token
+            }
+
+            return candidate
+        }
+
         if temperature <= 0.2 {
             // Favor deterministic decoding for low-temperature profiles to reduce drift,
             // but avoid getting stuck on the same token when logits become peaky.
@@ -835,19 +857,19 @@ private struct LlamaNativeAdapter {
                    let alternate = top.first(where: {
                        $0.token != last && isUsableContinuationToken($0.token, vocab: vocab)
                    }) {
-                    return alternate.token
+                    return selectCandidate(alternate.token, pool: top)
                 }
             }
 
             if isUsableContinuationToken(top[0].token, vocab: vocab) {
-                return top[0].token
+                return selectCandidate(top[0].token, pool: top)
             }
 
             if let fallback = top.first(where: { isUsableContinuationToken($0.token, vocab: vocab) }) {
-                return fallback.token
+                return selectCandidate(fallback.token, pool: top)
             }
 
-            return top[0].token
+            return selectCandidate(top[0].token, pool: top)
         }
 
         let maxLogit = top[0].logit
@@ -862,7 +884,7 @@ private struct LlamaNativeAdapter {
             total += p
         }
 
-        guard total > 0 else { return top[0].token }
+        guard total > 0 else { return selectCandidate(top[0].token, pool: top) }
 
         for idx in probs.indices {
             probs[idx].prob /= total
@@ -880,7 +902,7 @@ private struct LlamaNativeAdapter {
         }
 
         let nucleusTotal = nucleus.reduce(0.0) { $0 + $1.prob }
-        guard nucleusTotal > 0 else { return top[0].token }
+        guard nucleusTotal > 0 else { return selectCandidate(top[0].token, pool: top) }
 
         let draw = Double.random(in: 0..<1)
         var running = 0.0
@@ -888,21 +910,21 @@ private struct LlamaNativeAdapter {
             running += c.prob / nucleusTotal
             if draw <= running {
                 if isUsableContinuationToken(c.token, vocab: vocab) {
-                    return c.token
+                    return selectCandidate(c.token, pool: top)
                 }
                 break
             }
         }
 
         if let fallback = nucleus.first(where: { isUsableContinuationToken($0.token, vocab: vocab) }) {
-            return fallback.token
+            return selectCandidate(fallback.token, pool: top)
         }
 
         if let topFallback = top.first(where: { isUsableContinuationToken($0.token, vocab: vocab) }) {
-            return topFallback.token
+            return selectCandidate(topFallback.token, pool: top)
         }
 
-        return nucleus.last?.token ?? top[0].token
+        return selectCandidate(nucleus.last?.token ?? top[0].token, pool: top)
     }
 
     private func isUsableContinuationToken(_ token: llama_token, vocab: OpaquePointer?) -> Bool {
