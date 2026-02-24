@@ -424,6 +424,7 @@ final class LlamaLocalModelService {
 private struct LlamaNativeAdapter {
     static let shared = LlamaNativeAdapter()
     private static let backendLock = NSLock()
+    private static var backendInitialized = false
 
     private let runtimeConfig = LocalRuntimeConfig.shared
 
@@ -492,7 +493,8 @@ private struct LlamaNativeAdapter {
             }
 
             group.addTask {
-                try await Task.sleep(nanoseconds: 45_000_000_000)
+                // On slower CPUs a first native decode can legitimately take >45s.
+                try await Task.sleep(nanoseconds: 75_000_000_000)
                 throw LlamaServiceError.nativeBackendUnavailable("native generation timed out")
             }
 
@@ -513,12 +515,11 @@ private struct LlamaNativeAdapter {
             throw LlamaServiceError.modelFileNotFound(modelPath)
         }
 
-        // llama_backend_init/free are process-global; serialize native sessions to avoid races.
+        // llama backend state is process-global; serialize native sessions to avoid races.
         Self.backendLock.lock()
         defer { Self.backendLock.unlock() }
 
-        llama_backend_init()
-        defer { llama_backend_free() }
+        initializeBackendIfNeeded()
 
         var modelParams = llama_model_default_params()
         guard let model = llama_model_load_from_file(modelPath, modelParams) else {
@@ -528,7 +529,7 @@ private struct LlamaNativeAdapter {
 
         var ctxParams = llama_context_default_params()
         ctxParams.n_ctx = 2048
-        ctxParams.n_batch = 512
+        ctxParams.n_batch = min(512, ctxParams.n_ctx)
         guard let ctx = llama_init_from_model(model, ctxParams) else {
             throw LlamaServiceError.nativeBackendUnavailable("failed to create llama context")
         }
@@ -665,6 +666,12 @@ private struct LlamaNativeAdapter {
 
         ### Response
         """
+    }
+
+    private func initializeBackendIfNeeded() {
+        guard !Self.backendInitialized else { return }
+        llama_backend_init()
+        Self.backendInitialized = true
     }
 
     private func sampleToken(
