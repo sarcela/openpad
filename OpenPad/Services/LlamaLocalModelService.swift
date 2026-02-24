@@ -219,6 +219,14 @@ final class LlamaLocalModelService {
             return true
         }
 
+        // Prompt-echo junk sometimes leaks from native decode loops.
+        if (lower.contains("system:") && lower.contains("user:")) ||
+            lower.hasPrefix("assistant:") ||
+            lower.contains("<|start_header_id|>") ||
+            lower.contains("<|end_header_id|>") {
+            return true
+        }
+
         if let regex = try? NSRegularExpression(pattern: #"\b[\p{L}_-]{2,}:\d+\b"#, options: []) {
             let ns = NSRange(clean.startIndex..., in: clean)
             let matches = regex.matches(in: clean, options: [], range: ns)
@@ -230,6 +238,15 @@ final class LlamaLocalModelService {
         let words = clean.split(whereSeparator: { $0.isWhitespace || $0.isNewline })
         if words.count < 2 && clean.count > 24 {
             return true
+        }
+
+        // Repetition detector: long outputs with very low unique-word ratio are usually loops.
+        if words.count >= 24 {
+            let normalizedWords = words.map { $0.lowercased() }
+            let uniqueRatio = Double(Set(normalizedWords).count) / Double(normalizedWords.count)
+            if uniqueRatio < 0.28 {
+                return true
+            }
         }
 
         return false
@@ -603,7 +620,15 @@ private struct LlamaNativeAdapter {
 
     private func sanitizeGeneratedText(_ text: String) -> String {
         var out = text
-        let junkMarkers = ["siri:1", "\nuser:", "\nassistant:", "\nsystem:"]
+        let junkMarkers = [
+            "siri:1",
+            "\nuser:",
+            "\nassistant:",
+            "\nsystem:",
+            "<|eot_id|>",
+            "<|start_header_id|>",
+            "<|end_header_id|>"
+        ]
         for marker in junkMarkers {
             if let range = out.lowercased().range(of: marker) {
                 let idx = range.lowerBound
