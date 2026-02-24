@@ -889,22 +889,45 @@ private struct SidebarContentView: View {
                                 .foregroundColor(.secondary)
                         } else {
                             ForEach(vm.chatSessions) { c in
-                                Button {
-                                    vm.selectChat(sessionId: c.id)
-                                } label: {
-                                    HStack {
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(c.title)
-                                                .font(.subheadline)
-                                            Text(dateText(c.updatedAt))
-                                                .font(.caption2)
-                                                .foregroundColor(.secondary)
+                                HStack(spacing: 10) {
+                                    Button {
+                                        vm.selectChat(sessionId: c.id)
+                                    } label: {
+                                        HStack {
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(c.title)
+                                                    .font(.subheadline)
+                                                Text(dateText(c.updatedAt))
+                                                    .font(.caption2)
+                                                    .foregroundColor(.secondary)
+                                            }
+                                            Spacer()
+                                            if vm.activeSessionId == c.id {
+                                                Image(systemName: "checkmark.circle.fill")
+                                                    .foregroundColor(.green)
+                                            }
                                         }
-                                        Spacer()
-                                        if vm.activeSessionId == c.id {
-                                            Image(systemName: "checkmark.circle.fill")
-                                                .foregroundColor(.green)
+                                    }
+                                    .buttonStyle(.plain)
+
+                                    Menu {
+                                        Button("Renombrar") {
+                                            renameTarget = c
+                                            renameText = c.title
                                         }
+                                        Button(c.archived ? "Unarchive" : "Archivar") {
+                                            vm.archiveChat(sessionId: c.id, archived: !c.archived)
+                                        }
+                                        Button(c.pinned ? "Unpin" : "Pin") {
+                                            vm.togglePinChat(sessionId: c.id)
+                                        }
+                                        Divider()
+                                        Button("Borrar", role: .destructive) {
+                                            vm.deleteChat(sessionId: c.id)
+                                        }
+                                    } label: {
+                                        Image(systemName: "ellipsis.circle")
+                                            .foregroundColor(.secondary)
                                     }
                                 }
                             }
