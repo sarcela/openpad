@@ -1739,7 +1739,7 @@ private struct SettingsView: View {
     ]
 
     private var isNativeLlamaModuleAvailable: Bool {
-        #if canImport(LlamaCpp) || canImport(llama)
+        #if canImport(LlamaCpp) || canImport(llama) || canImport(LlamaSwift)
         return true
         #else
         return false

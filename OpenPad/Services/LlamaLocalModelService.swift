@@ -4,6 +4,10 @@ import Foundation
 import LlamaCpp
 #endif
 
+#if canImport(LlamaSwift)
+import LlamaSwift
+#endif
+
 #if canImport(llama)
 import llama
 #endif
@@ -191,7 +195,7 @@ private struct LlamaNativeAdapter {
     private init() {}
 
     var hasAnyNativeModule: Bool {
-        #if canImport(LlamaCpp) || canImport(llama)
+        #if canImport(LlamaCpp) || canImport(llama) || canImport(LlamaSwift)
         true
         #else
         false
@@ -206,14 +210,14 @@ private struct LlamaNativeAdapter {
         _ = prompt
         _ = modelPath
         throw LlamaServiceError.nativeBackendUnavailable("LlamaCpp module detected but adapter is not bound to package API yet")
-        #elseif canImport(llama)
+        #elseif canImport(LlamaSwift) || canImport(llama)
         return try await generateWithLlamaModule(prompt: prompt, modelPath: modelPath)
         #else
         return nil
         #endif
     }
 
-    #if canImport(llama)
+    #if canImport(LlamaSwift) || canImport(llama)
     private func generateWithLlamaModule(prompt: String, modelPath: String) async throws -> String? {
         guard FileManager.default.fileExists(atPath: modelPath) else {
             throw LlamaServiceError.modelFileNotFound(modelPath)
@@ -240,7 +244,9 @@ private struct LlamaNativeAdapter {
         let normalizedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedPrompt.isEmpty else { return nil }
 
-        var tokens = try tokenize(prompt: normalizedPrompt, model: model)
+        let vocab = llama_model_get_vocab(model)
+
+        let tokens = try tokenize(prompt: normalizedPrompt, vocab: vocab)
         if tokens.isEmpty { return nil }
 
         try decode(tokens: tokens, atPosition: 0, context: ctx)
@@ -249,8 +255,8 @@ private struct LlamaNativeAdapter {
         let maxNewTokens = 256
 
         for step in 0..<maxNewTokens {
-            guard let logits = llama_get_logits(ctx) else { break }
-            let vocabSize = Int(llama_n_vocab(model))
+            guard let logits = llama_get_logits_ith(ctx, -1) else { break }
+            let vocabSize = Int(llama_vocab_n_tokens(vocab))
             if vocabSize <= 0 { break }
 
             var bestToken: llama_token = 0
@@ -263,11 +269,11 @@ private struct LlamaNativeAdapter {
                 }
             }
 
-            if bestToken == llama_token_eos(model) {
+            if bestToken == llama_vocab_eos(vocab) {
                 break
             }
 
-            if let piece = tokenPiece(bestToken, model: model), !piece.isEmpty {
+            if let piece = tokenPiece(bestToken, vocab: vocab), !piece.isEmpty {
                 generated += piece
             }
 
@@ -278,13 +284,13 @@ private struct LlamaNativeAdapter {
         return output.isEmpty ? nil : output
     }
 
-    private func tokenize(prompt: String, model: OpaquePointer) throws -> [llama_token] {
+    private func tokenize(prompt: String, vocab: OpaquePointer?) throws -> [llama_token] {
         let estimate = max(256, prompt.utf8.count + 32)
         var tokenBuffer = [llama_token](repeating: 0, count: estimate)
 
         let tokenCount: Int32 = prompt.withCString { cText in
             llama_tokenize(
-                model,
+                vocab,
                 cText,
                 Int32(strlen(cText)),
                 &tokenBuffer,
@@ -325,9 +331,9 @@ private struct LlamaNativeAdapter {
         }
     }
 
-    private func tokenPiece(_ token: llama_token, model: OpaquePointer) -> String? {
+    private func tokenPiece(_ token: llama_token, vocab: OpaquePointer?) -> String? {
         var buffer = [CChar](repeating: 0, count: 64)
-        let n = llama_token_to_piece(model, token, &buffer, Int32(buffer.count), 0, true)
+        let n = llama_token_to_piece(vocab, token, &buffer, Int32(buffer.count), 0, true)
         guard n > 0 else { return nil }
         return String(cString: buffer)
     }
