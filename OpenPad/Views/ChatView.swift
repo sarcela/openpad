@@ -915,10 +915,10 @@ private struct SidebarContentView: View {
                                             renameTarget = c
                                             renameText = c.title
                                         }
-                                        Button(c.archived ? "Unarchive" : "Archivar") {
-                                            vm.archiveChat(sessionId: c.id, archived: !c.archived)
+                                        Button((c.archived ?? false) ? "Unarchive" : "Archivar") {
+                                            vm.archiveChat(sessionId: c.id, archived: !(c.archived ?? false))
                                         }
-                                        Button(c.pinned ? "Unpin" : "Pin") {
+                                        Button((c.pinned ?? false) ? "Unpin" : "Pin") {
                                             vm.togglePinChat(sessionId: c.id)
                                         }
                                         Divider()
