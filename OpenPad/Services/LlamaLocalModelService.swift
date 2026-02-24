@@ -74,7 +74,7 @@ final class LlamaLocalModelService {
         // Native-first path (GGUF on-device) when module is present and adapter is wired.
         do {
             if let nativeOut = try await native.generate(prompt: prompt, modelPath: modelPath) {
-                let clean = nativeOut.trimmingCharacters(in: .whitespacesAndNewlines)
+                let clean = sanitizeGeneratedText(nativeOut).trimmingCharacters(in: .whitespacesAndNewlines)
                 if !clean.isEmpty {
                     if !isLikelyLowQuality(clean) {
                         return clean
@@ -255,6 +255,50 @@ final class LlamaLocalModelService {
         }
 
         return false
+    }
+
+    private func sanitizeGeneratedText(_ text: String) -> String {
+        var out = text
+        let junkMarkers = [
+            "siri:1",
+            "\nuser:",
+            "\nassistant:",
+            "\nsystem:",
+            "<|eot_id|>",
+            "<|start_header_id|>",
+            "<|end_header_id|>"
+        ]
+
+        for marker in junkMarkers {
+            if let range = out.range(of: marker, options: [.caseInsensitive]) {
+                out = String(out[..<range.lowerBound])
+            }
+        }
+
+        // Strip prompt-echo artifacts like repeated "Mensaje del usuario: ...".
+        let lower = out.lowercased()
+        if lower.contains("mensaje del usuario:") {
+            let lines = out.components(separatedBy: .newlines)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+
+            let nonEcho = lines.filter { !$0.lowercased().hasPrefix("mensaje del usuario:") }
+            if nonEcho.isEmpty {
+                return ""
+            }
+            out = nonEcho.joined(separator: "\n")
+        }
+
+        // Cut at repetitive junk tags like "tiempo:1 siri:1 paga:1".
+        if let regex = try? NSRegularExpression(pattern: #"\b[\p{L}_-]{2,}:\d+\b"#, options: []) {
+            let full = NSRange(out.startIndex..., in: out)
+            let matches = regex.matches(in: out, options: [], range: full)
+            if matches.count >= 3, let first = matches.first, let r = Range(first.range, in: out) {
+                out = String(out[..<r.lowerBound])
+            }
+        }
+
+        return out.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func extractContentField(from text: String) -> String? {
