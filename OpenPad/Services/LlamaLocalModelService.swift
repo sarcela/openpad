@@ -127,13 +127,24 @@ final class LlamaLocalModelService {
         }
 
         do {
-            let out = try await runViaLlamaServer(prompt: prompt, modelPath: modelPath)
+            let out = try await runViaLlamaServer(prompt: prompt, modelPath: modelPath, mode: .standard)
             let trimmed = out.trimmingCharacters(in: .whitespacesAndNewlines)
             if strictOffline, trimmed.isEmpty {
                 throw LlamaServiceError.nativeBackendRequired
             }
-            if !trimmed.isEmpty {
+            if !trimmed.isEmpty, !isLikelyLowQuality(trimmed) {
                 return out
+            }
+
+            // One server-side rescue pass with deterministic decoding helps when the
+            // first completion echoes prompt scaffolding or drifts into junk tokens.
+            let rescued = try await runViaLlamaServer(prompt: prompt, modelPath: modelPath, mode: .recovery)
+            let rescuedTrimmed = rescued.trimmingCharacters(in: .whitespacesAndNewlines)
+            if strictOffline, rescuedTrimmed.isEmpty {
+                throw LlamaServiceError.nativeBackendRequired
+            }
+            if !rescuedTrimmed.isEmpty, !isLikelyLowQuality(rescuedTrimmed) {
+                return rescued
             }
         } catch {
             if !strictOffline, let fallback = nativeBestEffortOutput, isAcceptableFallback(fallback) {
@@ -148,7 +159,12 @@ final class LlamaLocalModelService {
         throw LlamaServiceError.emptyResponse
     }
 
-    private func runViaLlamaServer(prompt: String, modelPath: String) async throws -> String {
+    private enum ServerGenerationMode {
+        case standard
+        case recovery
+    }
+
+    private func runViaLlamaServer(prompt: String, modelPath: String, mode: ServerGenerationMode) async throws -> String {
         let cfg = runtimeConfig.loadLlama()
         guard let rawBase = normalizedBaseURL(from: cfg.baseURL) else {
             throw LlamaServiceError.invalidBaseURL
@@ -162,15 +178,23 @@ final class LlamaLocalModelService {
             : explicitModel
 
         let profile = runtimeConfig.loadRunProfile()
-        let decodingParams: (temperature: Double, maxTokens: Int, topP: Double?)
-        switch profile {
-        case .stable:
-            decodingParams = (temperature: 0.12, maxTokens: 220, topP: 0.9)
-        case .balanced:
-            decodingParams = (temperature: 0.2, maxTokens: 256, topP: 0.92)
-        case .turbo:
-            decodingParams = (temperature: 0.3, maxTokens: 320, topP: 0.95)
+        let decodingParams: (temperature: Double, maxTokens: Int, topP: Double?, repetitionPenalty: Double)
+        if mode == .recovery {
+            decodingParams = (temperature: 0.0, maxTokens: 180, topP: 0.82, repetitionPenalty: 1.16)
+        } else {
+            switch profile {
+            case .stable:
+                decodingParams = (temperature: 0.12, maxTokens: 220, topP: 0.9, repetitionPenalty: 1.08)
+            case .balanced:
+                decodingParams = (temperature: 0.2, maxTokens: 256, topP: 0.92, repetitionPenalty: 1.08)
+            case .turbo:
+                decodingParams = (temperature: 0.3, maxTokens: 320, topP: 0.95, repetitionPenalty: 1.06)
+            }
         }
+
+        let stopTokens = mode == .recovery
+            ? ["\nUser:", "\nUSER:", "\nAssistant:", "\nSYSTEM:", "<|eot_id|>", "### Instruction", "### Response"]
+            : ["\nUser:", "\nUSER:", "\nAssistant:", "\nSYSTEM:", "<|eot_id|>"]
 
         let payload = LlamaChatRequest(
             model: modelName,
@@ -182,8 +206,8 @@ final class LlamaLocalModelService {
             topP: decodingParams.topP,
             stream: false,
             maxTokens: decodingParams.maxTokens,
-            stop: ["\nUser:", "\nUSER:", "\nAssistant:", "\nSYSTEM:", "<|eot_id|>"],
-            repetitionPenalty: 1.08
+            stop: stopTokens,
+            repetitionPenalty: decodingParams.repetitionPenalty
         )
 
         var req = URLRequest(url: base)
