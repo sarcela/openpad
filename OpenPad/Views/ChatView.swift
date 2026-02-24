@@ -1751,6 +1751,7 @@ private struct SettingsView: View {
     @State private var showEmbeddingInspector = false
     @State private var showAdvancedModelIDs = false
     @State private var showAdvancedNetwork = false
+    @State private var showLlamaFallbackSettings = false
     @State private var recentContextWindow: Double = 10
     @State private var automationLoopEnabled = false
     @State private var lowPowerModeEnabled = false
@@ -1990,25 +1991,26 @@ private struct SettingsView: View {
                     }
 
                     if runtimeProvider == .llamaCpp {
-                    if isNativeLlamaModuleAvailable {
                         Section("Backend llama.cpp") {
-                            Text("Native llama.cpp module detected. Loopback server fields are hidden by default.")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                            if isNativeLlamaModuleAvailable {
+                                Toggle("Show llama-server fallback settings", isOn: $showLlamaFallbackSettings)
+                                Text("Native llama.cpp module detected. Keep fallback server disabled unless you need troubleshooting or strict loopback fallback.")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+
+                            if !isNativeLlamaModuleAvailable || showLlamaFallbackSettings {
+                                TextField("llama-server URL", text: $llamaBaseURL)
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled()
+                                TextField("Modelo (opcional)", text: $llamaModel)
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled()
+                                Text("If model is empty, the selected .gguf filename is used.")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
                         }
-                    } else {
-                        Section("Backend llama.cpp") {
-                            TextField("llama-server URL", text: $llamaBaseURL)
-                                .textInputAutocapitalization(.never)
-                                .autocorrectionDisabled()
-                            TextField("Modelo (opcional)", text: $llamaModel)
-                                .textInputAutocapitalization(.never)
-                                .autocorrectionDisabled()
-                            Text("If model is empty, the selected .gguf filename is used.")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
-                    }
 
                     Section {
                         if models.isEmpty {
@@ -2318,6 +2320,7 @@ private struct SettingsView: View {
                 let llama = runtimeConfig.loadLlama()
                 llamaBaseURL = llama.baseURL
                 llamaModel = llama.model
+                showLlamaFallbackSettings = !llama.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || llama.baseURL != "http://127.0.0.1:8080"
                 mlxModelName = runtimeConfig.loadMLXModelName()
                 mlxToolsModelName = runtimeConfig.loadMLXToolsModelName()
                 mlxReasoningModelName = runtimeConfig.loadMLXReasoningModelName()
