@@ -104,7 +104,7 @@ final class LlamaLocalModelService {
             if strictOffline {
                 // In strict mode, do not fallback to any non-local path.
                 let cfg = runtimeConfig.loadLlama()
-                if let base = URL(string: cfg.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)), isLocalEndpoint(base) {
+                if let base = normalizedBaseURL(from: cfg.baseURL), isLocalEndpoint(base) {
                     // Local loopback llama-server is allowed in strict mode.
                 } else {
                     throw (error as? LlamaServiceError) ?? LlamaServiceError.nativeBackendUnavailable(error.localizedDescription)
@@ -115,7 +115,7 @@ final class LlamaLocalModelService {
         // If strict mode is enabled, only loopback llama-server is allowed as fallback.
         if strictOffline {
             let cfg = runtimeConfig.loadLlama()
-            guard let base = URL(string: cfg.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)),
+            guard let base = normalizedBaseURL(from: cfg.baseURL),
                   isLocalEndpoint(base) else {
                 throw LlamaServiceError.nonLocalEndpointBlocked
             }
@@ -145,7 +145,7 @@ final class LlamaLocalModelService {
 
     private func runViaLlamaServer(prompt: String, modelPath: String) async throws -> String {
         let cfg = runtimeConfig.loadLlama()
-        guard let rawBase = URL(string: cfg.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+        guard let rawBase = normalizedBaseURL(from: cfg.baseURL) else {
             throw LlamaServiceError.invalidBaseURL
         }
 
@@ -226,6 +226,22 @@ final class LlamaLocalModelService {
         return false
     }
 
+    private func normalizedBaseURL(from raw: String) -> URL? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        if let direct = URL(string: trimmed), direct.scheme != nil, direct.host != nil {
+            return direct
+        }
+
+        // Common convenience input in settings: "127.0.0.1:8080" (without scheme).
+        if let withHTTP = URL(string: "http://\(trimmed)"), withHTTP.host != nil {
+            return withHTTP
+        }
+
+        return nil
+    }
+
     private func completionsURL(from base: URL) -> URL {
         let normalizedPath = base.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         if normalizedPath.hasSuffix("v1/chat/completions") {
@@ -257,7 +273,8 @@ final class LlamaLocalModelService {
         if (lower.contains("system:") && lower.contains("user:")) ||
             lower.hasPrefix("assistant:") ||
             lower.contains("<|start_header_id|>") ||
-            lower.contains("<|end_header_id|>") {
+            lower.contains("<|end_header_id|>") ||
+            (lower.contains("### instruction") && lower.contains("### response")) {
             return true
         }
 
@@ -318,8 +335,15 @@ final class LlamaLocalModelService {
             out = nonEcho.joined(separator: "\n")
         }
 
-        if out.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().hasPrefix("### response") {
+        let trimmedLower = out.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if trimmedLower.hasPrefix("### response") {
             out = out.components(separatedBy: .newlines).dropFirst().joined(separator: "\n")
+        } else if trimmedLower.contains("### instruction") && trimmedLower.contains("### response") {
+            // Remove full prompt-echo blocks and keep only post-response text.
+            let marker = "### response"
+            if let range = out.range(of: marker, options: [.caseInsensitive]) {
+                out = String(out[range.upperBound...])
+            }
         }
 
         // Cut at repetitive junk tags like "tiempo:1 siri:1 paga:1".
@@ -772,8 +796,14 @@ private struct LlamaNativeAdapter {
             out = nonEcho.joined(separator: "\n")
         }
 
-        if out.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().hasPrefix("### response") {
+        let trimmedLower = out.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if trimmedLower.hasPrefix("### response") {
             out = out.components(separatedBy: .newlines).dropFirst().joined(separator: "\n")
+        } else if trimmedLower.contains("### instruction") && trimmedLower.contains("### response") {
+            let marker = "### response"
+            if let range = out.range(of: marker, options: [.caseInsensitive]) {
+                out = String(out[range.upperBound...])
+            }
         }
 
         // Cut at repetitive junk tags like "tiempo:1 siri:1 paga:1".

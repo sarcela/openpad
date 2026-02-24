@@ -2016,6 +2016,9 @@ private struct SettingsView: View {
                                 Text("If model is empty, the selected .gguf filename is used.")
                                     .font(.caption2)
                                     .foregroundColor(.secondary)
+                                Text("Tip: you can enter 127.0.0.1:8080 (scheme is optional).")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
                             }
                         }
 
