@@ -7,15 +7,11 @@
 
 import SwiftUI
 
+/// Backwards-compatible root view for previews and any leftover references.
+/// The real app window still launches ChatView via OpenClawPadApp.
 struct ContentView: View {
     var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
-        }
-        .padding()
+        ChatView()
     }
 }
 
