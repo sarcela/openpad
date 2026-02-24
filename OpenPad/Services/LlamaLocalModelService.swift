@@ -211,14 +211,24 @@ private struct LlamaNativeAdapter {
         _ = modelPath
         throw LlamaServiceError.nativeBackendUnavailable("LlamaCpp module detected but adapter is not bound to package API yet")
         #elseif canImport(LlamaSwift) || canImport(llama)
-        return try await generateWithLlamaModule(prompt: prompt, modelPath: modelPath)
+        // Important: run native decode off the main actor/thread.
+        return try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    let out = try generateWithLlamaModuleSync(prompt: prompt, modelPath: modelPath)
+                    continuation.resume(returning: out)
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
         #else
         return nil
         #endif
     }
 
     #if canImport(LlamaSwift) || canImport(llama)
-    private func generateWithLlamaModule(prompt: String, modelPath: String) async throws -> String? {
+    private func generateWithLlamaModuleSync(prompt: String, modelPath: String) throws -> String? {
         guard FileManager.default.fileExists(atPath: modelPath) else {
             throw LlamaServiceError.modelFileNotFound(modelPath)
         }
