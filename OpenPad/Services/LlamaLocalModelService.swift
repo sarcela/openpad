@@ -56,7 +56,7 @@ final class LlamaLocalModelService {
     private let native = LlamaNativeAdapter.shared
 
     func configureModel(path: String) throws {
-        let clean = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        let clean = Self.normalizeModelPath(path)
         guard !clean.isEmpty else { throw LlamaServiceError.modelNotConfigured }
         guard FileManager.default.fileExists(atPath: clean) else {
             throw LlamaServiceError.modelFileNotFound(clean)
@@ -79,6 +79,15 @@ final class LlamaLocalModelService {
                     if !isLikelyLowQuality(clean) {
                         return clean
                     }
+
+                    // One deterministic rescue pass improves quality when the first decode drifts.
+                    if let rescued = try await native.generateRecovery(prompt: prompt, modelPath: modelPath) {
+                        let rescuedClean = sanitizeGeneratedText(rescued).trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !rescuedClean.isEmpty, !isLikelyLowQuality(rescuedClean) {
+                            return rescuedClean
+                        }
+                    }
+
                     if strictOffline {
                         throw LlamaServiceError.nativeBackendUnavailable("native backend returned low-quality output")
                     }
@@ -318,6 +327,14 @@ final class LlamaLocalModelService {
         }
         return nil
     }
+
+    private static func normalizeModelPath(_ path: String) -> String {
+        let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+
+        let expanded = (trimmed as NSString).expandingTildeInPath
+        return URL(fileURLWithPath: expanded).standardizedFileURL.path
+    }
 }
 
 private struct LlamaNativeAdapter {
@@ -343,6 +360,11 @@ private struct LlamaNativeAdapter {
         #endif
     }
 
+    enum GenerationMode {
+        case standard
+        case recovery
+    }
+
     func generate(prompt: String, modelPath: String) async throws -> String? {
         #if canImport(LlamaCpp)
         // Compile-safe hook for Swift wrappers exposing module `LlamaCpp`.
@@ -352,11 +374,27 @@ private struct LlamaNativeAdapter {
         _ = modelPath
         return nil
         #elseif canImport(LlamaSwift) || canImport(llama)
+        return try await generate(prompt: prompt, modelPath: modelPath, mode: .standard)
+        #else
+        return nil
+        #endif
+    }
+
+    func generateRecovery(prompt: String, modelPath: String) async throws -> String? {
+        #if canImport(LlamaSwift) || canImport(llama)
+        return try await generate(prompt: prompt, modelPath: modelPath, mode: .recovery)
+        #else
+        return nil
+        #endif
+    }
+
+    private func generate(prompt: String, modelPath: String, mode: GenerationMode) async throws -> String? {
+        #if canImport(LlamaSwift) || canImport(llama)
         // Important: run native decode off the main actor/thread.
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 do {
-                    let out = try generateWithLlamaModuleSync(prompt: prompt, modelPath: modelPath)
+                    let out = try generateWithLlamaModuleSync(prompt: prompt, modelPath: modelPath, mode: mode)
                     continuation.resume(returning: out)
                 } catch {
                     continuation.resume(throwing: error)
@@ -369,7 +407,7 @@ private struct LlamaNativeAdapter {
     }
 
     #if canImport(LlamaSwift) || canImport(llama)
-    private func generateWithLlamaModuleSync(prompt: String, modelPath: String) throws -> String? {
+    private func generateWithLlamaModuleSync(prompt: String, modelPath: String, mode: GenerationMode) throws -> String? {
         guard FileManager.default.fileExists(atPath: modelPath) else {
             throw LlamaServiceError.modelFileNotFound(modelPath)
         }
@@ -405,22 +443,29 @@ private struct LlamaNativeAdapter {
         let temperature: Float
         let topP: Float
         let repetitionPenalty: Float
-        switch profile {
-        case .stable:
-            maxNewTokens = 192
-            temperature = 0.22
-            topP = 0.9
-            repetitionPenalty = 1.10
-        case .balanced:
-            maxNewTokens = 256
-            temperature = 0.32
-            topP = 0.92
-            repetitionPenalty = 1.08
-        case .turbo:
-            maxNewTokens = 320
-            temperature = 0.42
-            topP = 0.95
-            repetitionPenalty = 1.06
+        if mode == .recovery {
+            maxNewTokens = 160
+            temperature = 0.12
+            topP = 0.82
+            repetitionPenalty = 1.16
+        } else {
+            switch profile {
+            case .stable:
+                maxNewTokens = 192
+                temperature = 0.22
+                topP = 0.9
+                repetitionPenalty = 1.10
+            case .balanced:
+                maxNewTokens = 256
+                temperature = 0.32
+                topP = 0.92
+                repetitionPenalty = 1.08
+            case .turbo:
+                maxNewTokens = 320
+                temperature = 0.42
+                topP = 0.95
+                repetitionPenalty = 1.06
+            }
         }
 
         // Stability guard: keep prompt length below context window to avoid ggml aborts.
