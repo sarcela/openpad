@@ -127,7 +127,10 @@ final class LlamaLocalModelService {
                 .init(role: "user", content: prompt)
             ],
             temperature: 0.2,
-            stream: false
+            stream: false,
+            maxTokens: 256,
+            stop: ["\nUser:", "\nUSER:", "\nAssistant:", "\nSYSTEM:", "<|eot_id|>"],
+            repetitionPenalty: 1.08
         )
 
         var req = URLRequest(url: base)
@@ -318,19 +321,29 @@ private struct LlamaNativeAdapter {
     }
 
     private func tokenize(prompt: String, vocab: OpaquePointer?) throws -> [llama_token] {
-        let estimate = max(256, prompt.utf8.count + 32)
-        var tokenBuffer = [llama_token](repeating: 0, count: estimate)
+        var capacity = max(256, prompt.utf8.count + 32)
 
-        let tokenCount: Int32 = prompt.withCString { cText in
-            llama_tokenize(
-                vocab,
-                cText,
-                Int32(strlen(cText)),
-                &tokenBuffer,
-                Int32(tokenBuffer.count),
-                true,
-                true
-            )
+        func runTokenize(_ size: Int) -> (Int32, [llama_token]) {
+            var tokenBuffer = [llama_token](repeating: 0, count: size)
+            let tokenCount: Int32 = prompt.withCString { cText in
+                llama_tokenize(
+                    vocab,
+                    cText,
+                    Int32(strlen(cText)),
+                    &tokenBuffer,
+                    Int32(tokenBuffer.count),
+                    true,
+                    true
+                )
+            }
+            return (tokenCount, tokenBuffer)
+        }
+
+        var (tokenCount, tokenBuffer) = runTokenize(capacity)
+        if tokenCount < 0 {
+            // llama.cpp returns negative required size when buffer is too small.
+            capacity = max(capacity * 2, Int(-tokenCount) + 8)
+            (tokenCount, tokenBuffer) = runTokenize(capacity)
         }
 
         if tokenCount < 0 {
@@ -377,10 +390,18 @@ private struct LlamaNativeAdapter {
     }
 
     private func tokenPiece(_ token: llama_token, vocab: OpaquePointer?) -> String? {
-        var buffer = [CChar](repeating: 0, count: 64)
-        let n = llama_token_to_piece(vocab, token, &buffer, Int32(buffer.count), 0, true)
+        var buffer = [CChar](repeating: 0, count: 128)
+        var n = llama_token_to_piece(vocab, token, &buffer, Int32(buffer.count), 0, true)
+
+        if n < 0 {
+            let needed = Int(-n) + 8
+            buffer = [CChar](repeating: 0, count: max(needed, 128))
+            n = llama_token_to_piece(vocab, token, &buffer, Int32(buffer.count), 0, true)
+        }
+
         guard n > 0 else { return nil }
-        return String(cString: buffer)
+        let bytes = buffer.prefix(Int(n)).map { UInt8(bitPattern: $0) }
+        return String(decoding: bytes, as: UTF8.self)
     }
 
     private func sanitizeGeneratedText(_ text: String) -> String {
@@ -442,6 +463,19 @@ private struct LlamaChatRequest: Codable {
     let messages: [Message]
     let temperature: Double
     let stream: Bool
+    let maxTokens: Int?
+    let stop: [String]?
+    let repetitionPenalty: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case model
+        case messages
+        case temperature
+        case stream
+        case maxTokens = "max_tokens"
+        case stop
+        case repetitionPenalty = "repetition_penalty"
+    }
 }
 
 private struct LlamaChatResponse: Codable {
