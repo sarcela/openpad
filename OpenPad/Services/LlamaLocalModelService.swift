@@ -560,7 +560,7 @@ private struct LlamaNativeAdapter {
         guard !normalizedPrompt.isEmpty else { return nil }
 
         let vocab = llama_model_get_vocab(model)
-        let formattedPrompt = buildAssistantPrompt(from: normalizedPrompt)
+        let formattedPrompt = buildAssistantPrompt(from: normalizedPrompt, mode: mode)
 
         var tokens = try tokenize(prompt: formattedPrompt, vocab: vocab)
         if tokens.isEmpty { return nil }
@@ -698,16 +698,29 @@ private struct LlamaNativeAdapter {
         return output.isEmpty ? nil : output
     }
 
-    private func buildAssistantPrompt(from userPrompt: String) -> String {
-        """
-        You are OpenPad, a concise and practical assistant.
-        Give a direct, useful answer with no hidden reasoning.
+    private func buildAssistantPrompt(from userPrompt: String, mode: GenerationMode) -> String {
+        switch mode {
+        case .standard:
+            return """
+            You are OpenPad, a concise and practical assistant.
+            Give a direct, useful answer with no hidden reasoning.
 
-        ### Instruction
-        \(userPrompt)
+            ### Instruction
+            \(userPrompt)
 
-        ### Response
-        """
+            ### Response
+            """
+        case .recovery:
+            // Avoid "### Instruction/Response" scaffolding here: when native output quality is already
+            // degraded, many instruct-tuned GGUF models tend to echo those headers instead of answering.
+            return """
+            You are OpenPad, a concise and practical assistant.
+            Give a direct answer in plain text.
+
+            User: \(userPrompt)
+            Assistant:
+            """
+        }
     }
 
     private func initializeBackendIfNeeded() {
