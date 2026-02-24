@@ -254,6 +254,8 @@ final class LlamaLocalModelService {
 private struct LlamaNativeAdapter {
     static let shared = LlamaNativeAdapter()
 
+    private let runtimeConfig = LocalRuntimeConfig.shared
+
     private init() {}
 
     var hasAnyNativeModule: Bool {
@@ -316,12 +318,35 @@ private struct LlamaNativeAdapter {
         guard !normalizedPrompt.isEmpty else { return nil }
 
         let vocab = llama_model_get_vocab(model)
+        let formattedPrompt = buildAssistantPrompt(from: normalizedPrompt)
 
-        var tokens = try tokenize(prompt: normalizedPrompt, vocab: vocab)
+        var tokens = try tokenize(prompt: formattedPrompt, vocab: vocab)
         if tokens.isEmpty { return nil }
 
+        let profile = runtimeConfig.loadRunProfile()
+        let maxNewTokens: Int
+        let temperature: Float
+        let topP: Float
+        let repetitionPenalty: Float
+        switch profile {
+        case .stable:
+            maxNewTokens = 192
+            temperature = 0.22
+            topP = 0.9
+            repetitionPenalty = 1.10
+        case .balanced:
+            maxNewTokens = 256
+            temperature = 0.32
+            topP = 0.92
+            repetitionPenalty = 1.08
+        case .turbo:
+            maxNewTokens = 320
+            temperature = 0.42
+            topP = 0.95
+            repetitionPenalty = 1.06
+        }
+
         // Stability guard: keep prompt length below context window to avoid ggml aborts.
-        let maxNewTokens = 128
         let maxPromptTokens = max(64, Int(ctxParams.n_ctx) - maxNewTokens - 16)
         if tokens.count > maxPromptTokens {
             tokens = Array(tokens.suffix(maxPromptTokens))
@@ -332,38 +357,38 @@ private struct LlamaNativeAdapter {
         var generated = ""
         var lastToken: llama_token?
         var repeatRun = 0
+        var recentTokens: [llama_token] = []
 
         for step in 0..<maxNewTokens {
             guard let logits = llama_get_logits_ith(ctx, -1) else { break }
             let vocabSize = Int(llama_vocab_n_tokens(vocab))
             if vocabSize <= 0 { break }
 
-            var bestToken: llama_token = 0
-            var bestLogit = -Float.greatestFiniteMagnitude
-            for i in 0..<vocabSize {
-                let value = logits[i]
-                if value > bestLogit {
-                    bestLogit = value
-                    bestToken = llama_token(i)
-                }
-            }
+            let sampledToken = sampleToken(
+                logits: logits,
+                vocabSize: vocabSize,
+                recentTokens: recentTokens,
+                temperature: temperature,
+                topP: topP,
+                repetitionPenalty: repetitionPenalty
+            )
 
-            if bestToken == llama_vocab_eos(vocab) {
+            if sampledToken == llama_vocab_eos(vocab) {
                 break
             }
 
-            if let lastToken, bestToken == lastToken {
+            if let lastToken, sampledToken == lastToken {
                 repeatRun += 1
             } else {
                 repeatRun = 0
             }
-            lastToken = bestToken
+            lastToken = sampledToken
 
-            if repeatRun >= 6 {
+            if repeatRun >= 8 {
                 break
             }
 
-            if let piece = tokenPiece(bestToken, vocab: vocab), !piece.isEmpty {
+            if let piece = tokenPiece(sampledToken, vocab: vocab), !piece.isEmpty {
                 generated += piece
 
                 let lower = generated.lowercased()
@@ -372,11 +397,113 @@ private struct LlamaNativeAdapter {
                 }
             }
 
-            try decode(tokens: [bestToken], atPosition: tokens.count + step, context: ctx)
+            recentTokens.append(sampledToken)
+            if recentTokens.count > 96 {
+                recentTokens.removeFirst(recentTokens.count - 96)
+            }
+
+            try decode(tokens: [sampledToken], atPosition: tokens.count + step, context: ctx)
         }
 
         let output = sanitizeGeneratedText(generated)
         return output.isEmpty ? nil : output
+    }
+
+    private func buildAssistantPrompt(from userPrompt: String) -> String {
+        """
+        System: You are OpenPad, a concise and practical assistant. Answer directly and avoid hidden reasoning.
+        User: \(userPrompt)
+        Assistant:
+        """
+    }
+
+    private func sampleToken(
+        logits: UnsafePointer<Float>,
+        vocabSize: Int,
+        recentTokens: [llama_token],
+        temperature: Float,
+        topP: Float,
+        repetitionPenalty: Float
+    ) -> llama_token {
+        let candidateCount = max(8, min(96, vocabSize))
+        var top: [(token: llama_token, logit: Float)] = []
+        top.reserveCapacity(candidateCount)
+
+        let recentSet = Set(recentTokens.suffix(96))
+
+        for i in 0..<vocabSize {
+            let token = llama_token(i)
+            var adjusted = logits[i]
+            if repetitionPenalty > 1.0, recentSet.contains(token) {
+                adjusted -= logf(repetitionPenalty)
+            }
+
+            if top.count < candidateCount {
+                top.append((token: token, logit: adjusted))
+                if top.count == candidateCount {
+                    top.sort { $0.logit > $1.logit }
+                }
+                continue
+            }
+
+            guard let worst = top.last, adjusted > worst.logit else { continue }
+            top[top.count - 1] = (token: token, logit: adjusted)
+
+            var j = top.count - 1
+            while j > 0 && top[j].logit > top[j - 1].logit {
+                top.swapAt(j, j - 1)
+                j -= 1
+            }
+        }
+
+        guard !top.isEmpty else { return 0 }
+
+        if temperature <= 0.01 {
+            return top[0].token
+        }
+
+        let maxLogit = top[0].logit
+        var probs: [(token: llama_token, prob: Double)] = []
+        probs.reserveCapacity(top.count)
+
+        var total = 0.0
+        for c in top {
+            let scaled = Double((c.logit - maxLogit) / max(temperature, 0.01))
+            let p = exp(scaled)
+            probs.append((token: c.token, prob: p))
+            total += p
+        }
+
+        guard total > 0 else { return top[0].token }
+
+        for idx in probs.indices {
+            probs[idx].prob /= total
+        }
+
+        let clippedTopP = Double(min(max(topP, 0.2), 1.0))
+        var nucleus: [(token: llama_token, prob: Double)] = []
+        var cumulative = 0.0
+        for c in probs {
+            nucleus.append(c)
+            cumulative += c.prob
+            if cumulative >= clippedTopP, nucleus.count >= 2 {
+                break
+            }
+        }
+
+        let nucleusTotal = nucleus.reduce(0.0) { $0 + $1.prob }
+        guard nucleusTotal > 0 else { return top[0].token }
+
+        let draw = Double.random(in: 0..<1)
+        var running = 0.0
+        for c in nucleus {
+            running += c.prob / nucleusTotal
+            if draw <= running {
+                return c.token
+            }
+        }
+
+        return nucleus.last?.token ?? top[0].token
     }
 
     private func tokenize(prompt: String, vocab: OpaquePointer?) throws -> [llama_token] {
