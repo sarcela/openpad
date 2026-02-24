@@ -103,7 +103,7 @@ final class OpenClawLiteAgentService {
 
         if decision.type == "final" {
             let forceAttachmentFirst = runtimeConfig.isForceAttachmentFirstEnabled()
-            if forceAttachmentFirst && !attachmentCandidates(from: userPrompt, recentMessages: recentMessages).isEmpty {
+            if forceAttachmentFirst && shouldForceAttachmentTool(userPrompt: userPrompt, recentMessages: recentMessages) {
                 trace.append("Planner override: force attachment-first tool")
                 let candidates = attachmentCandidates(from: userPrompt, recentMessages: recentMessages)
                 if let file = candidates.first {
@@ -319,9 +319,10 @@ final class OpenClawLiteAgentService {
         }
 
         // Intent: explicit local attachment questions should prioritize attachment tools.
-        let asksAttachmentContent = lower.contains("pdf") || lower.contains("adjunto") || lower.contains("attachment") || lower.contains("archivo") || lower.contains("factura") || lower.contains("recibo") || lower.contains("invoice") || lower.contains("de que trata") || lower.contains("what does it say") || lower.contains("resumen") || lower.contains("summary")
-        let shouldForceAttachmentFirst = runtimeConfig.isForceAttachmentFirstEnabled() && directURL == nil && !attachmentFiles.isEmpty
-        if runtimeConfig.isIntentRouteAttachmentEnabled(), (asksAttachmentContent || shouldForceAttachmentFirst), let file = attachmentFiles.first {
+        let shouldForceAttachmentFirst = runtimeConfig.isForceAttachmentFirstEnabled()
+            && directURL == nil
+            && shouldForceAttachmentTool(userPrompt: userPrompt, recentMessages: recentMessages)
+        if runtimeConfig.isIntentRouteAttachmentEnabled(), shouldForceAttachmentFirst, let file = attachmentFiles.first {
             lastAttachmentFileName = file
             var t = trace
             t.append("intent_router: intent=attachment_query confidence=high tool=analyze_attachment file=\(file)")
@@ -721,12 +722,27 @@ final class OpenClawLiteAgentService {
     private func shouldForceAttachmentTool(userPrompt: String, recentMessages: [ChatMessage]) -> Bool {
         let candidates = attachmentCandidates(from: userPrompt, recentMessages: recentMessages)
         guard !candidates.isEmpty else { return false }
+
         let lower = userPrompt.lowercased()
-        if lower.contains("pdf") || lower.contains("adjunto") || lower.contains("attachment") || lower.contains("archivo") {
+
+        // Strong explicit attachment signals.
+        if lower.contains("pdf") || lower.contains("adjunto") || lower.contains("attachment") || lower.contains("archivo") || lower.contains("documento") {
             return true
         }
-        // Follow-up questions like "what does it say?" should still use the latest attachment.
-        return lower.contains("de que") || lower.contains("qué") || lower.contains("what") || lower.contains("resume") || lower.contains("summary")
+        if hasAttachmentHint(in: userPrompt) {
+            return true
+        }
+
+        // Weak follow-up signals should only count if clearly referring to prior attachment context.
+        let asksContent = lower.contains("de que trata") || lower.contains("qué dice") || lower.contains("que dice") || lower.contains("what does it say") || lower.contains("summarize") || lower.contains("resumen del")
+        let refersThatFile = lower.contains("ese archivo") || lower.contains("ese pdf") || lower.contains("that file") || lower.contains("that pdf") || lower.contains("este archivo") || lower.contains("this file")
+
+        if asksContent && refersThatFile {
+            return true
+        }
+
+        // Avoid hijacking unrelated questions just because an attachment exists in context.
+        return false
     }
 
     private func shouldForceTimeTool(_ prompt: String) -> Bool {

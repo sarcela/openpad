@@ -290,7 +290,7 @@ private struct LlamaNativeAdapter {
                 generated += piece
 
                 let lower = generated.lowercased()
-                if lower.hasSuffix("\nuser:") || lower.hasSuffix("\nassistant:") || lower.hasSuffix("\nsystem:") || lower.hasSuffix("siri:1") {
+                if lower.hasSuffix("\nuser:") || lower.hasSuffix("\nassistant:") || lower.hasSuffix("\nsystem:") || lower.hasSuffix("siri:1") || looksLikeJunkMarker(piece) {
                     break
                 }
             }
@@ -365,7 +365,28 @@ private struct LlamaNativeAdapter {
                 out = String(out[..<idx])
             }
         }
+
+        // Cut at repetitive junk tags like "tiempo:1 siri:1 paga:1".
+        if let regex = try? NSRegularExpression(pattern: #"\b[\p{L}_-]{2,}:\d+\b"#, options: []) {
+            let full = NSRange(out.startIndex..., in: out)
+            let matches = regex.matches(in: out, options: [], range: full)
+            if matches.count >= 3, let first = matches.first, let r = Range(first.range, in: out) {
+                out = String(out[..<r.lowerBound])
+            }
+        }
+
         return out.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func looksLikeJunkMarker(_ piece: String) -> Bool {
+        let trimmed = piece.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !trimmed.isEmpty else { return false }
+        if trimmed == "siri:1" || trimmed == "tiempo:1" || trimmed == "paga:1" { return true }
+        if let regex = try? NSRegularExpression(pattern: #"^[\p{L}_-]{2,}:\d+$"#, options: []) {
+            let range = NSRange(trimmed.startIndex..., in: trimmed)
+            return regex.firstMatch(in: trimmed, options: [], range: range) != nil
+        }
+        return false
     }
     #endif
 }
