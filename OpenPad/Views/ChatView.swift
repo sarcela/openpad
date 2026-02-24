@@ -2281,10 +2281,15 @@ private struct SettingsView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        let shouldUseLlamaFallback = !isNativeLlamaModuleAvailable || showLlamaFallbackSettings
                         let persistedLlama = runtimeConfig.loadLlama()
-                        let effectiveLlamaBaseURL = shouldUseLlamaFallback ? llamaBaseURL : persistedLlama.baseURL
-                        let effectiveLlamaModel = shouldUseLlamaFallback ? llamaModel : persistedLlama.model
+                        let trimmedLlamaBaseURL = llamaBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let trimmedLlamaModel = llamaModel.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let hasLlamaEdits =
+                            trimmedLlamaBaseURL != persistedLlama.baseURL.trimmingCharacters(in: .whitespacesAndNewlines) ||
+                            trimmedLlamaModel != persistedLlama.model.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let shouldUseLlamaFallback = !isNativeLlamaModuleAvailable || showLlamaFallbackSettings || hasLlamaEdits
+                        let effectiveLlamaBaseURL = shouldUseLlamaFallback ? trimmedLlamaBaseURL : persistedLlama.baseURL
+                        let effectiveLlamaModel = shouldUseLlamaFallback ? trimmedLlamaModel : persistedLlama.model
 
                         remoteConfig.save(provider: remoteProvider, baseURL: baseURL, token: token, model: model, organization: remoteOrganization, project: remoteProject)
                         runtimeConfig.saveProvider(runtimeProvider)
