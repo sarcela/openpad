@@ -542,9 +542,23 @@ private struct LlamaNativeAdapter {
                 }
             }
 
+            let profile = runtimeConfig.loadRunProfile()
+            let timeoutNanoseconds: UInt64 = {
+                switch mode {
+                case .recovery:
+                    return 90_000_000_000
+                case .standard:
+                    switch profile {
+                    case .stable: return 140_000_000_000
+                    case .balanced: return 120_000_000_000
+                    case .turbo: return 105_000_000_000
+                    }
+                }
+            }()
+
             group.addTask {
-                // On slower CPUs a first native decode can legitimately take >45s.
-                try await Task.sleep(nanoseconds: 75_000_000_000)
+                // First native decode can take noticeably longer after cold start, especially on slower CPUs.
+                try await Task.sleep(nanoseconds: timeoutNanoseconds)
                 throw LlamaServiceError.nativeBackendUnavailable("native generation timed out")
             }
 
@@ -745,14 +759,14 @@ private struct LlamaNativeAdapter {
     private func buildAssistantPrompt(from userPrompt: String, mode: GenerationMode) -> String {
         switch mode {
         case .standard:
+            // Prefer plain chat framing over markdown scaffolding; many instruct-tuned GGUFs
+            // are less likely to echo the prompt and produce cleaner first-pass completions.
             return """
             You are OpenPad, a concise and practical assistant.
             Give a direct, useful answer with no hidden reasoning.
 
-            ### Instruction
-            \(userPrompt)
-
-            ### Response
+            User: \(userPrompt)
+            Assistant:
             """
         case .recovery:
             // Avoid "### Instruction/Response" scaffolding here: when native output quality is already
