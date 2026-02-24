@@ -604,6 +604,7 @@ private struct LlamaNativeAdapter {
         var pendingUTF8Bytes: [UInt8] = []
         var lastToken: llama_token?
         var repeatRun = 0
+        var noProgressRun = 0
         var recentTokens: [llama_token] = []
 
         for step in 0..<maxNewTokens {
@@ -638,6 +639,7 @@ private struct LlamaNativeAdapter {
             if let pieceBytes = tokenPieceBytes(sampledToken, vocab: vocab), !pieceBytes.isEmpty {
                 let piece = decodeStreamingUTF8(pieceBytes, pending: &pendingUTF8Bytes)
                 if !piece.isEmpty {
+                    noProgressRun = 0
                     generated += piece
 
                     let lower = generated.lowercased()
@@ -656,7 +658,17 @@ private struct LlamaNativeAdapter {
                     if looksLikeLoopingText(generated) {
                         break
                     }
+                } else {
+                    noProgressRun += 1
                 }
+            } else {
+                noProgressRun += 1
+            }
+
+            // If decode keeps producing non-text/special-token bytes, bail out early.
+            // This avoids spending the full token budget on output we will drop anyway.
+            if noProgressRun >= 24 {
+                break
             }
 
             recentTokens.append(sampledToken)
@@ -893,12 +905,13 @@ private struct LlamaNativeAdapter {
 
     private func tokenPieceBytes(_ token: llama_token, vocab: OpaquePointer?) -> [UInt8]? {
         var buffer = [CChar](repeating: 0, count: 128)
-        var n = llama_token_to_piece(vocab, token, &buffer, Int32(buffer.count), 0, true)
+        // Do not stringify special tokens (<|...|>) into output text.
+        var n = llama_token_to_piece(vocab, token, &buffer, Int32(buffer.count), 0, false)
 
         if n < 0 {
             let needed = Int(-n) + 8
             buffer = [CChar](repeating: 0, count: max(needed, 128))
-            n = llama_token_to_piece(vocab, token, &buffer, Int32(buffer.count), 0, true)
+            n = llama_token_to_piece(vocab, token, &buffer, Int32(buffer.count), 0, false)
         }
 
         guard n > 0 else { return nil }
