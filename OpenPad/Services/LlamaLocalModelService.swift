@@ -739,7 +739,23 @@ private struct LlamaNativeAdapter {
         guard !top.isEmpty else { return 0 }
 
         if temperature <= 0.2 {
-            // Favor deterministic decoding for low-temperature profiles to reduce drift/loops.
+            // Favor deterministic decoding for low-temperature profiles to reduce drift,
+            // but avoid getting stuck on the same token when logits become peaky.
+            if let last = recentTokens.last, top[0].token == last {
+                var repeatedTail = 0
+                for token in recentTokens.reversed() {
+                    if token == last {
+                        repeatedTail += 1
+                    } else {
+                        break
+                    }
+                }
+
+                if repeatedTail >= 2,
+                   let alternate = top.first(where: { $0.token != last }) {
+                    return alternate.token
+                }
+            }
             return top[0].token
         }
 
