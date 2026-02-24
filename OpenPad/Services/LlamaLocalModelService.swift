@@ -866,23 +866,25 @@ private struct LlamaNativeAdapter {
             let end = min(offset + chunkSize, tokens.count)
             let chunk = Array(tokens[offset..<end])
 
-            var batch = llama_batch_init(Int32(chunk.count), 0, 1)
-            defer { llama_batch_free(batch) }
+            do {
+                var batch = llama_batch_init(Int32(chunk.count), 0, 1)
+                defer { llama_batch_free(batch) }
 
-            for i in 0..<chunk.count {
-                batch.token[i] = chunk[i]
-                batch.pos[i] = Int32(pos + offset + i)
-                batch.n_seq_id[i] = 1
-                if let seqIds = batch.seq_id, let seqId = seqIds[i] {
-                    seqId[0] = 0
+                for i in 0..<chunk.count {
+                    batch.token[i] = chunk[i]
+                    batch.pos[i] = Int32(pos + offset + i)
+                    batch.n_seq_id[i] = 1
+                    if let seqIds = batch.seq_id, let seqId = seqIds[i] {
+                        seqId[0] = 0
+                    }
+                    batch.logits[i] = (i == chunk.count - 1) ? 1 : 0
                 }
-                batch.logits[i] = (i == chunk.count - 1) ? 1 : 0
-            }
-            batch.n_tokens = Int32(chunk.count)
+                batch.n_tokens = Int32(chunk.count)
 
-            let decodeResult = llama_decode(context, batch)
-            if decodeResult != 0 {
-                throw LlamaServiceError.nativeBackendUnavailable("decode failed (\(decodeResult))")
+                let decodeResult = llama_decode(context, batch)
+                if decodeResult != 0 {
+                    throw LlamaServiceError.nativeBackendUnavailable("decode failed (\(decodeResult))")
+                }
             }
 
             offset = end
