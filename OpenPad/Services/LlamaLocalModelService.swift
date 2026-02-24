@@ -73,9 +73,13 @@ final class LlamaLocalModelService {
             if let nativeOut = try await native.generate(prompt: prompt, modelPath: modelPath) {
                 let clean = nativeOut.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !clean.isEmpty {
-                    return clean
-                }
-                if strictOffline {
+                    if !isLikelyLowQuality(clean) {
+                        return clean
+                    }
+                    if strictOffline {
+                        throw LlamaServiceError.nativeBackendUnavailable("native backend returned low-quality output")
+                    }
+                } else if strictOffline {
                     throw LlamaServiceError.nativeBackendUnavailable("native backend returned empty output")
                 }
             }
@@ -109,16 +113,27 @@ final class LlamaLocalModelService {
 
     private func runViaLlamaServer(prompt: String, modelPath: String) async throws -> String {
         let cfg = runtimeConfig.loadLlama()
-        guard var base = URL(string: cfg.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+        guard let rawBase = URL(string: cfg.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)) else {
             throw LlamaServiceError.invalidBaseURL
         }
 
-        base.append(path: "v1/chat/completions")
+        let base = completionsURL(from: rawBase)
 
         let explicitModel = cfg.model.trimmingCharacters(in: .whitespacesAndNewlines)
         let modelName = explicitModel.isEmpty
             ? URL(fileURLWithPath: modelPath).deletingPathExtension().lastPathComponent
             : explicitModel
+
+        let profile = runtimeConfig.loadRunProfile()
+        let decodingParams: (temperature: Double, maxTokens: Int, topP: Double?)
+        switch profile {
+        case .stable:
+            decodingParams = (temperature: 0.12, maxTokens: 220, topP: 0.9)
+        case .balanced:
+            decodingParams = (temperature: 0.2, maxTokens: 256, topP: 0.92)
+        case .turbo:
+            decodingParams = (temperature: 0.3, maxTokens: 320, topP: 0.95)
+        }
 
         let payload = LlamaChatRequest(
             model: modelName,
@@ -126,9 +141,10 @@ final class LlamaLocalModelService {
                 .init(role: "system", content: "You are OpenPad, a helpful and concise assistant."),
                 .init(role: "user", content: prompt)
             ],
-            temperature: 0.2,
+            temperature: decodingParams.temperature,
+            topP: decodingParams.topP,
             stream: false,
-            maxTokens: 256,
+            maxTokens: decodingParams.maxTokens,
             stop: ["\nUser:", "\nUSER:", "\nAssistant:", "\nSYSTEM:", "<|eot_id|>"],
             repetitionPenalty: 1.08
         )
@@ -169,7 +185,50 @@ final class LlamaLocalModelService {
 
     private func isLocalEndpoint(_ url: URL) -> Bool {
         guard let host = url.host?.lowercased() else { return false }
-        if host == "localhost" || host == "127.0.0.1" || host == "::1" { return true }
+        if host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "0.0.0.0" { return true }
+        return false
+    }
+
+    private func completionsURL(from base: URL) -> URL {
+        let normalizedPath = base.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        if normalizedPath.hasSuffix("v1/chat/completions") {
+            return base
+        }
+        if normalizedPath.hasSuffix("chat/completions") {
+            return base
+        }
+
+        var resolved = base
+        if normalizedPath.hasSuffix("v1") {
+            resolved.append(path: "chat/completions")
+        } else {
+            resolved.append(path: "v1/chat/completions")
+        }
+        return resolved
+    }
+
+    private func isLikelyLowQuality(_ text: String) -> Bool {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return true }
+
+        let lower = clean.lowercased()
+        if lower.contains("siri:1") || lower.contains("tiempo:1") || lower.contains("paga:1") {
+            return true
+        }
+
+        if let regex = try? NSRegularExpression(pattern: #"\b[\p{L}_-]{2,}:\d+\b"#, options: []) {
+            let ns = NSRange(clean.startIndex..., in: clean)
+            let matches = regex.matches(in: clean, options: [], range: ns)
+            if matches.count >= 3 {
+                return true
+            }
+        }
+
+        let words = clean.split(whereSeparator: { $0.isWhitespace || $0.isNewline })
+        if words.count < 2 && clean.count > 24 {
+            return true
+        }
+
         return false
     }
 
@@ -209,10 +268,10 @@ private struct LlamaNativeAdapter {
         #if canImport(LlamaCpp)
         // Compile-safe hook for Swift wrappers exposing module `LlamaCpp`.
         // Keep this shim API-agnostic; concrete package wiring can be done here
-        // without touching call sites.
+        // without touching call sites. Until bound, prefer graceful fallback.
         _ = prompt
         _ = modelPath
-        throw LlamaServiceError.nativeBackendUnavailable("LlamaCpp module detected but adapter is not bound to package API yet")
+        return nil
         #elseif canImport(LlamaSwift) || canImport(llama)
         // Important: run native decode off the main actor/thread.
         return try await withCheckedThrowingContinuation { continuation in
@@ -462,6 +521,7 @@ private struct LlamaChatRequest: Codable {
     let model: String
     let messages: [Message]
     let temperature: Double
+    let topP: Double?
     let stream: Bool
     let maxTokens: Int?
     let stop: [String]?
@@ -471,6 +531,7 @@ private struct LlamaChatRequest: Codable {
         case model
         case messages
         case temperature
+        case topP = "top_p"
         case stream
         case maxTokens = "max_tokens"
         case stop
