@@ -245,7 +245,6 @@ private struct LlamaNativeAdapter {
         var ctxParams = llama_context_default_params()
         ctxParams.n_ctx = 2048
         ctxParams.n_batch = 512
-
         guard let ctx = llama_init_from_model(model, ctxParams) else {
             throw LlamaServiceError.nativeBackendUnavailable("failed to create llama context")
         }
@@ -256,13 +255,19 @@ private struct LlamaNativeAdapter {
 
         let vocab = llama_model_get_vocab(model)
 
-        let tokens = try tokenize(prompt: normalizedPrompt, vocab: vocab)
+        var tokens = try tokenize(prompt: normalizedPrompt, vocab: vocab)
         if tokens.isEmpty { return nil }
+
+        // Stability guard: keep prompt length below context window to avoid ggml aborts.
+        let maxNewTokens = 128
+        let maxPromptTokens = max(64, Int(ctxParams.n_ctx) - maxNewTokens - 16)
+        if tokens.count > maxPromptTokens {
+            tokens = Array(tokens.suffix(maxPromptTokens))
+        }
 
         try decode(tokens: tokens, atPosition: 0, context: ctx)
 
         var generated = ""
-        let maxNewTokens = 256
         var lastToken: llama_token?
         var repeatRun = 0
 
@@ -341,21 +346,33 @@ private struct LlamaNativeAdapter {
     private func decode(tokens: [llama_token], atPosition pos: Int, context: OpaquePointer) throws {
         guard !tokens.isEmpty else { return }
 
-        var batch = llama_batch_init(Int32(tokens.count), 0, 1)
-        defer { llama_batch_free(batch) }
+        let chunkSize = 256
+        var offset = 0
 
-        for i in 0..<tokens.count {
-            batch.token[i] = tokens[i]
-            batch.pos[i] = Int32(pos + i)
-            batch.n_seq_id[i] = 1
-            batch.seq_id[i]![0] = 0
-            batch.logits[i] = (i == tokens.count - 1) ? 1 : 0
-        }
-        batch.n_tokens = Int32(tokens.count)
+        while offset < tokens.count {
+            let end = min(offset + chunkSize, tokens.count)
+            let chunk = Array(tokens[offset..<end])
 
-        let decodeResult = llama_decode(context, batch)
-        if decodeResult != 0 {
-            throw LlamaServiceError.nativeBackendUnavailable("decode failed (\(decodeResult))")
+            var batch = llama_batch_init(Int32(chunk.count), 0, 1)
+            defer { llama_batch_free(batch) }
+
+            for i in 0..<chunk.count {
+                batch.token[i] = chunk[i]
+                batch.pos[i] = Int32(pos + offset + i)
+                batch.n_seq_id[i] = 1
+                if let seqIds = batch.seq_id, let seqId = seqIds[i] {
+                    seqId[0] = 0
+                }
+                batch.logits[i] = (i == chunk.count - 1) ? 1 : 0
+            }
+            batch.n_tokens = Int32(chunk.count)
+
+            let decodeResult = llama_decode(context, batch)
+            if decodeResult != 0 {
+                throw LlamaServiceError.nativeBackendUnavailable("decode failed (\(decodeResult))")
+            }
+
+            offset = end
         }
     }
 
