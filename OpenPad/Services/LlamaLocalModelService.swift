@@ -516,7 +516,11 @@ private struct LlamaNativeAdapter {
         }
 
         // llama backend state is process-global; serialize native sessions to avoid races.
-        Self.backendLock.lock()
+        // Use a bounded wait so a wedged decode from a prior timed-out request doesn't
+        // block all subsequent native generations indefinitely.
+        guard Self.backendLock.lock(before: Date().addingTimeInterval(2.0)) else {
+            throw LlamaServiceError.nativeBackendUnavailable("native backend busy (previous run still active)")
+        }
         defer { Self.backendLock.unlock() }
 
         initializeBackendIfNeeded()
