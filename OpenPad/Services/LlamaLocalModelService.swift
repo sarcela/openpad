@@ -517,9 +517,16 @@ private struct LlamaNativeAdapter {
         }
 
         // Stability guard: keep prompt length below context window to avoid ggml aborts.
+        // Preserve BOS token (first token) when truncating; dropping it can hurt decode quality
+        // and increase prompt-echo / junk loops on some GGUF models.
         let maxPromptTokens = max(64, Int(ctxParams.n_ctx) - maxNewTokens - 16)
         if tokens.count > maxPromptTokens {
-            tokens = Array(tokens.suffix(maxPromptTokens))
+            if maxPromptTokens > 1, let first = tokens.first {
+                let tail = tokens.suffix(maxPromptTokens - 1)
+                tokens = [first] + tail
+            } else {
+                tokens = Array(tokens.suffix(maxPromptTokens))
+            }
         }
 
         try decode(tokens: tokens, atPosition: 0, context: ctx)
