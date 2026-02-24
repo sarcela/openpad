@@ -253,6 +253,8 @@ private struct LlamaNativeAdapter {
 
         var generated = ""
         let maxNewTokens = 256
+        var lastToken: llama_token?
+        var repeatRun = 0
 
         for step in 0..<maxNewTokens {
             guard let logits = llama_get_logits_ith(ctx, -1) else { break }
@@ -273,14 +275,30 @@ private struct LlamaNativeAdapter {
                 break
             }
 
+            if let lastToken, bestToken == lastToken {
+                repeatRun += 1
+            } else {
+                repeatRun = 0
+            }
+            lastToken = bestToken
+
+            if repeatRun >= 6 {
+                break
+            }
+
             if let piece = tokenPiece(bestToken, vocab: vocab), !piece.isEmpty {
                 generated += piece
+
+                let lower = generated.lowercased()
+                if lower.hasSuffix("\nuser:") || lower.hasSuffix("\nassistant:") || lower.hasSuffix("\nsystem:") || lower.hasSuffix("siri:1") {
+                    break
+                }
             }
 
             try decode(tokens: [bestToken], atPosition: tokens.count + step, context: ctx)
         }
 
-        let output = generated.trimmingCharacters(in: .whitespacesAndNewlines)
+        let output = sanitizeGeneratedText(generated)
         return output.isEmpty ? nil : output
     }
 
@@ -336,6 +354,18 @@ private struct LlamaNativeAdapter {
         let n = llama_token_to_piece(vocab, token, &buffer, Int32(buffer.count), 0, true)
         guard n > 0 else { return nil }
         return String(cString: buffer)
+    }
+
+    private func sanitizeGeneratedText(_ text: String) -> String {
+        var out = text
+        let junkMarkers = ["siri:1", "\nuser:", "\nassistant:", "\nsystem:"]
+        for marker in junkMarkers {
+            if let range = out.lowercased().range(of: marker) {
+                let idx = range.lowerBound
+                out = String(out[..<idx])
+            }
+        }
+        return out.trimmingCharacters(in: .whitespacesAndNewlines)
     }
     #endif
 }
