@@ -355,6 +355,8 @@ final class LlamaLocalModelService {
             }
         }
 
+        out = out.replacingOccurrences(of: #"(?im)^\s*(assistant|asistente|respuesta)\s*:\s*"#, with: "", options: .regularExpression)
+
         return out.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
@@ -439,15 +441,31 @@ private struct LlamaNativeAdapter {
     private func generate(prompt: String, modelPath: String, mode: GenerationMode) async throws -> String? {
         #if canImport(LlamaSwift) || canImport(llama)
         // Important: run native decode off the main actor/thread.
-        return try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                do {
-                    let out = try generateWithLlamaModuleSync(prompt: prompt, modelPath: modelPath, mode: mode)
-                    continuation.resume(returning: out)
-                } catch {
-                    continuation.resume(throwing: error)
+        // Also add a timeout guard; some malformed prompts/models can wedge decode loops.
+        return try await withThrowingTaskGroup(of: String?.self) { group in
+            group.addTask {
+                try await withCheckedThrowingContinuation { continuation in
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        do {
+                            let out = try generateWithLlamaModuleSync(prompt: prompt, modelPath: modelPath, mode: mode)
+                            continuation.resume(returning: out)
+                        } catch {
+                            continuation.resume(throwing: error)
+                        }
+                    }
                 }
             }
+
+            group.addTask {
+                try await Task.sleep(nanoseconds: 45_000_000_000)
+                throw LlamaServiceError.nativeBackendUnavailable("native generation timed out")
+            }
+
+            guard let first = try await group.next() else {
+                throw LlamaServiceError.nativeBackendUnavailable("native generation failed")
+            }
+            group.cancelAll()
+            return first
         }
         #else
         return nil
@@ -572,6 +590,11 @@ private struct LlamaNativeAdapter {
                 if lower.hasSuffix("\nuser:") || lower.hasSuffix("\nassistant:") || lower.hasSuffix("\nsystem:") || lower.hasSuffix("siri:1") || looksLikeJunkMarker(piece) {
                     break
                 }
+
+                // Quality guard: detect short looping tails early to avoid rambling garbage output.
+                if looksLikeLoopingText(generated) {
+                    break
+                }
             }
 
             recentTokens.append(sampledToken)
@@ -686,6 +709,23 @@ private struct LlamaNativeAdapter {
         }
 
         return nucleus.last?.token ?? top[0].token
+    }
+
+    private func looksLikeLoopingText(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 96 else { return false }
+
+        // Compare last 24 chars against preceding 24-char windows.
+        let chars = Array(trimmed)
+        guard chars.count >= 96 else { return false }
+        let window = 24
+        let tail = String(chars.suffix(window))
+
+        let prev1 = String(chars.dropLast(window).suffix(window))
+        let prev2 = String(chars.dropLast(window * 2).suffix(window))
+
+        let normTail = tail.lowercased()
+        return normTail == prev1.lowercased() && normTail == prev2.lowercased()
     }
 
     private func tokenize(prompt: String, vocab: OpaquePointer?) throws -> [llama_token] {
@@ -821,6 +861,8 @@ private struct LlamaNativeAdapter {
                 out = String(out[..<r.lowerBound])
             }
         }
+
+        out = out.replacingOccurrences(of: #"(?im)^\s*(assistant|asistente|respuesta)\s*:\s*"#, with: "", options: .regularExpression)
 
         return out.trimmingCharacters(in: .whitespacesAndNewlines)
     }
