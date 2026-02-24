@@ -168,14 +168,19 @@ final class LlamaLocalModelService {
             }
 
             if let decoded = try? JSONDecoder().decode(LlamaChatResponse.self, from: data),
-               let text = decoded.choices.first?.message.content?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !text.isEmpty {
-                return text
+               let text = decoded.choices.first?.message.content {
+                let sanitized = sanitizeGeneratedText(text)
+                if !sanitized.isEmpty {
+                    return sanitized
+                }
             }
 
             if let asText = String(data: data, encoding: .utf8),
-               let raw = extractContentField(from: asText), !raw.isEmpty {
-                return raw
+               let raw = extractContentField(from: asText) {
+                let sanitized = sanitizeGeneratedText(raw)
+                if !sanitized.isEmpty {
+                    return sanitized
+                }
             }
 
             throw LlamaServiceError.emptyResponse
@@ -630,9 +635,8 @@ private struct LlamaNativeAdapter {
             "<|end_header_id|>"
         ]
         for marker in junkMarkers {
-            if let range = out.lowercased().range(of: marker) {
-                let idx = range.lowerBound
-                out = String(out[..<idx])
+            if let range = out.range(of: marker, options: [.caseInsensitive]) {
+                out = String(out[..<range.lowerBound])
             }
         }
 
