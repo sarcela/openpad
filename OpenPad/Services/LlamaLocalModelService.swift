@@ -594,6 +594,7 @@ private struct LlamaNativeAdapter {
         try decode(tokens: tokens, atPosition: 0, context: ctx)
 
         var generated = ""
+        var pendingUTF8Bytes: [UInt8] = []
         var lastToken: llama_token?
         var repeatRun = 0
         var recentTokens: [llama_token] = []
@@ -627,24 +628,27 @@ private struct LlamaNativeAdapter {
                 break
             }
 
-            if let piece = tokenPiece(sampledToken, vocab: vocab), !piece.isEmpty {
-                generated += piece
+            if let pieceBytes = tokenPieceBytes(sampledToken, vocab: vocab), !pieceBytes.isEmpty {
+                let piece = decodeStreamingUTF8(pieceBytes, pending: &pendingUTF8Bytes)
+                if !piece.isEmpty {
+                    generated += piece
 
-                let lower = generated.lowercased()
-                if lower.hasSuffix("\nuser:") ||
-                    lower.hasSuffix("\nassistant:") ||
-                    lower.hasSuffix("\nsystem:") ||
-                    lower.hasSuffix("siri:1") ||
-                    lower.contains("### instruction") ||
-                    lower.contains("<|start_header_id|>") ||
-                    lower.contains("<|end_header_id|>") ||
-                    looksLikeJunkMarker(piece) {
-                    break
-                }
+                    let lower = generated.lowercased()
+                    if lower.hasSuffix("\nuser:") ||
+                        lower.hasSuffix("\nassistant:") ||
+                        lower.hasSuffix("\nsystem:") ||
+                        lower.hasSuffix("siri:1") ||
+                        lower.contains("### instruction") ||
+                        lower.contains("<|start_header_id|>") ||
+                        lower.contains("<|end_header_id|>") ||
+                        looksLikeJunkMarker(piece) {
+                        break
+                    }
 
-                // Quality guard: detect short looping tails early to avoid rambling garbage output.
-                if looksLikeLoopingText(generated) {
-                    break
+                    // Quality guard: detect short looping tails early to avoid rambling garbage output.
+                    if looksLikeLoopingText(generated) {
+                        break
+                    }
                 }
             }
 
@@ -654,6 +658,10 @@ private struct LlamaNativeAdapter {
             }
 
             try decode(tokens: [sampledToken], atPosition: tokens.count + step, context: ctx)
+        }
+
+        if !pendingUTF8Bytes.isEmpty, let tail = String(bytes: pendingUTF8Bytes, encoding: .utf8) {
+            generated += tail
         }
 
         let output = sanitizeGeneratedText(generated)
@@ -858,7 +866,7 @@ private struct LlamaNativeAdapter {
         }
     }
 
-    private func tokenPiece(_ token: llama_token, vocab: OpaquePointer?) -> String? {
+    private func tokenPieceBytes(_ token: llama_token, vocab: OpaquePointer?) -> [UInt8]? {
         var buffer = [CChar](repeating: 0, count: 128)
         var n = llama_token_to_piece(vocab, token, &buffer, Int32(buffer.count), 0, true)
 
@@ -869,8 +877,36 @@ private struct LlamaNativeAdapter {
         }
 
         guard n > 0 else { return nil }
-        let bytes = buffer.prefix(Int(n)).map { UInt8(bitPattern: $0) }
-        return String(decoding: bytes, as: UTF8.self)
+        return buffer.prefix(Int(n)).map { UInt8(bitPattern: $0) }
+    }
+
+    private func decodeStreamingUTF8(_ incoming: [UInt8], pending: inout [UInt8]) -> String {
+        let combined = pending + incoming
+        if let full = String(bytes: combined, encoding: .utf8) {
+            pending.removeAll(keepingCapacity: true)
+            return full
+        }
+
+        let maxTrail = min(3, combined.count)
+        if maxTrail > 0 {
+            for trail in 1...maxTrail {
+                let split = combined.count - trail
+                guard split > 0 else { continue }
+                let prefix = Array(combined[..<split])
+                if let decoded = String(bytes: prefix, encoding: .utf8) {
+                    pending = Array(combined[split...])
+                    return decoded
+                }
+            }
+        }
+
+        // Guard against unbounded pending growth when byte sequences are malformed.
+        if combined.count > 24 {
+            pending.removeAll(keepingCapacity: true)
+        } else {
+            pending = combined
+        }
+        return ""
     }
 
     private func sanitizeGeneratedText(_ text: String) -> String {
