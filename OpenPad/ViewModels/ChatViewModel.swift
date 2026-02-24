@@ -339,7 +339,11 @@ final class ChatViewModel: ObservableObject {
                 self.lastModelUsedBadge = providerBadgeFromTrace(output.trace).map { "CHAT • \($0)" } ?? "CHAT • LOCAL"
             }
             self.activeDocumentBadge = extractActiveDocument(from: output.trace)
-            return output.text
+            let cleaned = sanitizeAssistantText(output.text)
+            if cleaned != output.text {
+                self.toolTrace.append("post_sanitize: cleaned_model_artifacts")
+            }
+            return cleaned
         }
 
         self.toolTrace = []
@@ -387,6 +391,30 @@ final class ChatViewModel: ObservableObject {
             }
         }
         return ""
+    }
+
+    private func sanitizeAssistantText(_ text: String) -> String {
+        var out = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if out.isEmpty { return out }
+
+        let lower = out.lowercased()
+        if lower.contains("mensaje del usuario:") {
+            let lines = out.components(separatedBy: .newlines)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            let filtered = lines.filter { !$0.lowercased().hasPrefix("mensaje del usuario:") }
+            out = filtered.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        if let regex = try? NSRegularExpression(pattern: #"\b[\p{L}_-]{2,}:\d+\b"#, options: []) {
+            let ns = NSRange(out.startIndex..., in: out)
+            let matches = regex.matches(in: out, options: [], range: ns)
+            if matches.count >= 3 {
+                out = "Entendido. ¿Me lo repites en una frase corta para responderte directo?"
+            }
+        }
+
+        return out
     }
 
     private func providerBadgeFromTrace(_ trace: [String]) -> String? {
