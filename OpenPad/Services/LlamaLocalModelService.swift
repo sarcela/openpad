@@ -624,6 +624,7 @@ private struct LlamaNativeAdapter {
 
             let sampledToken = sampleToken(
                 logits: logits,
+                vocab: vocab,
                 vocabSize: vocabSize,
                 recentTokens: recentTokens,
                 temperature: temperature,
@@ -717,6 +718,7 @@ private struct LlamaNativeAdapter {
 
     private func sampleToken(
         logits: UnsafePointer<Float>,
+        vocab: OpaquePointer?,
         vocabSize: Int,
         recentTokens: [llama_token],
         temperature: Float,
@@ -774,10 +776,21 @@ private struct LlamaNativeAdapter {
                 }
 
                 if repeatedTail >= 2,
-                   let alternate = top.first(where: { $0.token != last }) {
+                   let alternate = top.first(where: {
+                       $0.token != last && isUsableContinuationToken($0.token, vocab: vocab)
+                   }) {
                     return alternate.token
                 }
             }
+
+            if isUsableContinuationToken(top[0].token, vocab: vocab) {
+                return top[0].token
+            }
+
+            if let fallback = top.first(where: { isUsableContinuationToken($0.token, vocab: vocab) }) {
+                return fallback.token
+            }
+
             return top[0].token
         }
 
@@ -818,11 +831,46 @@ private struct LlamaNativeAdapter {
         for c in nucleus {
             running += c.prob / nucleusTotal
             if draw <= running {
-                return c.token
+                if isUsableContinuationToken(c.token, vocab: vocab) {
+                    return c.token
+                }
+                break
             }
         }
 
+        if let fallback = nucleus.first(where: { isUsableContinuationToken($0.token, vocab: vocab) }) {
+            return fallback.token
+        }
+
+        if let topFallback = top.first(where: { isUsableContinuationToken($0.token, vocab: vocab) }) {
+            return topFallback.token
+        }
+
         return nucleus.last?.token ?? top[0].token
+    }
+
+    private func isUsableContinuationToken(_ token: llama_token, vocab: OpaquePointer?) -> Bool {
+        if let vocab, token == llama_vocab_eos(vocab) {
+            return true
+        }
+
+        guard let pieceBytes = tokenPieceBytes(token, vocab: vocab), !pieceBytes.isEmpty else {
+            return false
+        }
+
+        guard let piece = String(bytes: pieceBytes, encoding: .utf8) else {
+            return false
+        }
+
+        let trimmed = piece.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+
+        let lower = trimmed.lowercased()
+        if lower.contains("<|") || lower.contains("|>") {
+            return false
+        }
+
+        return !looksLikeJunkMarker(trimmed)
     }
 
     private func looksLikeLoopingText(_ text: String) -> Bool {
