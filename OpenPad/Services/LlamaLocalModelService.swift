@@ -72,6 +72,11 @@ final class LlamaLocalModelService {
         let strictOffline = runtimeConfig.isOfflineStrictModeEnabled()
         var nativeBestEffortOutput: String?
 
+        func isAcceptableFallback(_ text: String) -> Bool {
+            let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return !clean.isEmpty && !isLikelyLowQuality(clean)
+        }
+
         // Native-first path (GGUF on-device) when module is present and adapter is wired.
         do {
             if let nativeOut = try await native.generate(prompt: prompt, modelPath: modelPath) {
@@ -131,13 +136,13 @@ final class LlamaLocalModelService {
                 return out
             }
         } catch {
-            if !strictOffline, let fallback = nativeBestEffortOutput, !fallback.isEmpty {
+            if !strictOffline, let fallback = nativeBestEffortOutput, isAcceptableFallback(fallback) {
                 return fallback
             }
             throw error
         }
 
-        if !strictOffline, let fallback = nativeBestEffortOutput, !fallback.isEmpty {
+        if !strictOffline, let fallback = nativeBestEffortOutput, isAcceptableFallback(fallback) {
             return fallback
         }
         throw LlamaServiceError.emptyResponse
@@ -389,6 +394,7 @@ final class LlamaLocalModelService {
 
 private struct LlamaNativeAdapter {
     static let shared = LlamaNativeAdapter()
+    private static let backendLock = NSLock()
 
     private let runtimeConfig = LocalRuntimeConfig.shared
 
@@ -477,6 +483,10 @@ private struct LlamaNativeAdapter {
         guard FileManager.default.fileExists(atPath: modelPath) else {
             throw LlamaServiceError.modelFileNotFound(modelPath)
         }
+
+        // llama_backend_init/free are process-global; serialize native sessions to avoid races.
+        Self.backendLock.lock()
+        defer { Self.backendLock.unlock() }
 
         llama_backend_init()
         defer { llama_backend_free() }
