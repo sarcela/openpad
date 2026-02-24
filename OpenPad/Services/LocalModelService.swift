@@ -103,6 +103,18 @@ final class LocalModelService {
         out = out.replacingOccurrences(of: #"(?is)<think>.*?</think>"#, with: "", options: .regularExpression)
         out = out.replacingOccurrences(of: #"(?im)^\s*thinking:\s*.*$"#, with: "", options: .regularExpression)
 
+        // Strip common role/header artifacts that leak from prompts.
+        out = out.replacingOccurrences(of: #"(?im)^\s*(assistant|asistente)\s*:\s*"#, with: "", options: .regularExpression)
+        out = out.replacingOccurrences(of: #"(?im)^\s*(user|usuario|system|sistema)\s*:.*$"#, with: "", options: .regularExpression)
+
+        // If the model starts echoing prompt labels, keep only the useful prefix.
+        if let range = out.range(of: #"(?i)\bmensaje del usuario\s*:"#, options: .regularExpression) {
+            out = String(out[..<range.lowerBound])
+        }
+
+        // Normalize runaway blank lines.
+        out = out.replacingOccurrences(of: #"\n{3,}"#, with: "\n\n", options: .regularExpression)
+
         out = out.trimmingCharacters(in: .whitespacesAndNewlines)
         if out.isEmpty {
             return "I processed your request, but the model returned an internal reasoning block only. Please retry."
