@@ -79,31 +79,38 @@ final class LlamaLocalModelService {
 
         // Native-first path (GGUF on-device) when module is present and adapter is wired.
         do {
-            if let nativeOut = try await native.generate(prompt: prompt, modelPath: modelPath) {
-                let clean = sanitizeGeneratedText(nativeOut).trimmingCharacters(in: .whitespacesAndNewlines)
-                if !clean.isEmpty {
-                    nativeBestEffortOutput = clean
-                    if !isLikelyLowQuality(clean) {
-                        return clean
-                    }
+            let nativeOut = try await native.generate(prompt: prompt, modelPath: modelPath)
+            let clean = sanitizeGeneratedText(nativeOut ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
 
-                    // One deterministic rescue pass improves quality when the first decode drifts.
-                    if let rescued = try await native.generateRecovery(prompt: prompt, modelPath: modelPath) {
-                        let rescuedClean = sanitizeGeneratedText(rescued).trimmingCharacters(in: .whitespacesAndNewlines)
-                        if !rescuedClean.isEmpty {
-                            nativeBestEffortOutput = rescuedClean
-                        }
-                        if !rescuedClean.isEmpty, !isLikelyLowQuality(rescuedClean) {
-                            return rescuedClean
-                        }
-                    }
+            var needsRecovery = false
+            if !clean.isEmpty {
+                nativeBestEffortOutput = clean
+                if !isLikelyLowQuality(clean) {
+                    return clean
+                }
+                needsRecovery = true
+            } else {
+                // Empty first-pass generations can happen after backend warm-up; try one deterministic rescue.
+                needsRecovery = true
+            }
 
-                    if strictOffline {
-                        throw LlamaServiceError.nativeBackendUnavailable("native backend returned low-quality output")
-                    }
-                } else if strictOffline {
+            if needsRecovery,
+               let rescued = try await native.generateRecovery(prompt: prompt, modelPath: modelPath) {
+                let rescuedClean = sanitizeGeneratedText(rescued).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !rescuedClean.isEmpty {
+                    nativeBestEffortOutput = rescuedClean
+                }
+                if !rescuedClean.isEmpty, !isLikelyLowQuality(rescuedClean) {
+                    return rescuedClean
+                }
+            }
+
+            if strictOffline {
+                let finalNative = nativeBestEffortOutput?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                if finalNative.isEmpty {
                     throw LlamaServiceError.nativeBackendUnavailable("native backend returned empty output")
                 }
+                throw LlamaServiceError.nativeBackendUnavailable("native backend returned low-quality output")
             }
         } catch {
             if strictOffline {
