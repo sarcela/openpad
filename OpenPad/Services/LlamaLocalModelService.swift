@@ -373,6 +373,11 @@ final class LlamaLocalModelService {
             if let range = out.range(of: marker, options: [.caseInsensitive]) {
                 out = String(out[range.upperBound...])
             }
+        } else if trimmedLower.contains("### instruction") {
+            // If response marker is missing, keep only text before the leaked instruction scaffold.
+            if let range = out.range(of: "### instruction", options: [.caseInsensitive]) {
+                out = String(out[..<range.lowerBound])
+            }
         }
 
         // Cut at repetitive junk tags like "tiempo:1 siri:1 paga:1".
@@ -621,7 +626,14 @@ private struct LlamaNativeAdapter {
                 generated += piece
 
                 let lower = generated.lowercased()
-                if lower.hasSuffix("\nuser:") || lower.hasSuffix("\nassistant:") || lower.hasSuffix("\nsystem:") || lower.hasSuffix("siri:1") || looksLikeJunkMarker(piece) {
+                if lower.hasSuffix("\nuser:") ||
+                    lower.hasSuffix("\nassistant:") ||
+                    lower.hasSuffix("\nsystem:") ||
+                    lower.hasSuffix("siri:1") ||
+                    lower.contains("### instruction") ||
+                    lower.contains("<|start_header_id|>") ||
+                    lower.contains("<|end_header_id|>") ||
+                    looksLikeJunkMarker(piece) {
                     break
                 }
 
@@ -667,13 +679,17 @@ private struct LlamaNativeAdapter {
         var top: [(token: llama_token, logit: Float)] = []
         top.reserveCapacity(candidateCount)
 
-        let recentSet = Set(recentTokens.suffix(96))
+        var recentFrequency: [llama_token: Int] = [:]
+        for token in recentTokens.suffix(96) {
+            recentFrequency[token, default: 0] += 1
+        }
 
         for i in 0..<vocabSize {
             let token = llama_token(i)
             var adjusted = logits[i]
-            if repetitionPenalty > 1.0, recentSet.contains(token) {
-                adjusted -= logf(repetitionPenalty)
+            if repetitionPenalty > 1.0, let seen = recentFrequency[token], seen > 0 {
+                let scaledPenalty = logf(repetitionPenalty) * Float(min(seen, 3))
+                adjusted -= scaledPenalty
             }
 
             if top.count < candidateCount {
@@ -884,6 +900,10 @@ private struct LlamaNativeAdapter {
             let marker = "### response"
             if let range = out.range(of: marker, options: [.caseInsensitive]) {
                 out = String(out[range.upperBound...])
+            }
+        } else if trimmedLower.contains("### instruction") {
+            if let range = out.range(of: "### instruction", options: [.caseInsensitive]) {
+                out = String(out[..<range.lowerBound])
             }
         }
 
