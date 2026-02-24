@@ -1738,6 +1738,14 @@ private struct SettingsView: View {
         "mlx-community/Phi-3.5-mini-instruct-4bit"
     ]
 
+    private var isNativeLlamaModuleAvailable: Bool {
+        #if canImport(LlamaCpp) || canImport(llama)
+        return true
+        #else
+        return false
+        #endif
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -1943,16 +1951,24 @@ private struct SettingsView: View {
                     }
 
                     if runtimeProvider == .llamaCpp {
-                    Section("Backend llama.cpp") {
-                        TextField("llama-server URL", text: $llamaBaseURL)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                        TextField("Modelo (opcional)", text: $llamaModel)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                        Text("If model is empty, the selected .gguf filename is used.")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
+                    if isNativeLlamaModuleAvailable {
+                        Section("Backend llama.cpp") {
+                            Text("Native llama.cpp module detected. Loopback server fields are hidden by default.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    } else {
+                        Section("Backend llama.cpp") {
+                            TextField("llama-server URL", text: $llamaBaseURL)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                            TextField("Modelo (opcional)", text: $llamaModel)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                            Text("If model is empty, the selected .gguf filename is used.")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
                     }
 
                     Section {
