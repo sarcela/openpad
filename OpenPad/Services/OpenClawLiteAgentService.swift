@@ -248,6 +248,12 @@ final class OpenClawLiteAgentService {
             reasons.append("too_short")
         }
 
+        let lowerClean = clean.lowercased()
+        if lowerClean.contains("mensaje del usuario:") {
+            score -= 60
+            reasons.append("prompt_echo")
+        }
+
         if let lastAssistant = recentMessages.reversed().first(where: { $0.role.lowercased() == "assistant" })?.text,
            !lastAssistant.isEmpty,
            normalizedForCompare(lastAssistant) == normalizedForCompare(clean) {
@@ -291,6 +297,19 @@ final class OpenClawLiteAgentService {
             let reply = try await localModelService.runLocal(prompt: secondPrompt, purpose: .chat)
             let fixed = extractContentFromJsonLike(reply) ?? reply
             return .init(text: fixed.trimmingCharacters(in: .whitespacesAndNewlines), trace: traceOut)
+        }
+
+        if reasons.contains("prompt_echo") {
+            traceOut.append("corrective_pass: keyword_extract (prompt_echo)")
+            let toolResult = await tools.execute(name: "keyword_extract", arguments: ["text": userPrompt, "top": "8"])
+            let secondPrompt = buildFinalizePrompt(userPrompt: userPrompt, toolName: "keyword_extract", toolResult: toolResult)
+            let reply = try await localModelService.runLocal(prompt: secondPrompt, purpose: .chat)
+            let fixed = extractContentFromJsonLike(reply) ?? reply
+            let normalized = fixed.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !normalized.lowercased().contains("mensaje del usuario:") {
+                return .init(text: normalized, trace: traceOut)
+            }
+            return .init(text: "Entendido. ¿Me lo puedes pedir en una frase corta para responder directo?", trace: traceOut)
         }
 
         return .init(text: clean, trace: traceOut)

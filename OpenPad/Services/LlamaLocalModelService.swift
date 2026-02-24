@@ -393,6 +393,20 @@ private struct LlamaNativeAdapter {
             }
         }
 
+        // Strip planner prompt-echo patterns like repeated "Mensaje del usuario: ...".
+        let lower = out.lowercased()
+        if lower.contains("mensaje del usuario:") {
+            let lines = out.components(separatedBy: .newlines)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+
+            let nonEcho = lines.filter { !$0.lowercased().hasPrefix("mensaje del usuario:") }
+            if nonEcho.isEmpty {
+                return ""
+            }
+            out = nonEcho.joined(separator: "\n")
+        }
+
         // Cut at repetitive junk tags like "tiempo:1 siri:1 paga:1".
         if let regex = try? NSRegularExpression(pattern: #"\b[\p{L}_-]{2,}:\d+\b"#, options: []) {
             let full = NSRange(out.startIndex..., in: out)
