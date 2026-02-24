@@ -48,6 +48,9 @@ enum LlamaServiceError: LocalizedError {
 }
 
 final class LlamaLocalModelService {
+    static var hasNativeModule: Bool { LlamaNativeAdapter.shared.hasAnyNativeModule }
+    static var isNativeBackendReady: Bool { LlamaNativeAdapter.shared.isGenerationAvailable }
+
     private var modelPath: String?
     private let runtimeConfig = LocalRuntimeConfig.shared
     private let native = LlamaNativeAdapter.shared
@@ -260,6 +263,14 @@ private struct LlamaNativeAdapter {
 
     var hasAnyNativeModule: Bool {
         #if canImport(LlamaCpp) || canImport(llama) || canImport(LlamaSwift)
+        true
+        #else
+        false
+        #endif
+    }
+
+    var isGenerationAvailable: Bool {
+        #if canImport(llama) || canImport(LlamaSwift)
         true
         #else
         false

@@ -1778,12 +1778,12 @@ private struct SettingsView: View {
         "mlx-community/Phi-3.5-mini-instruct-4bit"
     ]
 
+    private var isNativeLlamaModuleDetected: Bool {
+        LlamaLocalModelService.hasNativeModule
+    }
+
     private var isNativeLlamaModuleAvailable: Bool {
-        #if canImport(LlamaCpp) || canImport(llama) || canImport(LlamaSwift)
-        return true
-        #else
-        return false
-        #endif
+        LlamaLocalModelService.isNativeBackendReady
     }
 
     var body: some View {
@@ -1992,11 +1992,18 @@ private struct SettingsView: View {
 
                     if runtimeProvider == .llamaCpp {
                         Section("Backend llama.cpp") {
-                            if isNativeLlamaModuleAvailable {
+                            if isNativeLlamaModuleDetected {
                                 Toggle("Show llama-server fallback settings", isOn: $showLlamaFallbackSettings)
-                                Text("Native llama.cpp module detected. Keep fallback server disabled unless you need troubleshooting or strict loopback fallback.")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
+
+                                if isNativeLlamaModuleAvailable {
+                                    Text("Native llama.cpp backend is available. Keep fallback server hidden unless you need troubleshooting or strict loopback fallback.")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                } else {
+                                    Text("A llama module is present, but native generation is not wired in this build yet. Configure llama-server fallback.")
+                                        .font(.caption)
+                                        .foregroundColor(.orange)
+                                }
                             }
 
                             if !isNativeLlamaModuleAvailable || showLlamaFallbackSettings {
@@ -2324,7 +2331,10 @@ private struct SettingsView: View {
                 let llama = runtimeConfig.loadLlama()
                 llamaBaseURL = llama.baseURL
                 llamaModel = llama.model
-                showLlamaFallbackSettings = !llama.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || llama.baseURL != "http://127.0.0.1:8080"
+                showLlamaFallbackSettings =
+                    !isNativeLlamaModuleAvailable ||
+                    !llama.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                    llama.baseURL != "http://127.0.0.1:8080"
                 mlxModelName = runtimeConfig.loadMLXModelName()
                 mlxToolsModelName = runtimeConfig.loadMLXToolsModelName()
                 mlxReasoningModelName = runtimeConfig.loadMLXReasoningModelName()
