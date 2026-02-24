@@ -848,6 +848,12 @@ private struct SidebarContentView: View {
     @State private var exportPreview = ""
     @State private var showExport = false
 
+    private var filteredSessions: [ChatSessionSummary] {
+        let q = sessionSearch.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !q.isEmpty else { return vm.chatSessions }
+        return vm.chatSessions.filter { $0.title.lowercased().contains(q) }
+    }
+
     var body: some View {
         NavigationStack {
             List {
@@ -883,12 +889,18 @@ private struct SidebarContentView: View {
                     }
 
                 case .sessions:
-                    Section("Sesiones savedas") {
-                        if vm.chatSessions.isEmpty {
-                            Text("No hay sesiones")
+                    Section("Sesiones guardadas") {
+                        TextField("Buscar sesión", text: $sessionSearch)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+
+                        Toggle("Incluir archivadas", isOn: $includeArchived)
+
+                        if filteredSessions.isEmpty {
+                            Text(vm.chatSessions.isEmpty ? "No hay sesiones" : "Sin resultados")
                                 .foregroundColor(.secondary)
                         } else {
-                            ForEach(vm.chatSessions) { c in
+                            ForEach(filteredSessions) { c in
                                 HStack(spacing: 10) {
                                     Button {
                                         vm.selectChat(sessionId: c.id)
@@ -920,6 +932,10 @@ private struct SidebarContentView: View {
                                         }
                                         Button((c.pinned ?? false) ? "Unpin" : "Pin") {
                                             vm.togglePinChat(sessionId: c.id)
+                                        }
+                                        Button("Exportar markdown") {
+                                            exportPreview = vm.exportChatMarkdown(sessionId: c.id)
+                                            showExport = true
                                         }
                                         Divider()
                                         Button("Borrar", role: .destructive) {
