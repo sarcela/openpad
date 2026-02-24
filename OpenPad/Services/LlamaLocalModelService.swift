@@ -207,14 +207,131 @@ private struct LlamaNativeAdapter {
         _ = modelPath
         throw LlamaServiceError.nativeBackendUnavailable("LlamaCpp module detected but adapter is not bound to package API yet")
         #elseif canImport(llama)
-        // Compile-safe hook for C module `llama`.
-        _ = prompt
-        _ = modelPath
-        throw LlamaServiceError.nativeBackendUnavailable("llama module detected but adapter is not bound to package API yet")
+        return try await generateWithLlamaModule(prompt: prompt, modelPath: modelPath)
         #else
         return nil
         #endif
     }
+
+    #if canImport(llama)
+    private func generateWithLlamaModule(prompt: String, modelPath: String) async throws -> String? {
+        guard FileManager.default.fileExists(atPath: modelPath) else {
+            throw LlamaServiceError.modelFileNotFound(modelPath)
+        }
+
+        llama_backend_init()
+        defer { llama_backend_free() }
+
+        var modelParams = llama_model_default_params()
+        guard let model = llama_model_load_from_file(modelPath, modelParams) else {
+            throw LlamaServiceError.nativeBackendUnavailable("failed to load GGUF model")
+        }
+        defer { llama_model_free(model) }
+
+        var ctxParams = llama_context_default_params()
+        ctxParams.n_ctx = 2048
+        ctxParams.n_batch = 512
+
+        guard let ctx = llama_init_from_model(model, ctxParams) else {
+            throw LlamaServiceError.nativeBackendUnavailable("failed to create llama context")
+        }
+        defer { llama_free(ctx) }
+
+        let normalizedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedPrompt.isEmpty else { return nil }
+
+        var tokens = try tokenize(prompt: normalizedPrompt, model: model)
+        if tokens.isEmpty { return nil }
+
+        try decode(tokens: tokens, atPosition: 0, context: ctx)
+
+        var generated = ""
+        let maxNewTokens = 256
+
+        for step in 0..<maxNewTokens {
+            guard let logits = llama_get_logits(ctx) else { break }
+            let vocabSize = Int(llama_n_vocab(model))
+            if vocabSize <= 0 { break }
+
+            var bestToken: llama_token = 0
+            var bestLogit = -Float.greatestFiniteMagnitude
+            for i in 0..<vocabSize {
+                let value = logits[i]
+                if value > bestLogit {
+                    bestLogit = value
+                    bestToken = llama_token(i)
+                }
+            }
+
+            if bestToken == llama_token_eos(model) {
+                break
+            }
+
+            if let piece = tokenPiece(bestToken, model: model), !piece.isEmpty {
+                generated += piece
+            }
+
+            try decode(tokens: [bestToken], atPosition: tokens.count + step, context: ctx)
+        }
+
+        let output = generated.trimmingCharacters(in: .whitespacesAndNewlines)
+        return output.isEmpty ? nil : output
+    }
+
+    private func tokenize(prompt: String, model: OpaquePointer) throws -> [llama_token] {
+        let estimate = max(256, prompt.utf8.count + 32)
+        var tokenBuffer = [llama_token](repeating: 0, count: estimate)
+
+        let tokenCount: Int32 = prompt.withCString { cText in
+            llama_tokenize(
+                model,
+                cText,
+                Int32(strlen(cText)),
+                &tokenBuffer,
+                Int32(tokenBuffer.count),
+                true,
+                true
+            )
+        }
+
+        if tokenCount < 0 {
+            throw LlamaServiceError.nativeBackendUnavailable("tokenization failed")
+        }
+        if tokenCount == 0 {
+            return []
+        }
+
+        return Array(tokenBuffer.prefix(Int(tokenCount)))
+    }
+
+    private func decode(tokens: [llama_token], atPosition pos: Int, context: OpaquePointer) throws {
+        guard !tokens.isEmpty else { return }
+
+        var batch = llama_batch_init(Int32(tokens.count), 0, 1)
+        defer { llama_batch_free(batch) }
+
+        for i in 0..<tokens.count {
+            batch.token[i] = tokens[i]
+            batch.pos[i] = Int32(pos + i)
+            batch.n_seq_id[i] = 1
+            batch.seq_id[i]![0] = 0
+            batch.logits[i] = (i == tokens.count - 1) ? 1 : 0
+        }
+        batch.n_tokens = Int32(tokens.count)
+
+        let decodeResult = llama_decode(context, batch)
+        if decodeResult != 0 {
+            throw LlamaServiceError.nativeBackendUnavailable("decode failed (\(decodeResult))")
+        }
+    }
+
+    private func tokenPiece(_ token: llama_token, model: OpaquePointer) -> String? {
+        var buffer = [CChar](repeating: 0, count: 64)
+        let n = llama_token_to_piece(model, token, &buffer, Int32(buffer.count), 0, true)
+        guard n > 0 else { return nil }
+        return String(cString: buffer)
+    }
+    #endif
 }
 
 private struct LlamaChatRequest: Codable {
