@@ -148,13 +148,13 @@ final class LlamaLocalModelService {
             } else {
                 repeatCount = 0
             }
-            if repeatCount >= 8 { break }
+            if repeatCount >= 6 { break }
             lastToken = nextToken
 
             if let piece = tokenPieceString(nextToken, vocab: vocab) {
                 output += piece
-                let lower = output.lowercased()
-                if lower.contains("\nuser:") || lower.contains("\nassistant:") || lower.contains("<|eot_id|>") {
+                if let clipped = clipAtStopSequence(output) {
+                    output = clipped
                     break
                 }
             }
@@ -168,7 +168,12 @@ final class LlamaLocalModelService {
             currentPos += 1
 
             let stepDecode = llama_decode(context, batch)
-            guard stepDecode == 0 else { throw LlamaServiceError.decodeFailed(stepDecode) }
+            if stepDecode != 0 {
+                if output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    throw LlamaServiceError.decodeFailed(stepDecode)
+                }
+                break
+            }
         }
 
         let clean = output
@@ -304,6 +309,17 @@ final class LlamaLocalModelService {
         return nucleus.last?.0 ?? candidates[0].token
     }
     #endif
+
+    private static func clipAtStopSequence(_ text: String) -> String? {
+        let stops = ["\nuser:", "\nassistant:", "<|eot_id|>", "<|end|>"]
+        guard let marker = stops
+            .compactMap({ text.range(of: $0, options: [.caseInsensitive])?.lowerBound })
+            .min()
+        else {
+            return nil
+        }
+        return String(text[..<marker]).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
     private static func normalizeModelPath(_ path: String) -> String {
         let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)

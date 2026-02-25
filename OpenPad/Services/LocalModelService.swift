@@ -35,6 +35,24 @@ final class LocalModelService {
             } catch LlamaServiceError.modelNotConfigured {
                 try await Task.sleep(nanoseconds: 300_000_000)
                 return "No llama.cpp model selected. Add a .gguf in Models and select it in Settings."
+            } catch LlamaServiceError.modelFileNotFound(_) {
+                return "The selected llama.cpp model file is missing. Re-select a .gguf in Settings."
+            } catch LlamaServiceError.emptyResponse {
+                return "The local llama.cpp model returned an empty answer. Please retry with a shorter prompt."
+            } catch LlamaServiceError.decodeFailed(_) {
+                let compactPrompt = String(prompt.suffix(1800))
+                if compactPrompt != prompt {
+                    let retryPrompt = "Answer concisely and directly:\n\n\(compactPrompt)"
+                    if let retry = try? await llama.runLocal(prompt: retryPrompt) {
+                        let sanitized = sanitizeModelOutput(retry)
+                        if !sanitized.isEmpty { return sanitized }
+                    }
+                }
+                return "The local llama.cpp backend hit a decode limit. Try a shorter message or switch to stable profile."
+            } catch LlamaServiceError.tokenizationFailed {
+                return "The prompt could not be tokenized by the local llama.cpp model. Try removing unusual symbols and retry."
+            } catch LlamaServiceError.nativeBackendUnavailable {
+                return "Native llama.cpp backend is unavailable in this build. Enable the llama module or use MLX."
             }
         case .mlx:
             let chatModel = runtimeConfig.loadMLXModelName()
