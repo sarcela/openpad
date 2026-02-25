@@ -15,6 +15,9 @@ enum LlamaServiceError: LocalizedError {
     case tokenizationFailed
     case decodeFailed(Int32)
     case emptyResponse
+    case vocabularyUnavailable
+    case backendBusyTimeout
+    case generationTimedOut
 
     var errorDescription: String? {
         switch self {
@@ -24,6 +27,9 @@ enum LlamaServiceError: LocalizedError {
         case .tokenizationFailed: return "Failed to tokenize prompt."
         case .decodeFailed(let code): return "llama_decode failed (\(code))."
         case .emptyResponse: return "llama.swift returned an empty response."
+        case .vocabularyUnavailable: return "Failed to load tokenizer vocabulary from the selected model."
+        case .backendBusyTimeout: return "llama.cpp backend is busy (likely a previous generation got stuck)."
+        case .generationTimedOut: return "llama.cpp generation timed out."
         }
     }
 }
@@ -96,7 +102,9 @@ final class LlamaLocalModelService {
         }
         defer { llama_free(context) }
 
-        let vocab = llama_model_get_vocab(model)
+        guard let vocab = llama_model_get_vocab(model) else {
+            throw LlamaServiceError.vocabularyUnavailable
+        }
         let framedPrompt = """
         You are OpenPad, a concise and practical assistant.
         Answer directly with useful text only.
@@ -159,13 +167,13 @@ final class LlamaLocalModelService {
             let vocabSize = Int(llama_vocab_n_tokens(vocab))
             if vocabSize <= 0 { break }
 
-            let seenRecentTokens = Set(recentTokens)
+            let recentTokenCounts = Dictionary(recentTokens.map { ($0, 1) }, uniquingKeysWith: +)
             var nextToken = sampleToken(
                 logits: logits,
                 vocabSize: vocabSize,
                 vocab: vocab,
                 temperature: samplingTemperature,
-                recentTokens: seenRecentTokens
+                recentTokenCounts: recentTokenCounts
             )
             if isControlLikeToken(nextToken, vocab: vocab) {
                 nextToken = bestTokenExcluding(
@@ -338,7 +346,7 @@ final class LlamaLocalModelService {
         vocabSize: Int,
         vocab: OpaquePointer?,
         temperature: Float,
-        recentTokens: Set<llama_token>
+        recentTokenCounts: [llama_token: Int]
     ) -> llama_token {
         let clippedTemp = sanitizeTemperature(temperature)
         if clippedTemp <= 0.05 {
@@ -356,8 +364,9 @@ final class LlamaLocalModelService {
             var l = logits[i]
             guard l.isFinite else { continue }
 
-            if recentTokens.contains(token) {
-                l -= 0.6
+            if let repeats = recentTokenCounts[token], repeats > 0 {
+                let cappedRepeats = min(3, repeats)
+                l -= 0.45 * Float(cappedRepeats)
             }
 
             if candidates.count < topK {

@@ -56,6 +56,8 @@ final class LocalModelService {
                 return "The local llama.cpp backend hit a decode limit. Try a shorter message or switch to stable profile."
             } catch LlamaServiceError.tokenizationFailed {
                 return "The prompt could not be tokenized by the local llama.cpp model. Try removing unusual symbols and retry."
+            } catch LlamaServiceError.vocabularyUnavailable {
+                return "The selected llama.cpp model did not expose a usable vocabulary. Re-select a valid GGUF and retry."
             } catch LlamaServiceError.nativeBackendUnavailable {
                 return "Native llama.cpp backend is unavailable in this build. Enable the llama module or use MLX."
             }
