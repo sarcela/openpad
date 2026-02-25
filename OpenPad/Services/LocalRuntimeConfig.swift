@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(UIKit)
+import UIKit
+#endif
 
 enum RunProfile: String, CaseIterable, Identifiable {
     case stable
@@ -82,6 +85,7 @@ struct LocalRuntimeConfig {
         static let debugVerboseMode = "agent.debug_verbose.enabled"
         static let modelPreset = "local.model.preset"
         static let modelPresetAppliedAt = "local.model.preset.applied_at"
+        static let presetPolicySignals = "local.model.preset.policy.signals"
     }
 
     func loadProvider() -> LocalRuntimeProvider {
@@ -351,5 +355,54 @@ struct LocalRuntimeConfig {
         let ts = UserDefaults.standard.double(forKey: Keys.modelPresetAppliedAt)
         guard ts > 0 else { return nil }
         return Date(timeIntervalSince1970: ts)
+    }
+
+    func applyModelPresetRuntimeDefaults(_ preset: ModelPreset) {
+        switch preset {
+        case .ligero:
+            saveRunProfile(.stable)
+            saveLocalTemperature(0.15)
+        case .balanceado:
+            saveRunProfile(.balanced)
+            saveLocalTemperature(0.20)
+        case .calidad:
+            saveRunProfile(.turbo)
+            saveLocalTemperature(0.30)
+        }
+        saveModelPreset(preset)
+    }
+
+    func recordPresetPolicySignal(latencyMs: Int, fallbackUsed: Bool) {
+        let now = Date().timeIntervalSince1970
+        let current = UserDefaults.standard.array(forKey: Keys.presetPolicySignals) as? [[String: Any]] ?? []
+        var updated = current
+        updated.append([
+            "ts": now,
+            "latencyMs": max(0, latencyMs),
+            "fallbackUsed": fallbackUsed
+        ])
+        if updated.count > 8 {
+            updated = Array(updated.suffix(8))
+        }
+        UserDefaults.standard.set(updated, forKey: Keys.presetPolicySignals)
+    }
+
+    func shouldDowngradeBalancedToLight() -> Bool {
+        let signals = UserDefaults.standard.array(forKey: Keys.presetPolicySignals) as? [[String: Any]] ?? []
+        let recent = Array(signals.suffix(3))
+        guard recent.count >= 3 else { return false }
+        let fallbackCount = recent.reduce(0) { partial, row in
+            partial + (((row["fallbackUsed"] as? Bool) == true) ? 1 : 0)
+        }
+        return fallbackCount >= 2
+    }
+
+    func shouldDowngradeQualityToBalancedForThermal() -> Bool {
+        #if canImport(UIKit)
+        let thermal = ProcessInfo.processInfo.thermalState
+        return thermal == .serious || thermal == .critical
+        #else
+        return false
+        #endif
     }
 }

@@ -246,6 +246,7 @@ final class ChatViewModel: ObservableObject {
 
     private func runPipeline(prompt: String) async -> String {
         let started = Date()
+        enforceAdaptiveModelPolicyBeforeRun()
         let autoDecision = routing.decide(prompt: prompt)
         let primaryTarget = selectPrimaryTarget(autoTarget: autoDecision.target)
         let timeoutMs = routing.localTimeoutMs
@@ -255,6 +256,9 @@ final class ChatViewModel: ObservableObject {
             lastRoute = primaryTarget
             lastReason = primaryTarget == "LOCAL" ? localReason(pref: routePreference, autoReason: autoDecision.reason) : "forced_remote_or_auto"
             self.lastLatencyMs = Int(Date().timeIntervalSince(started) * 1000)
+            if primaryTarget == "LOCAL" {
+                adaptModelPolicyAfterLocalRun(latencyMs: self.lastLatencyMs)
+            }
             self.lastErrorText = ""
             self.successCount += 1
             refreshHealth()
@@ -317,6 +321,27 @@ final class ChatViewModel: ObservableObject {
         case .auto: return autoTarget
         case .local: return "LOCAL"
         case .remote: return "REMOTE"
+        }
+    }
+
+    private func enforceAdaptiveModelPolicyBeforeRun() {
+        let preset = runtimeConfig.loadModelPreset()
+        guard preset == .calidad else { return }
+
+        if runtimeConfig.shouldDowngradeQualityToBalancedForThermal() {
+            runtimeConfig.applyModelPresetRuntimeDefaults(.balanceado)
+            backgroundStatus = "Model policy: thermal high → preset downgraded to Balanceado."
+        }
+    }
+
+    private func adaptModelPolicyAfterLocalRun(latencyMs: Int) {
+        let preset = runtimeConfig.loadModelPreset()
+        let fallbackUsed = lastReason == "fallback_remote_after_local_error" || lastReason == "local_failed_and_remote_failed"
+        runtimeConfig.recordPresetPolicySignal(latencyMs: latencyMs, fallbackUsed: fallbackUsed)
+
+        if preset == .balanceado, runtimeConfig.shouldDowngradeBalancedToLight() {
+            runtimeConfig.applyModelPresetRuntimeDefaults(.ligero)
+            backgroundStatus = "Model policy: fallback in 2/3 turns → preset downgraded to Ligero."
         }
     }
 
