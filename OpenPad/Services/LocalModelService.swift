@@ -150,10 +150,35 @@ final class LocalModelService {
     }
 
     private func autoConfigureModelIfPresent() throws {
-        let docs = try LocalModelConfig.shared.documentsDirectory()
-        if let modelURL = LocalModelConfig.shared.firstExistingModelPath(in: docs),
-           FileManager.default.fileExists(atPath: modelURL.path) {
-            try llama.configureModel(path: modelURL.path)
+        let modelConfig = LocalModelConfig.shared
+        let docs = try modelConfig.documentsDirectory()
+
+        let persisted = runtimeConfig.loadLlama().model.trimmingCharacters(in: .whitespacesAndNewlines)
+        let selected = modelConfig.loadSelectedModelPath()?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let fallback = modelConfig.firstExistingModelPath(in: docs)?.path ?? ""
+
+        var candidates: [String] = []
+        for path in [persisted, selected, fallback] where !path.isEmpty {
+            if !candidates.contains(path) { candidates.append(path) }
+        }
+
+        for candidate in candidates {
+            do {
+                try llama.configureModel(path: candidate)
+
+                if selected != candidate {
+                    modelConfig.saveSelectedModelPath(candidate)
+                }
+                if persisted != candidate {
+                    let cfg = runtimeConfig.loadLlama()
+                    runtimeConfig.saveLlama(baseURL: cfg.baseURL, model: candidate)
+                }
+                return
+            } catch LlamaServiceError.modelNotConfigured {
+                continue
+            } catch LlamaServiceError.modelFileNotFound(_) {
+                continue
+            }
         }
     }
 }
