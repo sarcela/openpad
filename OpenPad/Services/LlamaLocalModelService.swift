@@ -219,17 +219,26 @@ final class LlamaLocalModelService {
             modelPath: modelPath,
             promptFamily: promptFamily
         )
+        // Very large prompts can spike tokenization memory/latency even though we later
+        // trim by context window. Pre-trim middle context at char-level first to keep
+        // native path stable on-device while preserving instruction prefix + recent tail.
+        let approxMaxPromptChars = max(1_024, Int(contextParams.n_ctx) * 8)
+        let promptForTokenization = truncateMiddlePreservingEnds(
+            framedPrompt,
+            maxChars: approxMaxPromptChars,
+            headChars: max(320, approxMaxPromptChars / 6)
+        )
 
-        var tokenCapacity = max(512, framedPrompt.utf8.count + 32)
+        var tokenCapacity = max(512, min(8_192, promptForTokenization.utf8.count + 32))
         var tokens = [llama_token](repeating: 0, count: tokenCapacity)
-        var tokenCount = framedPrompt.withCString { cText in
+        var tokenCount = promptForTokenization.withCString { cText in
             llama_tokenize(vocab, cText, Int32(strlen(cText)), &tokens, Int32(tokens.count), true, true)
         }
 
         if tokenCount < 0 {
             tokenCapacity = max(tokenCapacity * 2, Int(-tokenCount) + 8)
             tokens = [llama_token](repeating: 0, count: tokenCapacity)
-            tokenCount = framedPrompt.withCString { cText in
+            tokenCount = promptForTokenization.withCString { cText in
                 llama_tokenize(vocab, cText, Int32(strlen(cText)), &tokens, Int32(tokens.count), true, true)
             }
         }
@@ -785,6 +794,23 @@ final class LlamaLocalModelService {
         }
 
         return previous
+    }
+
+    private static func truncateMiddlePreservingEnds(_ text: String, maxChars: Int, headChars: Int) -> String {
+        guard maxChars > 0, text.count > maxChars else { return text }
+
+        let headCount = min(max(64, headChars), maxChars - 32)
+        let tailCount = max(32, maxChars - headCount)
+
+        let headEnd = text.index(text.startIndex, offsetBy: min(headCount, text.count), limitedBy: text.endIndex) ?? text.endIndex
+        let tailStart = text.index(text.endIndex, offsetBy: -min(tailCount, text.count), limitedBy: text.startIndex) ?? text.startIndex
+
+        let head = String(text[text.startIndex..<headEnd]).trimmingCharacters(in: .whitespacesAndNewlines)
+        let tail = String(text[tailStart..<text.endIndex]).trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if head.isEmpty { return tail }
+        if tail.isEmpty { return head }
+        return "\(head)\n\n[... trimmed for local context window ...]\n\n\(tail)"
     }
 
     private static func generationSettings() -> GenerationSettings {
