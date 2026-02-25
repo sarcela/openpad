@@ -336,6 +336,9 @@ final class LlamaLocalModelService {
         let deEchoed = stripPromptEcho(from: clean, userPrompt: prompt)
 
         guard !deEchoed.isEmpty else { throw LlamaServiceError.emptyResponse }
+        if isLowSignalResponse(deEchoed, mode: mode) {
+            throw LlamaServiceError.emptyResponse
+        }
         let generatedText = deEchoed
         print("Generated text: \(generatedText)")
         return generatedText
@@ -833,6 +836,27 @@ final class LlamaLocalModelService {
         value
             .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func isLowSignalResponse(_ text: String, mode: LlamaGenerationMode) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return true }
+
+        // Tool mode can legitimately emit terse JSON like "{}" or "[]".
+        if mode == .tools {
+            return false
+        }
+
+        let lowered = trimmed.lowercased()
+        if ["assistant", "asistente", "model", "modelo"].contains(lowered) {
+            return true
+        }
+
+        let hasLetterOrDigit = trimmed.unicodeScalars.contains { CharacterSet.alphanumerics.contains($0) }
+        if hasLetterOrDigit { return false }
+
+        // Treat punctuation-only / marker-only emissions as low-quality so callers can retry.
+        return true
     }
 
     private static func sanitizeTemperature(_ temperature: Float) -> Float {
