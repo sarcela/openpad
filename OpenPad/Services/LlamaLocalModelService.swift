@@ -270,6 +270,7 @@ final class LlamaLocalModelService {
         var repeatCount = 0
         var generatedCount = 0
         var recentTokens: [llama_token] = []
+        var controlTokenCache: [llama_token: Bool] = [:]
         let repeatWindowSize = 64
 
         for _ in 0..<maxNewTokens {
@@ -286,16 +287,18 @@ final class LlamaLocalModelService {
                 vocabSize: vocabSize,
                 vocab: vocab,
                 temperature: samplingTemperature,
-                recentTokenCounts: recentTokenCounts
+                recentTokenCounts: recentTokenCounts,
+                controlTokenCache: &controlTokenCache
             )
-            if isControlLikeToken(nextToken, vocab: vocab) {
+            if isControlLikeTokenCached(nextToken, vocab: vocab, cache: &controlTokenCache) {
                 nextToken = bestTokenExcluding(
                     logits: logits,
                     vocabSize: vocabSize,
                     vocab: vocab,
                     excluded: Set([nextToken]),
-                    allowControlTokens: false
-                ) ?? pickToken(logits: logits, vocabSize: vocabSize, vocab: vocab)
+                    allowControlTokens: false,
+                    controlTokenCache: &controlTokenCache
+                ) ?? pickToken(logits: logits, vocabSize: vocabSize, vocab: vocab, controlTokenCache: &controlTokenCache)
             }
             if nextToken == llama_vocab_eos(vocab), generatedCount < minTokensBeforeEOS {
                 nextToken = bestTokenExcluding(
@@ -303,7 +306,8 @@ final class LlamaLocalModelService {
                     vocabSize: vocabSize,
                     vocab: vocab,
                     excluded: Set([llama_vocab_eos(vocab)]),
-                    allowControlTokens: false
+                    allowControlTokens: false,
+                    controlTokenCache: &controlTokenCache
                 ) ?? nextToken
             }
             if nextToken == llama_vocab_eos(vocab) { break }
@@ -423,7 +427,12 @@ final class LlamaLocalModelService {
         }
     }
 
-    private static func pickToken(logits: UnsafePointer<Float>, vocabSize: Int, vocab: OpaquePointer?) -> llama_token {
+    private static func pickToken(
+        logits: UnsafePointer<Float>,
+        vocabSize: Int,
+        vocab: OpaquePointer?,
+        controlTokenCache: inout [llama_token: Bool]
+    ) -> llama_token {
         var best = llama_token(0)
         var bestLogit = -Float.greatestFiniteMagnitude
         var fallback = llama_token(0)
@@ -439,7 +448,7 @@ final class LlamaLocalModelService {
                 fallbackLogit = logit
             }
 
-            let filteredOut = isControlLikeToken(token, vocab: vocab)
+            let filteredOut = isControlLikeTokenCached(token, vocab: vocab, cache: &controlTokenCache)
 
             if !filteredOut, logit > bestLogit {
                 best = token
@@ -466,7 +475,8 @@ final class LlamaLocalModelService {
         vocabSize: Int,
         vocab: OpaquePointer?,
         excluded: Set<llama_token>,
-        allowControlTokens: Bool
+        allowControlTokens: Bool,
+        controlTokenCache: inout [llama_token: Bool]
     ) -> llama_token? {
         var bestToken: llama_token?
         var bestLogit = -Float.greatestFiniteMagnitude
@@ -477,7 +487,7 @@ final class LlamaLocalModelService {
 
             let logit = logits[i]
             guard logit.isFinite else { continue }
-            if !allowControlTokens, isControlLikeToken(token, vocab: vocab) { continue }
+            if !allowControlTokens, isControlLikeTokenCached(token, vocab: vocab, cache: &controlTokenCache) { continue }
 
             if logit > bestLogit {
                 bestLogit = logit
@@ -486,6 +496,17 @@ final class LlamaLocalModelService {
         }
 
         return bestToken
+    }
+
+    private static func isControlLikeTokenCached(
+        _ token: llama_token,
+        vocab: OpaquePointer?,
+        cache: inout [llama_token: Bool]
+    ) -> Bool {
+        if let cached = cache[token] { return cached }
+        let computed = isControlLikeToken(token, vocab: vocab)
+        cache[token] = computed
+        return computed
     }
 
     private static func isControlLikeToken(_ token: llama_token, vocab: OpaquePointer?) -> Bool {
@@ -561,7 +582,8 @@ final class LlamaLocalModelService {
         vocabSize: Int,
         vocab: OpaquePointer?,
         temperature: Float,
-        recentTokenCounts: [llama_token: Int]
+        recentTokenCounts: [llama_token: Int],
+        controlTokenCache: inout [llama_token: Bool]
     ) -> llama_token {
         let clippedTemp = sanitizeTemperature(temperature)
         if clippedTemp <= 0.05 {
@@ -572,7 +594,7 @@ final class LlamaLocalModelService {
 
             for i in 0..<vocabSize {
                 let token = llama_token(i)
-                if isControlLikeToken(token, vocab: vocab) { continue }
+                if isControlLikeTokenCached(token, vocab: vocab, cache: &controlTokenCache) { continue }
 
                 var l = logits[i]
                 guard l.isFinite else { continue }
@@ -587,7 +609,7 @@ final class LlamaLocalModelService {
                 }
             }
 
-            return bestToken ?? pickToken(logits: logits, vocabSize: vocabSize, vocab: vocab)
+            return bestToken ?? pickToken(logits: logits, vocabSize: vocabSize, vocab: vocab, controlTokenCache: &controlTokenCache)
         }
 
         let topK = min(64, vocabSize)
@@ -596,7 +618,7 @@ final class LlamaLocalModelService {
 
         for i in 0..<vocabSize {
             let token = llama_token(i)
-            if isControlLikeToken(token, vocab: vocab) { continue }
+            if isControlLikeTokenCached(token, vocab: vocab, cache: &controlTokenCache) { continue }
 
             var l = logits[i]
             guard l.isFinite else { continue }
@@ -620,7 +642,7 @@ final class LlamaLocalModelService {
         }
 
         guard !candidates.isEmpty else {
-            return pickToken(logits: logits, vocabSize: vocabSize, vocab: vocab)
+            return pickToken(logits: logits, vocabSize: vocabSize, vocab: vocab, controlTokenCache: &controlTokenCache)
         }
 
         let maxLogit = candidates[0].logit
