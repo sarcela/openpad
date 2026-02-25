@@ -61,6 +61,8 @@ final class LlamaLocalModelService {
         let minTokensBeforeEOS: Int
     }
 
+    private static let defaultSystemPrompt = "You are OpenPad, a concise and practical assistant. Answer directly with useful text only."
+
     func configureModel(path: String) throws {
         let clean = Self.normalizeModelPath(path)
         guard !clean.isEmpty else { throw LlamaServiceError.modelNotConfigured }
@@ -357,17 +359,18 @@ final class LlamaLocalModelService {
 
         let clean = sanitizeDecodedOutput(output)
         let deEchoed = stripPromptEcho(from: clean, userPrompt: prompt)
+        let withoutSystemEcho = stripSystemPromptEcho(from: deEchoed)
 
-        guard !deEchoed.isEmpty else { throw LlamaServiceError.emptyResponse }
-        if isLowSignalResponse(deEchoed, mode: mode) {
+        guard !withoutSystemEcho.isEmpty else { throw LlamaServiceError.emptyResponse }
+        if isLowSignalResponse(withoutSystemEcho, mode: mode) {
             throw LlamaServiceError.emptyResponse
         }
-        if mode == .chat, isTemplateLeakResponse(deEchoed) {
+        if mode == .chat, isTemplateLeakResponse(withoutSystemEcho) {
             // Treat template/marker-heavy emissions as a failed attempt so the caller
             // can retry with the next prompt family instead of returning noisy output.
             throw LlamaServiceError.emptyResponse
         }
-        let generatedText = deEchoed
+        let generatedText = withoutSystemEcho
         print("Generated text: \(generatedText)")
         return generatedText
     }
@@ -695,7 +698,7 @@ final class LlamaLocalModelService {
 
     private static func buildFramedPrompt(userPrompt: String, modelPath: String, promptFamily: PromptFamily? = nil) -> String {
         let cleanUserPrompt = userPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        let systemPrompt = "You are OpenPad, a concise and practical assistant. Answer directly with useful text only."
+        let systemPrompt = defaultSystemPrompt
 
         switch promptFamily ?? detectPromptFamily(from: modelPath) {
         case .chatML:
@@ -937,6 +940,46 @@ final class LlamaLocalModelService {
                 if !normalizedFirstLine.isEmpty, normalizedFirstLine == normalizedPrompt {
                     return remainder
                 }
+            }
+        }
+
+        return trimmedOutput
+    }
+
+    private static func stripSystemPromptEcho(from output: String) -> String {
+        let trimmedOutput = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedOutput.isEmpty else { return "" }
+
+        let normalizedSystemPrompt = normalizeWhitespace(defaultSystemPrompt)
+        guard !normalizedSystemPrompt.isEmpty else { return trimmedOutput }
+
+        let normalizedOutput = normalizeWhitespace(trimmedOutput)
+        if normalizedOutput == normalizedSystemPrompt {
+            return ""
+        }
+
+        let quotedPrefixes = [
+            defaultSystemPrompt,
+            "\"\(defaultSystemPrompt)\"",
+            "'\(defaultSystemPrompt)'"
+        ]
+
+        for prefix in quotedPrefixes {
+            if trimmedOutput.hasPrefix(prefix) {
+                let remainder = String(trimmedOutput.dropFirst(prefix.count))
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if !remainder.isEmpty {
+                    return remainder
+                }
+            }
+        }
+
+        if let newline = trimmedOutput.firstIndex(of: "\n") {
+            let firstLine = String(trimmedOutput[..<newline])
+            let remainder = String(trimmedOutput[trimmedOutput.index(after: newline)...])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !remainder.isEmpty, normalizeWhitespace(firstLine) == normalizedSystemPrompt {
+                return remainder
             }
         }
 
