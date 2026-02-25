@@ -1766,7 +1766,6 @@ private struct SettingsView: View {
 
     @ObservedObject var vm: ChatViewModel
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.openURL) private var openURL
 
     @State private var remoteProvider: RemoteProvider = .customOpenAICompatible
     @State private var baseURL = ""
@@ -1777,6 +1776,8 @@ private struct SettingsView: View {
 
     @State private var models: [URL] = []
     @State private var selectedModelPath: String = ""
+    @State private var ggufDownloadSpec = ""
+    @State private var isDownloadingGGUF = false
 
     @State private var embeddingModels: [URL] = []
     @State private var selectedEmbeddingModelPath: String = ""
@@ -2106,14 +2107,6 @@ private struct SettingsView: View {
                                 Label("Add .gguf", systemImage: "plus.circle.fill")
                             }
 
-                            Button {
-                                if let url = URL(string: "https://huggingface.co/models?search=gguf") {
-                                    openURL(url)
-                                }
-                            } label: {
-                                Label("Descargar .gguf", systemImage: "arrow.down.circle")
-                            }
-
                             Spacer()
 
                             if !selectedModelPath.isEmpty,
@@ -2125,6 +2118,23 @@ private struct SettingsView: View {
                                 }
                             }
                         }
+
+                        HStack(spacing: 8) {
+                            TextField("GGUF URL o repo/ruta.gguf", text: $ggufDownloadSpec)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+
+                            Button {
+                                Task { await downloadGGUFModel() }
+                            } label: {
+                                Label(isDownloadingGGUF ? "Descargando..." : "Descargar", systemImage: "arrow.down.circle")
+                            }
+                            .disabled(isDownloadingGGUF || ggufDownloadSpec.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }
+
+                        Text("Ejemplos: https://.../model.gguf  o  bartowski/Llama-3.2-3B-Instruct-GGUF/model-q4_k_m.gguf")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
                     } header: {
                         Text("Local chat model")
                     }
@@ -2614,6 +2624,63 @@ private struct SettingsView: View {
             models = []
             embeddingModels = []
             importMessage = "No pude leer modelos: \(error.localizedDescription)"
+        }
+    }
+
+    private func resolvedGGUFDownloadURL(from spec: String) -> URL? {
+        let clean = spec.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return nil }
+
+        if let direct = URL(string: clean), let scheme = direct.scheme?.lowercased(), ["http", "https"].contains(scheme) {
+            return direct
+        }
+
+        // Support shorthand: owner/repo/path/to/file.gguf
+        let parts = clean.split(separator: "/").map(String.init)
+        guard parts.count >= 3 else { return nil }
+        let owner = parts[0]
+        let repo = parts[1]
+        let filePath = parts.dropFirst(2).joined(separator: "/")
+        guard filePath.lowercased().hasSuffix(".gguf") else { return nil }
+
+        return URL(string: "https://huggingface.co/\(owner)/\(repo)/resolve/main/\(filePath)")
+    }
+
+    private func downloadGGUFModel() async {
+        let spec = ggufDownloadSpec.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let sourceURL = resolvedGGUFDownloadURL(from: spec) else {
+            importMessage = "Formato inválido. Usa URL directa o owner/repo/path/model.gguf"
+            return
+        }
+
+        isDownloadingGGUF = true
+        defer { isDownloadingGGUF = false }
+
+        do {
+            let (tempURL, response) = try await URLSession.shared.download(from: sourceURL)
+            if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+                importMessage = "Descarga GGUF falló (HTTP \(http.statusCode))"
+                return
+            }
+
+            let inferredName = sourceURL.lastPathComponent.isEmpty ? "model.gguf" : sourceURL.lastPathComponent
+            let fileName = inferredName.lowercased().hasSuffix(".gguf") ? inferredName : (inferredName + ".gguf")
+
+            let docs = try localConfig.documentsDirectory()
+            try localConfig.ensureModelsDirectoryExists(in: docs)
+            let destination = localConfig.modelsDirectory(in: docs).appendingPathComponent(fileName)
+
+            if FileManager.default.fileExists(atPath: destination.path) {
+                try FileManager.default.removeItem(at: destination)
+            }
+            try FileManager.default.moveItem(at: tempURL, to: destination)
+
+            refreshModels()
+            selectedModelPath = destination.path
+            localConfig.saveSelectedModelPath(destination.path)
+            importMessage = "Modelo descargado: \(fileName)"
+        } catch {
+            importMessage = "No pude descargar GGUF: \(error.localizedDescription)"
         }
     }
 
