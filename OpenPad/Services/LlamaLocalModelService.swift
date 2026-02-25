@@ -68,21 +68,10 @@ final class LlamaLocalModelService {
         #if canImport(LlamaSwift)
         let timeoutSeconds: Double = LlamaLocalModelService.runtimeConfig.isEmergencyMemoryModeEnabled() ? 90 : 180
         let deadline = Date().addingTimeInterval(timeoutSeconds)
-        return try await withThrowingTaskGroup(of: String.self) { group in
-            group.addTask {
-                try Self.runSync(prompt: prompt, modelPath: modelPath, deadline: deadline)
-            }
-            group.addTask {
-                try await Task.sleep(nanoseconds: UInt64((timeoutSeconds + 2) * 1_000_000_000))
-                throw LlamaServiceError.generationTimedOut
-            }
 
-            guard let first = try await group.next() else {
-                throw LlamaServiceError.generationTimedOut
-            }
-            group.cancelAll()
-            return first
-        }
+        return try await Task.detached(priority: .userInitiated) {
+            try Self.runSync(prompt: prompt, modelPath: modelPath, deadline: deadline)
+        }.value
         #else
         throw LlamaServiceError.nativeBackendUnavailable
         #endif
@@ -303,8 +292,7 @@ final class LlamaLocalModelService {
 
             var filteredOut = false
             if let piece = tokenPieceString(token, vocab: vocab) {
-                let trimmed = piece.trimmingCharacters(in: .whitespacesAndNewlines)
-                if trimmed.isEmpty || trimmed.contains("<|") || trimmed.contains("|>") {
+                if isSpecialMarkerToken(piece) {
                     filteredOut = true
                 }
             }
@@ -358,9 +346,16 @@ final class LlamaLocalModelService {
 
     private static func isControlLikeToken(_ token: llama_token, vocab: OpaquePointer?) -> Bool {
         guard let piece = tokenPieceString(token, vocab: vocab) else { return false }
+        return isSpecialMarkerToken(piece)
+    }
+
+    private static func isSpecialMarkerToken(_ piece: String) -> Bool {
         let trimmed = piece.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty { return true }
-        return trimmed.contains("<|") || trimmed.contains("|>")
+        guard !trimmed.isEmpty else { return false }
+        return trimmed.contains("<|") ||
+            trimmed.contains("|>") ||
+            trimmed.hasPrefix("<｜") ||
+            trimmed.hasSuffix("｜>")
     }
 
     private static func tokenPieceBytes(_ token: llama_token, vocab: OpaquePointer?) -> [UInt8]? {
