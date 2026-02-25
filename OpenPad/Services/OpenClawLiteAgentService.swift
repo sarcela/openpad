@@ -45,7 +45,9 @@ final class OpenClawLiteAgentService {
             User message:
             \(userPrompt)
             """
+            debug?("[LOCAL] Raw prompt: \(debugClip(prompt))")
             let out = try await localModelService.runLocal(prompt: prompt, purpose: .chat)
+            debug?("[LOCAL] Raw output: \(debugClip(out))")
             return .init(text: out.trimmingCharacters(in: .whitespacesAndNewlines), trace: trace)
         }
 
@@ -101,7 +103,9 @@ final class OpenClawLiteAgentService {
         debug?("[LOCAL] Planner: building plan")
         let reasoningDraft = try await buildReasoningDraftIfNeeded(userPrompt: userPrompt, recentMessages: recentMessages)
         let firstPrompt = buildPlannerPrompt(userPrompt: userPrompt, recentMessages: recentMessages, reasoningDraft: reasoningDraft)
+        debug?("[LOCAL] Planner prompt: \(debugClip(firstPrompt))")
         let modelReply = try await localModelService.runLocal(prompt: firstPrompt, purpose: .tools)
+        debug?("[LOCAL] Planner raw output: \(debugClip(modelReply))")
 
         guard let decision = parseDecision(from: modelReply) else {
             if shouldForceAttachmentTool(userPrompt: userPrompt, recentMessages: recentMessages) {
@@ -112,7 +116,9 @@ final class OpenClawLiteAgentService {
                     let toolResult = await tools.execute(name: "analyze_attachment", arguments: ["fileName": file, "maxChars": "8000"])
                     trace.append("Tool result: \(toolResult.ok ? "ok" : "error")")
                     let secondPrompt = buildFinalizePrompt(userPrompt: userPrompt, toolName: "analyze_attachment", toolResult: toolResult)
+                    debug?("[LOCAL] Finalize prompt: \(debugClip(secondPrompt))")
                     let finalReply = try await localModelService.runLocal(prompt: secondPrompt, purpose: .chat)
+                    debug?("[LOCAL] Finalize raw output: \(debugClip(finalReply))")
                     return .init(text: extractContentFromJsonLike(finalReply) ?? finalReply, trace: trace)
                 }
             }
@@ -120,7 +126,9 @@ final class OpenClawLiteAgentService {
                 trace.append("Planner fallback: force get_time tool")
                 let toolResult = await tools.execute(name: "get_time", arguments: [:])
                 let secondPrompt = buildFinalizePrompt(userPrompt: userPrompt, toolName: "get_time", toolResult: toolResult)
+                debug?("[LOCAL] Finalize prompt: \(debugClip(secondPrompt))")
                 let finalReply = try await localModelService.runLocal(prompt: secondPrompt, purpose: .chat)
+                debug?("[LOCAL] Finalize raw output: \(debugClip(finalReply))")
                 return .init(text: extractContentFromJsonLike(finalReply) ?? finalReply, trace: trace)
             }
             trace.append("Planner: no valid JSON, direct answer")
@@ -140,7 +148,9 @@ final class OpenClawLiteAgentService {
                         toolResult = await tools.execute(name: "read_attachment", arguments: ["fileName": file, "maxChars": "10000"])
                     }
                     let secondPrompt = buildFinalizePrompt(userPrompt: userPrompt, toolName: "analyze_attachment", toolResult: toolResult)
+                    debug?("[LOCAL] Finalize prompt: \(debugClip(secondPrompt))")
                     let finalReply = try await localModelService.runLocal(prompt: secondPrompt, purpose: .chat)
+                    debug?("[LOCAL] Finalize raw output: \(debugClip(finalReply))")
                     return .init(text: extractContentFromJsonLike(finalReply) ?? finalReply, trace: trace)
                 }
             }
@@ -148,7 +158,9 @@ final class OpenClawLiteAgentService {
                 trace.append("Planner override: force get_time tool")
                 let toolResult = await tools.execute(name: "get_time", arguments: [:])
                 let secondPrompt = buildFinalizePrompt(userPrompt: userPrompt, toolName: "get_time", toolResult: toolResult)
+                debug?("[LOCAL] Finalize prompt: \(debugClip(secondPrompt))")
                 let finalReply = try await localModelService.runLocal(prompt: secondPrompt, purpose: .chat)
+                debug?("[LOCAL] Finalize raw output: \(debugClip(finalReply))")
                 return .init(text: extractContentFromJsonLike(finalReply) ?? finalReply, trace: trace)
             }
             if shouldForceAttachmentTool(userPrompt: userPrompt, recentMessages: recentMessages) {
@@ -159,7 +171,9 @@ final class OpenClawLiteAgentService {
                     let toolResult = await tools.execute(name: "analyze_attachment", arguments: ["fileName": file, "maxChars": "8000"])
                     trace.append("Tool result: \(toolResult.ok ? "ok" : "error")")
                     let secondPrompt = buildFinalizePrompt(userPrompt: userPrompt, toolName: "analyze_attachment", toolResult: toolResult)
+                    debug?("[LOCAL] Finalize prompt: \(debugClip(secondPrompt))")
                     let finalReply = try await localModelService.runLocal(prompt: secondPrompt, purpose: .chat)
+                    debug?("[LOCAL] Finalize raw output: \(debugClip(finalReply))")
                     return .init(text: extractContentFromJsonLike(finalReply) ?? finalReply, trace: trace)
                 }
             }
@@ -245,7 +259,9 @@ final class OpenClawLiteAgentService {
 
         debug?("[LOCAL] Finalize: composing final answer from tool result")
         let secondPrompt = buildFinalizePrompt(userPrompt: userPrompt, toolName: toolName, toolResult: toolResult)
+        debug?("[LOCAL] Finalize prompt: \(debugClip(secondPrompt))")
         let finalReply = try await localModelService.runLocal(prompt: secondPrompt, purpose: .chat)
+        debug?("[LOCAL] Finalize raw output: \(debugClip(finalReply))")
 
         if let finalDecision = parseDecision(from: finalReply), let content = finalDecision.content, !content.isEmpty {
             return try await applyQualityGate(userPrompt: userPrompt, recentMessages: recentMessages, candidate: content, trace: trace)
@@ -258,6 +274,18 @@ final class OpenClawLiteAgentService {
 
         debug?("[LOCAL] Quality Gate: evaluating final candidate")
         return try await applyQualityGate(userPrompt: userPrompt, recentMessages: recentMessages, candidate: finalReply, trace: trace)
+    }
+
+
+    private func debugClip(_ text: String, max: Int = 360) -> String {
+        let oneLine = text
+            .replacingOccurrences(of: "
+", with: " ")
+            .replacingOccurrences(of: "	", with: " ")
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if oneLine.count <= max { return oneLine }
+        return String(oneLine.prefix(max)) + "…"
     }
 
     private func applyQualityGate(userPrompt: String, recentMessages: [ChatMessage], candidate: String, trace: [String]) async throws -> OpenClawAgentOutput {
