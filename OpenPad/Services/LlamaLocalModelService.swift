@@ -511,6 +511,15 @@ final class LlamaLocalModelService {
             <|im_end|>
             <|im_start|>assistant
             """
+        case .llama3:
+            return """
+            <|begin_of_text|><|start_header_id|>system<|end_header_id|>
+
+            \(systemPrompt)<|eot_id|><|start_header_id|>user<|end_header_id|>
+
+            \(cleanUserPrompt)<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+            """
         case .plain:
             return """
             \(systemPrompt)
@@ -523,6 +532,7 @@ final class LlamaLocalModelService {
     private enum PromptFamily {
         case plain
         case chatML
+        case llama3
     }
 
     private static func detectPromptFamily(from modelPath: String) -> PromptFamily {
@@ -530,6 +540,13 @@ final class LlamaLocalModelService {
             .deletingPathExtension()
             .lastPathComponent
             .lowercased()
+
+        // Llama 3/3.1/3.2 and derivatives generally expect header-id chat templates.
+        let llama3Hints = ["llama-3", "llama3", "meta-llama", "openhermes", "instruct"]
+        if llama3Hints.contains(where: { modelName.contains($0) }) &&
+            (modelName.contains("llama") || modelName.contains("hermes")) {
+            return .llama3
+        }
 
         // Qwen/Phi/DeepSeek and similar instruct variants usually expect ChatML markers.
         let chatMLHints = ["qwen", "phi", "deepseek", "yi", "internlm"]
@@ -545,6 +562,7 @@ final class LlamaLocalModelService {
             .replacingOccurrences(of: #"(?is)<think>.*?</think>"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"(?im)^\s*(assistant|asistente)\s*:\s*"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"(?im)^\s*(user|usuario|system|sistema)\s*:.*$"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: "<|begin_of_text|>", with: "")
             .replacingOccurrences(of: "<|eot_id|>", with: "")
             .replacingOccurrences(of: "<|end|>", with: "")
             .replacingOccurrences(of: "<|im_end|>", with: "")
@@ -569,6 +587,7 @@ final class LlamaLocalModelService {
             "\nassistant:",
             "\nusuario:",
             "\nasistente:",
+            "<|begin_of_text|>",
             "<|eot_id|>",
             "<|end|>",
             "<|im_end|>",
