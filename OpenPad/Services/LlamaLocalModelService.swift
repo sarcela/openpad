@@ -548,6 +548,17 @@ final class LlamaLocalModelService {
             \(cleanUserPrompt)<end_of_turn>
             <start_of_turn>model
             """
+        case .alpaca:
+            return """
+            Below is an instruction that describes a task. Write a response that appropriately completes the request.
+
+            ### Instruction:
+            \(systemPrompt)
+
+            User request: \(cleanUserPrompt)
+
+            ### Response:
+            """
         case .plain:
             return """
             \(systemPrompt)
@@ -563,6 +574,7 @@ final class LlamaLocalModelService {
         case llama3
         case mistralInstruct
         case gemma
+        case alpaca
     }
 
     private static func detectPromptFamily(from modelPath: String) -> PromptFamily {
@@ -612,6 +624,12 @@ final class LlamaLocalModelService {
             return .mistralInstruct
         }
 
+        // Older instruction-tuned checkpoints (Alpaca/Vicuna/WizardLM family) prefer ### Instruction/Response tags.
+        let alpacaHints = ["alpaca", "vicuna", "wizardlm", "guanaco", "orca-mini", "koala", "airoboros"]
+        if alpacaHints.contains(where: { modelSignature.contains($0) }) {
+            return .alpaca
+        }
+
         return .plain
     }
 
@@ -646,6 +664,9 @@ final class LlamaLocalModelService {
             .replacingOccurrences(of: "[/INST]", with: "")
             .replacingOccurrences(of: "<<SYS>>", with: "")
             .replacingOccurrences(of: "<</SYS>>", with: "")
+            .replacingOccurrences(of: "### Instruction:", with: "")
+            .replacingOccurrences(of: "### Response:", with: "")
+            .replacingOccurrences(of: "### User:", with: "")
             .replacingOccurrences(of: #"\n{3,}"#, with: "\n\n", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -714,6 +735,9 @@ final class LlamaLocalModelService {
             "</s>",
             "[INST]",
             "[/INST]",
+            "### Instruction:",
+            "### User:",
+            "### Input:",
             "<start_of_turn>user",
             "<start_of_turn>system",
             "<end_of_turn>"
