@@ -123,12 +123,6 @@ struct ChatView: View {
                                         .font(.caption)
                                         .foregroundColor(.secondary)
 
-                                    if vm.liveDebugTrace.isEmpty {
-                                        Text("• Initializing debug pipeline…")
-                                            .font(.caption2)
-                                            .foregroundColor(.secondary)
-                                            .frame(maxWidth: .infinity, alignment: .leading)
-                                    }
                                     ForEach(vm.liveDebugTrace, id: \.self) { line in
                                         HStack(alignment: .top, spacing: 6) {
                                             Text(debugStageChip(for: line))
