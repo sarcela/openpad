@@ -63,6 +63,7 @@ struct LocalRuntimeConfig {
         static let clawStyleMode = "agent.claw_style.enabled"
         static let rawMode = "agent.raw_mode.enabled"
         static let debugExecutionMode = "agent.debug_execution.enabled"
+        static let debugVerboseMode = "agent.debug_verbose.enabled"
     }
 
     func loadProvider() -> LocalRuntimeProvider {
@@ -308,5 +309,13 @@ struct LocalRuntimeConfig {
 
     func setDebugExecutionModeEnabled(_ enabled: Bool) {
         UserDefaults.standard.set(enabled, forKey: Keys.debugExecutionMode)
+    }
+
+    func isDebugVerboseModeEnabled() -> Bool {
+        UserDefaults.standard.object(forKey: Keys.debugVerboseMode) as? Bool ?? false
+    }
+
+    func setDebugVerboseModeEnabled(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: Keys.debugVerboseMode)
     }
 }

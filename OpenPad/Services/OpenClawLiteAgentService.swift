@@ -277,15 +277,16 @@ final class OpenClawLiteAgentService {
     }
 
 
-    private func debugClip(_ text: String, max: Int = 360) -> String {
+    private func debugClip(_ text: String, max: Int? = nil) -> String {
+        let effectiveMax = max ?? (runtimeConfig.isDebugVerboseModeEnabled() ? 1200 : 360)
         let oneLine = text
             .replacingOccurrences(of: "
 ", with: " ")
             .replacingOccurrences(of: "	", with: " ")
             .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        if oneLine.count <= max { return oneLine }
-        return String(oneLine.prefix(max)) + "…"
+        if oneLine.count <= effectiveMax { return oneLine }
+        return String(oneLine.prefix(effectiveMax)) + "…"
     }
 
     private func applyQualityGate(userPrompt: String, recentMessages: [ChatMessage], candidate: String, trace: [String]) async throws -> OpenClawAgentOutput {

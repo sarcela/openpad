@@ -1829,6 +1829,7 @@ private struct SettingsView: View {
     @State private var clawStyleModeEnabled = false
     @State private var rawModeEnabled = false
     @State private var debugExecutionModeEnabled = false
+    @State private var debugVerboseModeEnabled = false
     @State private var toolPermissions: [String: Bool] = [:]
     @State private var settingsSearch = ""
     @State private var settingsCategory: SettingsCategory = .all
@@ -2273,6 +2274,7 @@ private struct SettingsView: View {
                     Toggle("Claw-style reasoning mode", isOn: $clawStyleModeEnabled)
                     Toggle("Raw model mode (skip planner/tools/quality gate)", isOn: $rawModeEnabled)
                     Toggle("Debug execution overlay (temporary)", isOn: $debugExecutionModeEnabled)
+                    Toggle("Debug verbose prompts/outputs", isOn: $debugVerboseModeEnabled)
 
                     if lowPowerModeEnabled || emergencyMemoryModeEnabled || offlineStrictModeEnabled {
                         Text("Reduces context, OCR, and retries. Emergency mode also enforces stricter prompt condensation and smaller context windows.")
@@ -2409,6 +2411,7 @@ private struct SettingsView: View {
                         runtimeConfig.setClawStyleModeEnabled(clawStyleModeEnabled)
                         runtimeConfig.setRawModeEnabled(rawModeEnabled)
                         runtimeConfig.setDebugExecutionModeEnabled(debugExecutionModeEnabled)
+                        runtimeConfig.setDebugVerboseModeEnabled(debugVerboseModeEnabled)
                         openClawLiteConfig.setAutodevEnabled(autodevEnabled)
                         for (tool, enabled) in toolPermissions {
                             openClawLiteConfig.setToolEnabled(tool, enabled: enabled)
@@ -2460,6 +2463,7 @@ private struct SettingsView: View {
                 clawStyleModeEnabled = runtimeConfig.isClawStyleModeEnabled()
                 rawModeEnabled = runtimeConfig.isRawModeEnabled()
                 debugExecutionModeEnabled = runtimeConfig.isDebugExecutionModeEnabled()
+                debugVerboseModeEnabled = runtimeConfig.isDebugVerboseModeEnabled()
                 mlxDownloadedModels = openClawLiteConfig.loadDownloadedMLXModels()
 
                 refreshModels()
