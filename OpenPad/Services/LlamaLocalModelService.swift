@@ -336,6 +336,7 @@ final class LlamaLocalModelService {
             }
 
             let previousOutput = output
+            let previousByteCount = outputBytes.count
             if let pieceBytes = tokenPieceBytes(nextToken, vocab: vocab) {
                 outputBytes.append(contentsOf: pieceBytes)
                 output = decodeUTF8Prefix(outputBytes, previous: output)
@@ -355,7 +356,13 @@ final class LlamaLocalModelService {
             }
 
             if output == previousOutput {
-                staleDecodeSteps += 1
+                // If text did not advance but byte buffer did, we're likely in the middle of
+                // an incomplete UTF-8 sequence. Don't count that as a stale decode step.
+                if outputBytes.count > previousByteCount {
+                    staleDecodeSteps = 0
+                } else {
+                    staleDecodeSteps += 1
+                }
             } else {
                 staleDecodeSteps = 0
             }
