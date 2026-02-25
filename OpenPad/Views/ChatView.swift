@@ -507,6 +507,15 @@ private struct ComposerTextView: UIViewRepresentable {
 private final class ReturnAwareTextView: UITextView {
     var returnHandler: ((Bool) -> Void)?
 
+    override func insertText(_ text: String) {
+        // Software keyboard path (no UIPress available): treat Return as send.
+        if text == "\n" {
+            returnHandler?(false)
+            return
+        }
+        super.insertText(text)
+    }
+
     override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
         var handled = false
 
