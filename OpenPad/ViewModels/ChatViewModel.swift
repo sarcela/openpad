@@ -53,6 +53,7 @@ final class ChatViewModel: ObservableObject {
     private var activeTask: Task<Void, Never>?
     private var inFlightPrompt: String?
     private var queuedPrompt: String?
+    private var includeArchivedSessions = false
 
     private let routing = RoutingService()
     private let remoteService = RemoteModelService()
@@ -224,8 +225,11 @@ final class ChatViewModel: ObservableObject {
         }
     }
 
-    func refreshSessions(includeArchived: Bool = false) {
-        chatSessions = chatStore.loadSummaries(includeArchived: includeArchived)
+    func refreshSessions(includeArchived: Bool? = nil) {
+        if let includeArchived {
+            includeArchivedSessions = includeArchived
+        }
+        chatSessions = chatStore.loadSummaries(includeArchived: includeArchivedSessions)
     }
 
     private func persistActiveSession() {
