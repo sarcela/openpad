@@ -23,7 +23,7 @@
   - `Files > On My iPad > OpenClawPad > Models > Qwen2.5-0.5B-Instruct-Q4_K_M.gguf`
   - fallback: `Files > On My iPad > OpenClawPad > Models > model.gguf`
 - App icon listo en `Assets.xcassets/AppIcon.appiconset/` (iPad + marketing).
-- Backend de inferencia llama.cpp: **scaffold listo** (falta conectar API exacta del package que elijas).
+- Backend de inferencia llama.swift: **scaffold listo** (falta conectar API exacta del package que elijas).
 
 ## Próximo paso
 

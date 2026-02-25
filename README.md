@@ -2,7 +2,7 @@
 
 OpenPad is an iPad-first OpenClaw client focused on local/hybrid AI execution.
 
-- Local providers: MLX, Ollama, llama.cpp (integration in progress)
+- Local providers: MLX, Ollama, llama.swift
 - Attachment-aware chat (PDF/image/text extraction)
 - Routing controls and tool-assisted workflows
 

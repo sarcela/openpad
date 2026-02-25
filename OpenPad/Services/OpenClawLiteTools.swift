@@ -847,14 +847,14 @@ final class OpenClawLiteTools {
         }
 
         if let cached = cachedEmbedding(for: ollamaKey), !cached.isEmpty {
-            if let llama = await localEmbeddingFromLlamaCpp(text: clean, modelName: llamaModel) {
+            if let llama = await localEmbeddingFromLlamaSwift(text: clean, modelName: llamaModel) {
                 saveCachedEmbedding(llama, key: llamaKey, backend: "llama_cpp", model: llamaModel)
                 return llama
             }
             return cached
         }
 
-        if let llama = await localEmbeddingFromLlamaCpp(text: clean, modelName: llamaModel) {
+        if let llama = await localEmbeddingFromLlamaSwift(text: clean, modelName: llamaModel) {
             saveCachedEmbedding(llama, key: llamaKey, backend: "llama_cpp", model: llamaModel)
             return llama
         }
@@ -912,7 +912,7 @@ final class OpenClawLiteTools {
         return ""
     }
 
-    private func localEmbeddingFromLlamaCpp(text: String, modelName: String) async -> [Double]? {
+    private func localEmbeddingFromLlamaSwift(text: String, modelName: String) async -> [Double]? {
         let cfg = runtimeConfig.loadLlama()
         let base = cfg.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !base.isEmpty,

@@ -34,16 +34,16 @@ final class LocalModelService {
                 return sanitizeModelOutput(out)
             } catch LlamaServiceError.modelNotConfigured {
                 try await Task.sleep(nanoseconds: 300_000_000)
-                return "No llama.cpp model selected. Add a .gguf in Models and select it in Settings."
+                return "No llama.swift model selected. Add a .gguf in Models and select it in Settings."
             } catch LlamaServiceError.modelFileNotFound(_) {
-                return "The selected llama.cpp model file is missing. Re-select a .gguf in Settings."
+                return "The selected llama.swift model file is missing. Re-select a .gguf in Settings."
             } catch LlamaServiceError.emptyResponse {
                 let retryPrompt = "Answer directly in one short paragraph:\n\n\(String(prompt.suffix(1400)))"
                 if let retry = try? await llama.runLocal(prompt: retryPrompt) {
                     let sanitized = sanitizeModelOutput(retry)
                     if !sanitized.isEmpty { return sanitized }
                 }
-                return "The local llama.cpp model returned an empty answer. Please retry with a shorter prompt."
+                return "The local llama.swift model returned an empty answer. Please retry with a shorter prompt."
             } catch LlamaServiceError.decodeFailed(_) {
                 let compactPrompt = String(prompt.suffix(1800))
                 if compactPrompt != prompt {
@@ -53,13 +53,13 @@ final class LocalModelService {
                         if !sanitized.isEmpty { return sanitized }
                     }
                 }
-                return "The local llama.cpp backend hit a decode limit. Try a shorter message or switch to stable profile."
+                return "The local llama.swift backend hit a decode limit. Try a shorter message or switch to stable profile."
             } catch LlamaServiceError.tokenizationFailed {
-                return "The prompt could not be tokenized by the local llama.cpp model. Try removing unusual symbols and retry."
+                return "The prompt could not be tokenized by the local llama.swift model. Try removing unusual symbols and retry."
             } catch LlamaServiceError.vocabularyUnavailable {
-                return "The selected llama.cpp model did not expose a usable vocabulary. Re-select a valid GGUF and retry."
+                return "The selected llama.swift model did not expose a usable vocabulary. Re-select a valid GGUF and retry."
             } catch LlamaServiceError.nativeBackendUnavailable {
-                return "Native llama.cpp backend is unavailable in this build. Enable the llama module or use MLX."
+                return "Native llama.swift backend is unavailable in this build. Enable the llama module or use MLX."
             }
         case .mlx:
             let chatModel = runtimeConfig.loadMLXModelName()

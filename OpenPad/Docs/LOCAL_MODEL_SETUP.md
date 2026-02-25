@@ -2,14 +2,14 @@
 
 This setup gets the project ready to run locally with a `.gguf` model.
 
-## 1) Integrate a llama.cpp backend in Xcode
+## 1) Integrate a llama.swift backend in Xcode
 
 1. Open your project in Xcode.
 2. Go to **File > Add Package Dependencies...**
-3. Add the Swift llama.cpp package you want to use.
+3. Add the Swift llama.swift package you want to use.
 4. Assign the package to your `OpenClawPad` target.
 
-> Note: the adapter now supports both `#if canImport(LlamaCpp)` and `#if canImport(llama)`.
+> Note: the adapter now targets `#if canImport(LlamaSwift)` only.
 > If your package exposes a different module name/API, bind it inside `LlamaNativeAdapter.generate(...)` in `LlamaLocalModelService.swift`.
 
 ---

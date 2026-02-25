@@ -250,7 +250,9 @@ final class LlamaLocalModelService {
         let clean = sanitizeDecodedOutput(output)
 
         guard !clean.isEmpty else { throw LlamaServiceError.emptyResponse }
-        return clean
+        let generatedText = clean
+        print("Generated text: \(generatedText)")
+        return generatedText
     }
 
     private static func pickToken(logits: UnsafePointer<Float>, vocabSize: Int, vocab: OpaquePointer?) -> llama_token {

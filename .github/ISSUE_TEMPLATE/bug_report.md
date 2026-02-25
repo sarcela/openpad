@@ -27,7 +27,7 @@ What happened instead?
 - Device: (e.g., iPad Pro M2)
 - iPadOS:
 - OpenPad commit/version:
-- Runtime provider: (MLX / Ollama / llama.cpp)
+- Runtime provider: (MLX / Ollama / llama.swift)
 
 ## Logs / screenshots
 

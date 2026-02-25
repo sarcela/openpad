@@ -17,14 +17,14 @@ enum RunProfile: String, CaseIterable, Identifiable {
 }
 
 enum LocalRuntimeProvider: String, CaseIterable, Identifiable {
-    case llamaCpp = "LLAMA_CPP"
+    case llamaCpp = "LLAMA_SWIFT"
     case mlx = "MLX"
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .llamaCpp: return "llama.cpp"
+        case .llamaCpp: return "llama.swift"
         case .mlx: return "MLX"
         }
     }

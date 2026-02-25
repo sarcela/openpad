@@ -433,9 +433,9 @@ struct ChatView: View {
         switch provider {
         case .llamaCpp:
             if let selectedPath = localConfig.loadSelectedModelPath(), !selectedPath.isEmpty {
-                return "Private/offline • llama.cpp • \(URL(fileURLWithPath: selectedPath).deletingPathExtension().lastPathComponent)"
+                return "Private/offline • llama.swift • \(URL(fileURLWithPath: selectedPath).deletingPathExtension().lastPathComponent)"
             }
-            return "Private/offline • llama.cpp • no model selected"
+            return "Private/offline • llama.swift • no model selected"
         case .mlx:
             let model = runtimeConfig.loadMLXModelName()
             let compat = model.lowercased().contains("thinking") || model.lowercased().contains("lfm2.5")
@@ -2065,12 +2065,12 @@ private struct SettingsView: View {
                     }
 
                     if runtimeProvider == .llamaCpp {
-                        Section("Backend llama.cpp") {
+                        Section("Backend llama.swift") {
                             if isNativeLlamaModuleDetected {
                                 Toggle("Show llama-server fallback settings", isOn: $showLlamaFallbackSettings)
 
                                 if isNativeLlamaModuleAvailable {
-                                    Text("Native llama.cpp backend is available. Keep fallback server hidden unless you need troubleshooting or strict loopback fallback.")
+                                    Text("Native llama.swift backend is available. Keep fallback server hidden unless you need troubleshooting or strict loopback fallback.")
                                         .font(.caption)
                                         .foregroundColor(.secondary)
                                 } else {
