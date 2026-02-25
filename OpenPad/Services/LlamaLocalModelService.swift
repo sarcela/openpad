@@ -108,12 +108,10 @@ final class LlamaLocalModelService {
         guard let vocab = llama_model_get_vocab(model) else {
             throw LlamaServiceError.vocabularyUnavailable
         }
-        let framedPrompt = """
-        You are OpenPad, a concise and practical assistant.
-        Answer directly with useful text only.
-        User: \(prompt.trimmingCharacters(in: .whitespacesAndNewlines))
-        Assistant:
-        """
+        let framedPrompt = buildFramedPrompt(
+            userPrompt: prompt,
+            modelPath: modelPath
+        )
 
         var tokenCapacity = max(512, framedPrompt.utf8.count + 32)
         var tokens = [llama_token](repeating: 0, count: tokenCapacity)
@@ -498,6 +496,50 @@ final class LlamaLocalModelService {
         }
     }
 
+    private static func buildFramedPrompt(userPrompt: String, modelPath: String) -> String {
+        let cleanUserPrompt = userPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        let systemPrompt = "You are OpenPad, a concise and practical assistant. Answer directly with useful text only."
+
+        switch detectPromptFamily(from: modelPath) {
+        case .chatML:
+            return """
+            <|im_start|>system
+            \(systemPrompt)
+            <|im_end|>
+            <|im_start|>user
+            \(cleanUserPrompt)
+            <|im_end|>
+            <|im_start|>assistant
+            """
+        case .plain:
+            return """
+            \(systemPrompt)
+            User: \(cleanUserPrompt)
+            Assistant:
+            """
+        }
+    }
+
+    private enum PromptFamily {
+        case plain
+        case chatML
+    }
+
+    private static func detectPromptFamily(from modelPath: String) -> PromptFamily {
+        let modelName = URL(fileURLWithPath: modelPath)
+            .deletingPathExtension()
+            .lastPathComponent
+            .lowercased()
+
+        // Qwen/Phi/DeepSeek and similar instruct variants usually expect ChatML markers.
+        let chatMLHints = ["qwen", "phi", "deepseek", "yi", "internlm"]
+        if chatMLHints.contains(where: { modelName.contains($0) }) {
+            return .chatML
+        }
+
+        return .plain
+    }
+
     private static func sanitizeDecodedOutput(_ text: String) -> String {
         text
             .replacingOccurrences(of: #"(?is)<think>.*?</think>"#, with: "", options: .regularExpression)
@@ -506,6 +548,9 @@ final class LlamaLocalModelService {
             .replacingOccurrences(of: "<|eot_id|>", with: "")
             .replacingOccurrences(of: "<|end|>", with: "")
             .replacingOccurrences(of: "<|im_end|>", with: "")
+            .replacingOccurrences(of: "<|im_start|>", with: "")
+            .replacingOccurrences(of: "<|start_header_id|>", with: "")
+            .replacingOccurrences(of: "<|end_header_id|>", with: "")
             .replacingOccurrences(of: "<｜end▁of▁sentence｜>", with: "")
             .replacingOccurrences(of: "<｜User｜>", with: "")
             .replacingOccurrences(of: "<｜Assistant｜>", with: "")
@@ -527,6 +572,8 @@ final class LlamaLocalModelService {
             "<|eot_id|>",
             "<|end|>",
             "<|im_end|>",
+            "<|im_start|>",
+            "<|start_header_id|>user<|end_header_id|>",
             "<｜end▁of▁sentence｜>",
             "<｜User｜>",
             "<｜Assistant｜>"
