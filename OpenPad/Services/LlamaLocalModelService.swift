@@ -1342,30 +1342,59 @@ final class LlamaLocalModelService {
         guard !candidates.isEmpty else { return nil }
 
         let requestedHint = quantizationHint(from: requestedStem)
+        let preferLowerMemoryFallback = requestedHint == nil
 
         return candidates.max { lhs, rhs in
             let lhsName = lhs.deletingPathExtension().lastPathComponent.lowercased()
             let rhsName = rhs.deletingPathExtension().lastPathComponent.lowercased()
 
-            let lhsScore = quantizationPreferenceScore(candidate: lhsName, requestedHint: requestedHint)
-            let rhsScore = quantizationPreferenceScore(candidate: rhsName, requestedHint: requestedHint)
+            let lhsScore = quantizationPreferenceScore(
+                candidate: lhsName,
+                requestedHint: requestedHint,
+                preferLowerMemoryFallback: preferLowerMemoryFallback
+            )
+            let rhsScore = quantizationPreferenceScore(
+                candidate: rhsName,
+                requestedHint: requestedHint,
+                preferLowerMemoryFallback: preferLowerMemoryFallback
+            )
             if lhsScore != rhsScore { return lhsScore < rhsScore }
 
             let lhsSize = (try? lhs.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
             let rhsSize = (try? rhs.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-            if lhsSize != rhsSize { return lhsSize < rhsSize }
+            if lhsSize != rhsSize {
+                // Recovery path should favor stability: when we don't have an explicit
+                // quantization hint, pick the smaller checkpoint to reduce OOM risk.
+                return preferLowerMemoryFallback ? (lhsSize > rhsSize) : (lhsSize < rhsSize)
+            }
 
             return lhsName.localizedCaseInsensitiveCompare(rhsName) == .orderedAscending
         }
     }
 
-    private static func quantizationPreferenceScore(candidate: String, requestedHint: String?) -> Int {
+    private static func quantizationPreferenceScore(
+        candidate: String,
+        requestedHint: String?,
+        preferLowerMemoryFallback: Bool
+    ) -> Int {
         let hint = quantizationHint(from: candidate)
         var score = quantizationQualityRank(from: hint)
+
+        if preferLowerMemoryFallback, isHighMemoryQuantizationHint(hint) {
+            // Avoid auto-recovering to fp16/fp32 variants unless explicitly requested.
+            // Those checkpoints are much more likely to fail on iPad due to memory use.
+            score -= 500
+        }
+
         if let requestedHint, !requestedHint.isEmpty, hint == requestedHint {
             score += 1_000
         }
         return score
+    }
+
+    private static func isHighMemoryQuantizationHint(_ hint: String?) -> Bool {
+        guard let hint else { return false }
+        return ["fp32", "f32", "fp16", "f16", "bf16"].contains(hint)
     }
 
     private static func quantizationHint(from stem: String) -> String? {
