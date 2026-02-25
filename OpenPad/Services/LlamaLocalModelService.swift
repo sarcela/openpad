@@ -272,9 +272,10 @@ final class LlamaLocalModelService {
         }
 
         let clean = sanitizeDecodedOutput(output)
+        let deEchoed = stripPromptEcho(from: clean, userPrompt: prompt)
 
-        guard !clean.isEmpty else { throw LlamaServiceError.emptyResponse }
-        let generatedText = clean
+        guard !deEchoed.isEmpty else { throw LlamaServiceError.emptyResponse }
+        let generatedText = deEchoed
         print("Generated text: \(generatedText)")
         return generatedText
     }
@@ -611,6 +612,46 @@ final class LlamaLocalModelService {
             .replacingOccurrences(of: "<<SYS>>", with: "")
             .replacingOccurrences(of: "<</SYS>>", with: "")
             .replacingOccurrences(of: #"\n{3,}"#, with: "\n\n", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func stripPromptEcho(from output: String, userPrompt: String) -> String {
+        let trimmedOutput = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedOutput.isEmpty else { return "" }
+
+        let cleanPrompt = userPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanPrompt.isEmpty else { return trimmedOutput }
+
+        let normalizedOutput = normalizeWhitespace(trimmedOutput)
+        let normalizedPrompt = normalizeWhitespace(cleanPrompt)
+
+        if normalizedOutput == normalizedPrompt { return "" }
+
+        let candidates = [
+            cleanPrompt,
+            "User: \(cleanPrompt)",
+            "Usuario: \(cleanPrompt)",
+            "Pregunta: \(cleanPrompt)"
+        ]
+
+        for candidate in candidates {
+            let candidateTrimmed = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
+            if candidateTrimmed.isEmpty { continue }
+            if trimmedOutput.hasPrefix(candidateTrimmed) {
+                let remainder = String(trimmedOutput.dropFirst(candidateTrimmed.count))
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if !remainder.isEmpty {
+                    return remainder
+                }
+            }
+        }
+
+        return trimmedOutput
+    }
+
+    private static func normalizeWhitespace(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
