@@ -886,6 +886,13 @@ final class LlamaLocalModelService {
             return .llama3
         }
 
+        // Legacy/derived Llama chat checkpoints (e.g. TinyLlama/CodeLlama Instruct)
+        // usually expect [INST] framing instead of plain "User/Assistant" prompts.
+        if modelSignature.contains("llama") &&
+            (modelSignature.contains("chat") || modelSignature.contains("instruct")) {
+            return .mistralInstruct
+        }
+
         // Qwen/Phi/DeepSeek and similar instruct variants usually expect ChatML markers.
         let chatMLHints = ["qwen", "qwq", "phi", "deepseek", "yi", "internlm", "smollm", "granite"]
         if chatMLHints.contains(where: { modelSignature.contains($0) }) {
