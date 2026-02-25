@@ -119,7 +119,11 @@ final class LlamaLocalModelService {
         }
 
         guard tokenCount > 0 else { throw LlamaServiceError.tokenizationFailed }
-        let maxPromptTokens = max(64, Int(contextParams.n_ctx) - 64)
+        let reservedForGeneration = min(
+            max(96, settings.maxNewTokens),
+            max(32, Int(contextParams.n_ctx) / 3)
+        )
+        let maxPromptTokens = max(64, Int(contextParams.n_ctx) - reservedForGeneration)
         let promptTokens = Array(tokens.prefix(Int(tokenCount)).suffix(maxPromptTokens))
 
         let batchCapacity = max(Int(contextParams.n_batch), promptTokens.count + 1)
@@ -146,6 +150,8 @@ final class LlamaLocalModelService {
         var lastToken: llama_token?
         var repeatCount = 0
         var generatedCount = 0
+        var recentTokens: [llama_token] = []
+        let repeatWindowSize = 64
 
         for _ in 0..<settings.maxNewTokens {
             if currentPos >= contextLimit { break }
@@ -153,7 +159,14 @@ final class LlamaLocalModelService {
             let vocabSize = Int(llama_vocab_n_tokens(vocab))
             if vocabSize <= 0 { break }
 
-            var nextToken = sampleToken(logits: logits, vocabSize: vocabSize, vocab: vocab, temperature: samplingTemperature)
+            let seenRecentTokens = Set(recentTokens)
+            var nextToken = sampleToken(
+                logits: logits,
+                vocabSize: vocabSize,
+                vocab: vocab,
+                temperature: samplingTemperature,
+                recentTokens: seenRecentTokens
+            )
             if isControlLikeToken(nextToken, vocab: vocab) {
                 nextToken = bestTokenExcluding(
                     logits: logits,
@@ -181,6 +194,10 @@ final class LlamaLocalModelService {
             }
             if repeatCount >= settings.maxRepeats { break }
             lastToken = nextToken
+            recentTokens.append(nextToken)
+            if recentTokens.count > repeatWindowSize {
+                recentTokens.removeFirst(recentTokens.count - repeatWindowSize)
+            }
 
             if let pieceBytes = tokenPieceBytes(nextToken, vocab: vocab) {
                 outputBytes.append(contentsOf: pieceBytes)
@@ -320,7 +337,8 @@ final class LlamaLocalModelService {
         logits: UnsafePointer<Float>,
         vocabSize: Int,
         vocab: OpaquePointer?,
-        temperature: Float
+        temperature: Float,
+        recentTokens: Set<llama_token>
     ) -> llama_token {
         let clippedTemp = sanitizeTemperature(temperature)
         if clippedTemp <= 0.05 {
@@ -335,8 +353,12 @@ final class LlamaLocalModelService {
             let token = llama_token(i)
             if isControlLikeToken(token, vocab: vocab) { continue }
 
-            let l = logits[i]
+            var l = logits[i]
             guard l.isFinite else { continue }
+
+            if recentTokens.contains(token) {
+                l -= 0.6
+            }
 
             if candidates.count < topK {
                 candidates.append((token, l))
