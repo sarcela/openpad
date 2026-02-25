@@ -117,12 +117,18 @@ struct ChatView: View {
                             }
 
 
-                            if vm.isLoading && !vm.liveDebugTrace.isEmpty {
+                            if vm.isLoading && (debugExecutionModeEnabled || !vm.liveDebugTrace.isEmpty) {
                                 VStack(alignment: .leading, spacing: 6) {
                                     Label("Debug (temporary)", systemImage: "ladybug")
                                         .font(.caption)
                                         .foregroundColor(.secondary)
 
+                                    if vm.liveDebugTrace.isEmpty {
+                                        Text("• Initializing debug pipeline…")
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                    }
                                     ForEach(vm.liveDebugTrace, id: \.self) { line in
                                         HStack(alignment: .top, spacing: 6) {
                                             Text(debugStageChip(for: line))
@@ -222,6 +228,15 @@ struct ChatView: View {
                                                 } else {
                                                     proxy.scrollTo(last.id, anchor: .bottom)
                                                 }
+                                            }
+                                        }
+                                    }
+                                    .onChange(of: vm.scrollToBottomSignal) { _, _ in
+                                        withAnimation(.easeOut(duration: 0.2)) {
+                                            if vm.isLoading {
+                                                proxy.scrollTo("typing-indicator", anchor: .bottom)
+                                            } else if let last = vm.messages.last {
+                                                proxy.scrollTo(last.id, anchor: .bottom)
                                             }
                                         }
                                     }

@@ -33,6 +33,7 @@ final class ChatViewModel: ObservableObject {
     }
     @Published var toolTrace: [String] = []
     @Published var liveDebugTrace: [String] = []
+    @Published var scrollToBottomSignal: UUID = UUID()
     @Published var lastModelUsedBadge: String = ""
     @Published var activeDocumentBadge: String = ""
     @Published var lastLatencyMs: Int = 0
@@ -165,7 +166,8 @@ final class ChatViewModel: ObservableObject {
         persistActiveSession()
         isLoading = true
         inFlightPrompt = prompt
-        liveDebugTrace = []
+        liveDebugTrace = runtimeConfig.isDebugExecutionModeEnabled() ? ["[LOCAL] Debug started: preparing pipeline"] : []
+        scrollToBottomSignal = UUID()
 
         activeTask?.cancel()
         activeTask = Task { [weak self] in
@@ -185,6 +187,7 @@ final class ChatViewModel: ObservableObject {
             }
             self.notificationService.notifyAssistantReplyIfAppInBackground(responseText)
             self.liveDebugTrace = []
+            self.scrollToBottomSignal = UUID()
             self.isLoading = false
             self.inFlightPrompt = nil
             self.activeTask = nil
@@ -344,6 +347,7 @@ final class ChatViewModel: ObservableObject {
                         if self.liveDebugTrace.count > 18 {
                             self.liveDebugTrace = Array(self.liveDebugTrace.suffix(18))
                         }
+                        self.scrollToBottomSignal = UUID()
                     }
                 } : nil
             )
