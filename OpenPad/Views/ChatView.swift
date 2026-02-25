@@ -382,9 +382,6 @@ struct ChatView: View {
                 return "Private/offline • llama.cpp • \(URL(fileURLWithPath: selectedPath).deletingPathExtension().lastPathComponent)"
             }
             return "Private/offline • llama.cpp • no model selected"
-        case .ollama:
-            let cfg = runtimeConfig.loadOllama()
-            return "Local (Ollama) • \(cfg.model)"
         case .mlx:
             let model = runtimeConfig.loadMLXModelName()
             let compat = model.lowercased().contains("thinking") || model.lowercased().contains("lfm2.5")
@@ -1718,8 +1715,6 @@ private struct SettingsView: View {
     @State private var importTarget: ImportTarget = .chat
 
     @State private var runtimeProvider: LocalRuntimeProvider = .mlx
-    @State private var ollamaBaseURL = ""
-    @State private var ollamaModel = ""
     @State private var llamaBaseURL = ""
     @State private var llamaModel = ""
     @State private var mlxModelName = ""
@@ -1818,15 +1813,6 @@ private struct SettingsView: View {
                             ForEach(LocalRuntimeProvider.allCases) { provider in
                                 Text(provider.title).tag(provider)
                             }
-                        }
-
-                        if runtimeProvider == .ollama {
-                            TextField("Ollama URL", text: $ollamaBaseURL)
-                                .textInputAutocapitalization(.never)
-                                .autocorrectionDisabled()
-                            TextField("Modelo Ollama", text: $ollamaModel)
-                                .textInputAutocapitalization(.never)
-                                .autocorrectionDisabled()
                         }
 
                         if runtimeProvider == .mlx {
@@ -2293,7 +2279,6 @@ private struct SettingsView: View {
 
                         remoteConfig.save(provider: remoteProvider, baseURL: baseURL, token: token, model: model, organization: remoteOrganization, project: remoteProject)
                         runtimeConfig.saveProvider(runtimeProvider)
-                        runtimeConfig.saveOllama(baseURL: ollamaBaseURL, model: ollamaModel)
                         runtimeConfig.saveLlama(baseURL: effectiveLlamaBaseURL, model: effectiveLlamaModel)
                         runtimeConfig.saveMLXModelName(mlxModelName)
                         runtimeConfig.saveMLXToolsModelName(mlxToolsModelName)
@@ -2334,9 +2319,6 @@ private struct SettingsView: View {
                 remoteProject = savedRemote.project
 
                 runtimeProvider = runtimeConfig.loadProvider()
-                let ollama = runtimeConfig.loadOllama()
-                ollamaBaseURL = ollama.baseURL
-                ollamaModel = ollama.model
                 let llama = runtimeConfig.loadLlama()
                 llamaBaseURL = llama.baseURL
                 llamaModel = llama.model
