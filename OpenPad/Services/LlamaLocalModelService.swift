@@ -592,6 +592,7 @@ final class LlamaLocalModelService {
         text
             .replacingOccurrences(of: #"(?is)<think>.*?</think>"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"(?im)^\s*(assistant|asistente)\s*:\s*"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"(?im)^\s*(assistant|asistente)\s*$"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"(?im)^\s*(user|usuario|system|sistema)\s*:.*$"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: "<|begin_of_text|>", with: "")
             .replacingOccurrences(of: "<|eot_id|>", with: "")
@@ -681,6 +682,13 @@ final class LlamaLocalModelService {
             return normalizedPath
         }
 
+        // iOS can persist bookmarks with /private/var/... while runtime paths resolve to /var/... (or vice versa).
+        for variant in privatePathVariants(for: normalizedPath) {
+            if FileManager.default.fileExists(atPath: variant) {
+                return variant
+            }
+        }
+
         // iOS app container paths can change across reinstalls/updates while file names remain stable.
         let fileName = URL(fileURLWithPath: normalizedPath).lastPathComponent
         guard !fileName.isEmpty else { return normalizedPath }
@@ -692,6 +700,17 @@ final class LlamaLocalModelService {
                 .standardizedFileURL
             if FileManager.default.fileExists(atPath: candidate.path) {
                 return candidate.path
+            }
+
+            // If the file was renamed/re-quantized, prefer a model with the same stem in app storage.
+            let stem = URL(fileURLWithPath: fileName).deletingPathExtension().lastPathComponent.lowercased()
+            if !stem.isEmpty {
+                let available = LocalModelConfig.shared.availableModels(in: docs)
+                if let stemMatch = available.first(where: {
+                    $0.deletingPathExtension().lastPathComponent.lowercased() == stem
+                }) {
+                    return stemMatch.path
+                }
             }
         } catch {
             // Keep original path on lookup failures.
@@ -707,5 +726,15 @@ final class LlamaLocalModelService {
             return String(raw.dropFirst().dropLast())
         }
         return raw
+    }
+
+    private static func privatePathVariants(for path: String) -> [String] {
+        var variants: [String] = []
+        if path.hasPrefix("/private/") {
+            variants.append(String(path.dropFirst("/private".count)))
+        } else if path.hasPrefix("/var/") {
+            variants.append("/private" + path)
+        }
+        return variants
     }
 }
