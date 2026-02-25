@@ -20,12 +20,14 @@ final class OpenClawLiteAgentService {
     private let liteConfig = OpenClawLiteConfig.shared
     private let contextManager = OpenClawLiteContextManager.shared
 
-    func respond(to userPrompt: String, recentMessages: [ChatMessage] = []) async throws -> OpenClawAgentOutput {
+    func respond(to userPrompt: String, recentMessages: [ChatMessage] = [], debug: ((String) -> Void)? = nil) async throws -> OpenClawAgentOutput {
         var trace: [String] = []
         ensureAppMemoryFilesIfNeeded()
+        debug?("[LOCAL] Intent Router: checking deterministic routes")
         trace.append("model_used=provider:\(runtimeConfig.loadProvider().rawValue.lowercased()) chat:\(runtimeConfig.loadMLXModelName()) tools:\(runtimeConfig.isSeparateMLXToolsModelEnabled() ? runtimeConfig.loadMLXToolsModelName() : runtimeConfig.loadMLXModelName())")
 
         if runtimeConfig.isRawModeEnabled() {
+            debug?("[LOCAL] RAW mode ON: bypass planner/tools/quality gate")
             trace.append("raw_mode: direct local model response (planner/tools/gate bypassed)")
             let attachmentContext = buildAttachmentContext(from: userPrompt, recentMessages: recentMessages)
             let recent = buildRecentContext(from: recentMessages)
@@ -48,6 +50,7 @@ final class OpenClawLiteAgentService {
         }
 
         if let routed = try await runDeterministicIntentRoute(userPrompt: userPrompt, recentMessages: recentMessages, trace: trace) {
+            debug?("[LOCAL] Intent Router matched: direct route applied")
             return routed
         }
 
@@ -95,6 +98,7 @@ final class OpenClawLiteAgentService {
             return .init(text: directReply, trace: trace)
         }
 
+        debug?("[LOCAL] Planner: building plan")
         let reasoningDraft = try await buildReasoningDraftIfNeeded(userPrompt: userPrompt, recentMessages: recentMessages)
         let firstPrompt = buildPlannerPrompt(userPrompt: userPrompt, recentMessages: recentMessages, reasoningDraft: reasoningDraft)
         let modelReply = try await localModelService.runLocal(prompt: firstPrompt, purpose: .tools)
@@ -124,6 +128,7 @@ final class OpenClawLiteAgentService {
         }
 
         if decision.type == "final" {
+            debug?("[LOCAL] Planner decision: final")
             let forceAttachmentFirst = runtimeConfig.isForceAttachmentFirstEnabled()
             if forceAttachmentFirst && shouldForceAttachmentTool(userPrompt: userPrompt, recentMessages: recentMessages) {
                 trace.append("Planner override: force attachment-first tool")
@@ -168,6 +173,7 @@ final class OpenClawLiteAgentService {
         }
 
         trace.append("Tool call: \(name)")
+        debug?("[LOCAL] Planner decision: tool_call -> \(name)")
 
         var toolName = name
         var toolArgs = decision.arguments ?? [:]
@@ -217,23 +223,27 @@ final class OpenClawLiteAgentService {
             return .init(text: "Understood. I will not save it to memory unless you ask explicitly.", trace: trace)
         }
 
+        debug?("[LOCAL] Tool execution: \(toolName)")
         var toolResult = await tools.execute(name: toolName, arguments: toolArgs)
         trace.append("Tool result: \(toolResult.ok ? "ok" : "error")")
 
         // Persistencia: un intento adicional antes de rendirse.
         if !toolResult.ok {
+            debug?("[LOCAL] Tool failed: retrying once")
             trace.append("Retry policy: second tool attempt")
             toolResult = await tools.execute(name: toolName, arguments: toolArgs)
             trace.append("Retry result: \(toolResult.ok ? "ok" : "error")")
         }
 
         if !toolResult.ok, ["analyze_attachment", "read_attachment"].contains(toolName) {
+            debug?("[LOCAL] Attachment fallback: switching tool")
             let fallbackTool = (toolName == "analyze_attachment") ? "read_attachment" : "analyze_attachment"
             trace.append("Attachment fallback: \(toolName) -> \(fallbackTool)")
             toolResult = await tools.execute(name: fallbackTool, arguments: toolArgs)
             trace.append("Attachment fallback result: \(toolResult.ok ? "ok" : "error")")
         }
 
+        debug?("[LOCAL] Finalize: composing final answer from tool result")
         let secondPrompt = buildFinalizePrompt(userPrompt: userPrompt, toolName: toolName, toolResult: toolResult)
         let finalReply = try await localModelService.runLocal(prompt: secondPrompt, purpose: .chat)
 
@@ -246,6 +256,7 @@ final class OpenClawLiteAgentService {
             return try await applyQualityGate(userPrompt: userPrompt, recentMessages: recentMessages, candidate: extracted, trace: trace)
         }
 
+        debug?("[LOCAL] Quality Gate: evaluating final candidate")
         return try await applyQualityGate(userPrompt: userPrompt, recentMessages: recentMessages, candidate: finalReply, trace: trace)
     }
 

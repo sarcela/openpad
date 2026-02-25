@@ -32,6 +32,7 @@ final class ChatViewModel: ObservableObject {
         didSet { UserDefaults.standard.set(routePreference.rawValue, forKey: Self.routePreferenceKey) }
     }
     @Published var toolTrace: [String] = []
+    @Published var liveDebugTrace: [String] = []
     @Published var lastModelUsedBadge: String = ""
     @Published var activeDocumentBadge: String = ""
     @Published var lastLatencyMs: Int = 0
@@ -164,6 +165,7 @@ final class ChatViewModel: ObservableObject {
         persistActiveSession()
         isLoading = true
         inFlightPrompt = prompt
+        liveDebugTrace = []
 
         activeTask?.cancel()
         activeTask = Task { [weak self] in
@@ -182,6 +184,7 @@ final class ChatViewModel: ObservableObject {
                 self.selfImprovement.observeTurn(userPrompt: prompt, assistantReply: responseText, trace: self.toolTrace)
             }
             self.notificationService.notifyAssistantReplyIfAppInBackground(responseText)
+            self.liveDebugTrace = []
             self.isLoading = false
             self.inFlightPrompt = nil
             self.activeTask = nil
@@ -331,7 +334,19 @@ final class ChatViewModel: ObservableObject {
                 return wf.text
             }
 
-            let output = try await openClawLite.respond(to: prompt, recentMessages: messages)
+            let output = try await openClawLite.respond(
+                to: prompt,
+                recentMessages: messages,
+                debug: runtimeConfig.isDebugExecutionModeEnabled() ? { [weak self] line in
+                    Task { @MainActor in
+                        guard let self else { return }
+                        self.liveDebugTrace.append(line)
+                        if self.liveDebugTrace.count > 18 {
+                            self.liveDebugTrace = Array(self.liveDebugTrace.suffix(18))
+                        }
+                    }
+                } : nil
+            )
             self.toolTrace = output.trace
             if output.trace.contains(where: { $0.lowercased().contains("audio mode") }) {
                 self.lastModelUsedBadge = "AUDIO • LOCAL"

@@ -62,6 +62,7 @@ struct LocalRuntimeConfig {
         static let forceAttachmentFirst = "agent.attachment.first.enabled"
         static let clawStyleMode = "agent.claw_style.enabled"
         static let rawMode = "agent.raw_mode.enabled"
+        static let debugExecutionMode = "agent.debug_execution.enabled"
     }
 
     func loadProvider() -> LocalRuntimeProvider {
@@ -299,5 +300,13 @@ struct LocalRuntimeConfig {
 
     func setRawModeEnabled(_ enabled: Bool) {
         UserDefaults.standard.set(enabled, forKey: Keys.rawMode)
+    }
+
+    func isDebugExecutionModeEnabled() -> Bool {
+        UserDefaults.standard.object(forKey: Keys.debugExecutionMode) as? Bool ?? false
+    }
+
+    func setDebugExecutionModeEnabled(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: Keys.debugExecutionMode)
     }
 }

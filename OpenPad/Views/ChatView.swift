@@ -116,6 +116,22 @@ struct ChatView: View {
                                     .padding(.top, 2)
                             }
 
+
+                            if vm.isLoading && !vm.liveDebugTrace.isEmpty {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Label("Debug (temporary)", systemImage: "ladybug")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                    ForEach(vm.liveDebugTrace, id: \.self) { line in
+                                        Text("• \(line)")
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                    }
+                                }
+                                .padding(.horizontal)
+                                .padding(.top, 4)
+                            }
                             if !vm.toolTrace.isEmpty {
                                 DisclosureGroup(isExpanded: $showToolTrace) {
                                     VStack(alignment: .leading, spacing: 4) {
@@ -1759,6 +1775,7 @@ private struct SettingsView: View {
     @State private var forceAttachmentFirstEnabled = true
     @State private var clawStyleModeEnabled = false
     @State private var rawModeEnabled = false
+    @State private var debugExecutionModeEnabled = false
     @State private var toolPermissions: [String: Bool] = [:]
     @State private var settingsSearch = ""
     @State private var settingsCategory: SettingsCategory = .all
@@ -2202,6 +2219,7 @@ private struct SettingsView: View {
                     Toggle("Force attachment-first answers", isOn: $forceAttachmentFirstEnabled)
                     Toggle("Claw-style reasoning mode", isOn: $clawStyleModeEnabled)
                     Toggle("Raw model mode (skip planner/tools/quality gate)", isOn: $rawModeEnabled)
+                    Toggle("Debug execution overlay (temporary)", isOn: $debugExecutionModeEnabled)
 
                     if lowPowerModeEnabled || emergencyMemoryModeEnabled || offlineStrictModeEnabled {
                         Text("Reduces context, OCR, and retries. Emergency mode also enforces stricter prompt condensation and smaller context windows.")
@@ -2337,6 +2355,7 @@ private struct SettingsView: View {
                         runtimeConfig.setForceAttachmentFirstEnabled(forceAttachmentFirstEnabled)
                         runtimeConfig.setClawStyleModeEnabled(clawStyleModeEnabled)
                         runtimeConfig.setRawModeEnabled(rawModeEnabled)
+                        runtimeConfig.setDebugExecutionModeEnabled(debugExecutionModeEnabled)
                         openClawLiteConfig.setAutodevEnabled(autodevEnabled)
                         for (tool, enabled) in toolPermissions {
                             openClawLiteConfig.setToolEnabled(tool, enabled: enabled)
@@ -2387,6 +2406,7 @@ private struct SettingsView: View {
                 forceAttachmentFirstEnabled = runtimeConfig.isForceAttachmentFirstEnabled()
                 clawStyleModeEnabled = runtimeConfig.isClawStyleModeEnabled()
                 rawModeEnabled = runtimeConfig.isRawModeEnabled()
+                debugExecutionModeEnabled = runtimeConfig.isDebugExecutionModeEnabled()
                 mlxDownloadedModels = openClawLiteConfig.loadDownloadedMLXModels()
 
                 refreshModels()
