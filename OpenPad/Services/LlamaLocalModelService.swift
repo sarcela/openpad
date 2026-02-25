@@ -14,6 +14,7 @@ enum LlamaServiceError: LocalizedError {
     case vocabularyUnavailable
     case backendBusyTimeout
     case generationTimedOut
+    case cancelled
 
     var errorDescription: String? {
         switch self {
@@ -26,6 +27,7 @@ enum LlamaServiceError: LocalizedError {
         case .vocabularyUnavailable: return "Failed to load tokenizer vocabulary from the selected model."
         case .backendBusyTimeout: return "llama.swift backend is busy (likely a previous generation got stuck)."
         case .generationTimedOut: return "llama.swift generation timed out."
+        case .cancelled: return "llama.swift generation cancelled."
         }
     }
 }
@@ -79,6 +81,7 @@ final class LlamaLocalModelService {
 
     #if canImport(LlamaSwift)
     private static func runSync(prompt: String, modelPath: String, deadline: Date) throws -> String {
+        try throwIfCancelled()
         guard FileManager.default.fileExists(atPath: modelPath) else {
             throw LlamaServiceError.modelFileNotFound(modelPath)
         }
@@ -157,6 +160,7 @@ final class LlamaLocalModelService {
         var processedPromptTokens = 0
         var start = 0
         while start < promptTokens.count {
+            try throwIfCancelled()
             if Date() >= deadline { throw LlamaServiceError.generationTimedOut }
             let end = min(start + batchCapacity, promptTokens.count)
             let chunk = Array(promptTokens[start..<end])
@@ -190,6 +194,7 @@ final class LlamaLocalModelService {
         let repeatWindowSize = 64
 
         for _ in 0..<settings.maxNewTokens {
+            try throwIfCancelled()
             if Date() >= deadline { throw LlamaServiceError.generationTimedOut }
             if currentPos >= contextLimit { break }
             guard let logits = llama_get_logits_ith(context, batch.n_tokens - 1) else { break }
@@ -520,6 +525,14 @@ final class LlamaLocalModelService {
             \(cleanUserPrompt)<|eot_id|><|start_header_id|>assistant<|end_header_id|>
 
             """
+        case .mistralInstruct:
+            return """
+            <s>[INST] <<SYS>>
+            \(systemPrompt)
+            <</SYS>>
+
+            \(cleanUserPrompt) [/INST]
+            """
         case .plain:
             return """
             \(systemPrompt)
@@ -533,6 +546,7 @@ final class LlamaLocalModelService {
         case plain
         case chatML
         case llama3
+        case mistralInstruct
     }
 
     private static func detectPromptFamily(from modelPath: String) -> PromptFamily {
@@ -554,6 +568,12 @@ final class LlamaLocalModelService {
             return .chatML
         }
 
+        // Mistral/Mixtral-style instruct models tend to follow [INST] wrappers.
+        let mistralInstructHints = ["mistral", "mixtral", "zephyr", "openchat", "solar", "nous-hermes-2"]
+        if mistralInstructHints.contains(where: { modelName.contains($0) }) {
+            return .mistralInstruct
+        }
+
         return .plain
     }
 
@@ -572,6 +592,12 @@ final class LlamaLocalModelService {
             .replacingOccurrences(of: "<｜end▁of▁sentence｜>", with: "")
             .replacingOccurrences(of: "<｜User｜>", with: "")
             .replacingOccurrences(of: "<｜Assistant｜>", with: "")
+            .replacingOccurrences(of: "<s>", with: "")
+            .replacingOccurrences(of: "</s>", with: "")
+            .replacingOccurrences(of: "[INST]", with: "")
+            .replacingOccurrences(of: "[/INST]", with: "")
+            .replacingOccurrences(of: "<<SYS>>", with: "")
+            .replacingOccurrences(of: "<</SYS>>", with: "")
             .replacingOccurrences(of: #"\n{3,}"#, with: "\n\n", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -579,6 +605,12 @@ final class LlamaLocalModelService {
     private static func sanitizeTemperature(_ temperature: Float) -> Float {
         guard temperature.isFinite else { return 0.2 }
         return max(0.0, min(1.0, temperature))
+    }
+
+    private static func throwIfCancelled() throws {
+        if Task.isCancelled {
+            throw LlamaServiceError.cancelled
+        }
     }
 
     private static func clipAtStopSequence(_ text: String) -> String? {
@@ -595,7 +627,10 @@ final class LlamaLocalModelService {
             "<|start_header_id|>user<|end_header_id|>",
             "<｜end▁of▁sentence｜>",
             "<｜User｜>",
-            "<｜Assistant｜>"
+            "<｜Assistant｜>",
+            "</s>",
+            "[INST]",
+            "[/INST]"
         ]
         guard let marker = stops
             .compactMap({ text.range(of: $0, options: [.caseInsensitive])?.lowerBound })

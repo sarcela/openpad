@@ -62,6 +62,8 @@ final class LocalModelService {
                 return "llama.swift is still finishing a previous response. Please retry in a few seconds."
             } catch LlamaServiceError.generationTimedOut {
                 return "The local llama.swift model took too long to answer (timeout raised to 180s). Try a shorter prompt or use a smaller GGUF if this keeps happening."
+            } catch LlamaServiceError.cancelled {
+                return "Cancelled local llama.swift generation. You can retry with a shorter prompt."
             } catch LlamaServiceError.nativeBackendUnavailable {
                 return "Native llama.swift backend is unavailable in this build. Enable the llama module or use MLX."
             }
