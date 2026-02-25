@@ -1757,6 +1757,7 @@ private struct SettingsView: View {
     @State private var selfImprovingAgentEnabled = true
     @State private var offlineStrictModeEnabled = false
     @State private var forceAttachmentFirstEnabled = true
+    @State private var clawStyleModeEnabled = false
     @State private var toolPermissions: [String: Bool] = [:]
     @State private var settingsSearch = ""
     @State private var settingsCategory: SettingsCategory = .all
@@ -2198,6 +2199,7 @@ private struct SettingsView: View {
                     Toggle("Self-improving agent", isOn: $selfImprovingAgentEnabled)
                     Toggle("Offline strict mode (never fallback to remote)", isOn: $offlineStrictModeEnabled)
                     Toggle("Force attachment-first answers", isOn: $forceAttachmentFirstEnabled)
+                    Toggle("Claw-style reasoning mode", isOn: $clawStyleModeEnabled)
 
                     if lowPowerModeEnabled || emergencyMemoryModeEnabled || offlineStrictModeEnabled {
                         Text("Reduces context, OCR, and retries. Emergency mode also enforces stricter prompt condensation and smaller context windows.")
@@ -2331,6 +2333,7 @@ private struct SettingsView: View {
                         runtimeConfig.setSelfImprovingAgentEnabled(selfImprovingAgentEnabled)
                         runtimeConfig.setOfflineStrictModeEnabled(offlineStrictModeEnabled)
                         runtimeConfig.setForceAttachmentFirstEnabled(forceAttachmentFirstEnabled)
+                        runtimeConfig.setClawStyleModeEnabled(clawStyleModeEnabled)
                         openClawLiteConfig.setAutodevEnabled(autodevEnabled)
                         for (tool, enabled) in toolPermissions {
                             openClawLiteConfig.setToolEnabled(tool, enabled: enabled)
@@ -2379,6 +2382,7 @@ private struct SettingsView: View {
                 selfImprovingAgentEnabled = runtimeConfig.isSelfImprovingAgentEnabled()
                 offlineStrictModeEnabled = runtimeConfig.isOfflineStrictModeEnabled()
                 forceAttachmentFirstEnabled = runtimeConfig.isForceAttachmentFirstEnabled()
+                clawStyleModeEnabled = runtimeConfig.isClawStyleModeEnabled()
                 mlxDownloadedModels = openClawLiteConfig.loadDownloadedMLXModels()
 
                 refreshModels()

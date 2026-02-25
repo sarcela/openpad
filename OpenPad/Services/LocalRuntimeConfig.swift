@@ -60,6 +60,7 @@ struct LocalRuntimeConfig {
         static let selfImprovingAgentEnabled = "agent.self_improving.enabled"
         static let offlineStrictMode = "agent.offline.strict.enabled"
         static let forceAttachmentFirst = "agent.attachment.first.enabled"
+        static let clawStyleMode = "agent.claw_style.enabled"
     }
 
     func loadProvider() -> LocalRuntimeProvider {
@@ -281,5 +282,13 @@ struct LocalRuntimeConfig {
 
     func setForceAttachmentFirstEnabled(_ enabled: Bool) {
         UserDefaults.standard.set(enabled, forKey: Keys.forceAttachmentFirst)
+    }
+
+    func isClawStyleModeEnabled() -> Bool {
+        UserDefaults.standard.object(forKey: Keys.clawStyleMode) as? Bool ?? false
+    }
+
+    func setClawStyleModeEnabled(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: Keys.clawStyleMode)
     }
 }

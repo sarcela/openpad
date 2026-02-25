@@ -405,14 +405,28 @@ final class OpenClawLiteAgentService {
         return nil
     }
 
+
+    private func clawStyleInstructionBlock() -> String {
+        guard runtimeConfig.isClawStyleModeEnabled() else { return "" }
+        return """
+        Claw-style mode (ON):
+        - Think and respond in this loop: intent -> route -> action/tool -> answer -> quality check.
+        - Be practical and direct. Avoid filler/praise and avoid sounding corporate.
+        - Prefer concise outputs with concrete next actions.
+        - If uncertain, say what is missing and propose the smallest next step.
+        """
+    }
+
     private func buildDirectCompatPrompt(userPrompt: String, recentMessages: [ChatMessage]) -> String {
         let recent = buildRecentContext(from: recentMessages)
         let attachmentContext = buildAttachmentContext(from: userPrompt, recentMessages: recentMessages)
         let languageInstruction = preferredLanguageInstruction()
+        let clawStyle = clawStyleInstructionBlock()
         return """
         You are OpenClaw Lite running in compatibility mode for reasoning-heavy models.
         \(languageInstruction)
         Do not output JSON schemas or planning structures.
+        \(clawStyle)
         Do not include <think> blocks.
         If attachments are present, prioritize them.
 
@@ -466,10 +480,12 @@ final class OpenClawLiteAgentService {
         let attachmentContext = buildAttachmentContext(from: userPrompt, recentMessages: recentMessages)
         let recentContext = buildRecentContext(from: recentMessages)
         let languageInstruction = preferredLanguageInstruction()
+        let clawStyle = clawStyleInstructionBlock()
         return """
         Eres OpenClaw Lite en iPad.
         \(languageInstruction)
         Decide your next action and respond ONLY in valid JSON.
+        \(clawStyle)
         Execution policy: be persistent. Before concluding something failed, attempt at least one alternative approach or a reasonable retry.
         Safety policy: for destructive tools (`delete_file`, `clear_memories`) require `confirm=YES`.
         \(liteConfig.isAutodevEnabled() ? "AutoDev: al final sugiere una micro-mejora concreta, reversible y de bajo riesgo." : "AutoDev desactivado.")
@@ -518,9 +534,11 @@ final class OpenClawLiteAgentService {
 
     private func buildFinalizePrompt(userPrompt: String, toolName: String, toolResult: OpenClawToolResult) -> String {
         let languageInstruction = preferredLanguageInstruction()
+        let clawStyle = clawStyleInstructionBlock()
         return """
         Eres OpenClaw Lite en iPad.
         You already called a tool. Provide the final user answer in valid JSON.
+        \(clawStyle)
         \(languageInstruction)
 
         Esquema de salida:
