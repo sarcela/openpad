@@ -131,8 +131,18 @@ final class LlamaLocalModelService {
             throw LlamaServiceError.modelFileNotFound(modelPath)
         }
 
-        let lockWaitSeconds = min(12.0, max(3.0, Date().distance(to: deadline) * 0.25))
+        let remainingTime = deadline.timeIntervalSinceNow
+        guard remainingTime > 0 else {
+            throw LlamaServiceError.generationTimedOut
+        }
+
+        // Keep lock waits short so stale/overlapping generations fail fast instead of
+        // burning most of the request budget before decode even starts.
+        let lockWaitSeconds = min(4.0, max(0.35, remainingTime * 0.2))
         guard backendLock.lock(before: Date().addingTimeInterval(lockWaitSeconds)) else {
+            if Date() >= deadline {
+                throw LlamaServiceError.generationTimedOut
+            }
             throw LlamaServiceError.backendBusyTimeout
         }
         defer { backendLock.unlock() }
@@ -859,7 +869,9 @@ final class LlamaLocalModelService {
             .replacingOccurrences(of: #"(?im)^\s*(user|usuario|system|sistema)\s*:.*$"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: "<|begin_of_text|>", with: "")
             .replacingOccurrences(of: "<|eot_id|>", with: "")
+            .replacingOccurrences(of: "<|eom_id|>", with: "")
             .replacingOccurrences(of: "<|end|>", with: "")
+            .replacingOccurrences(of: "<|end_of_text|>", with: "")
             .replacingOccurrences(of: "<|im_end|>", with: "")
             .replacingOccurrences(of: "<|im_start|>", with: "")
             .replacingOccurrences(of: "<|start_header_id|>", with: "")
@@ -1011,7 +1023,9 @@ final class LlamaLocalModelService {
         let literalStops = [
             "<|begin_of_text|>",
             "<|eot_id|>",
+            "<|eom_id|>",
             "<|end|>",
+            "<|end_of_text|>",
             "<|im_end|>",
             "<|im_start|>",
             "<|start_header_id|>user<|end_header_id|>",
