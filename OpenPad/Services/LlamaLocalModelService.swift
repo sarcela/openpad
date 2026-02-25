@@ -128,6 +128,7 @@ final class LlamaLocalModelService {
         var output = ""
         var currentPos = batch.n_tokens
         let contextLimit = Int32(contextParams.n_ctx)
+        let samplingTemperature = sanitizeTemperature(Float(runtimeConfig.loadLocalTemperature()))
         var lastToken: llama_token?
         var repeatCount = 0
 
@@ -137,7 +138,7 @@ final class LlamaLocalModelService {
             let vocabSize = Int(llama_vocab_n_tokens(vocab))
             if vocabSize <= 0 { break }
 
-            var nextToken = sampleToken(logits: logits, vocabSize: vocabSize, vocab: vocab, temperature: 0.2)
+            var nextToken = sampleToken(logits: logits, vocabSize: vocabSize, vocab: vocab, temperature: samplingTemperature)
             if isControlLikeToken(nextToken, vocab: vocab) {
                 nextToken = pickToken(logits: logits, vocabSize: vocabSize, vocab: vocab)
             }
@@ -194,6 +195,8 @@ final class LlamaLocalModelService {
         for i in 0..<vocabSize {
             let token = llama_token(i)
             let logit = logits[i]
+            guard logit.isFinite else { continue }
+
             if logit > fallbackLogit {
                 fallback = token
                 fallbackLogit = logit
@@ -213,7 +216,15 @@ final class LlamaLocalModelService {
         if let vocab, best == llama_vocab_eos(vocab), fallback != best {
             return fallback
         }
-        return (bestLogit > -Float.greatestFiniteMagnitude / 2) ? best : fallback
+
+        if bestLogit > -Float.greatestFiniteMagnitude / 2 {
+            return best
+        }
+        if fallbackLogit > -Float.greatestFiniteMagnitude / 2 {
+            return fallback
+        }
+
+        return llama_token(0)
     }
 
     private static func isControlLikeToken(_ token: llama_token, vocab: OpaquePointer?) -> Bool {
@@ -247,11 +258,11 @@ final class LlamaLocalModelService {
         vocab: OpaquePointer?,
         temperature: Float
     ) -> llama_token {
-        if temperature <= 0.05 {
+        let clippedTemp = sanitizeTemperature(temperature)
+        if clippedTemp <= 0.05 {
             return pickToken(logits: logits, vocabSize: vocabSize, vocab: vocab)
         }
 
-        let clippedTemp = max(0.05, min(1.0, temperature))
         let topK = min(64, vocabSize)
         var candidates: [(token: llama_token, logit: Float)] = []
         candidates.reserveCapacity(topK)
@@ -261,6 +272,8 @@ final class LlamaLocalModelService {
             if isControlLikeToken(token, vocab: vocab) { continue }
 
             let l = logits[i]
+            guard l.isFinite else { continue }
+
             if candidates.count < topK {
                 candidates.append((token, l))
                 if candidates.count == topK {
@@ -274,13 +287,16 @@ final class LlamaLocalModelService {
             }
         }
 
-        guard !candidates.isEmpty else { return 0 }
+        guard !candidates.isEmpty else {
+            return pickToken(logits: logits, vocabSize: vocabSize, vocab: vocab)
+        }
 
         let maxLogit = candidates[0].logit
         var probs: [(llama_token, Double)] = []
         var total = 0.0
         for c in candidates {
             let p = exp(Double((c.logit - maxLogit) / clippedTemp))
+            guard p.isFinite else { continue }
             probs.append((c.token, p))
             total += p
         }
@@ -309,6 +325,11 @@ final class LlamaLocalModelService {
         return nucleus.last?.0 ?? candidates[0].token
     }
     #endif
+
+    private static func sanitizeTemperature(_ temperature: Float) -> Float {
+        guard temperature.isFinite else { return 0.2 }
+        return max(0.0, min(1.0, temperature))
+    }
 
     private static func clipAtStopSequence(_ text: String) -> String? {
         let stops = ["\nuser:", "\nassistant:", "<|eot_id|>", "<|end|>"]
