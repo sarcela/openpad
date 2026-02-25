@@ -40,7 +40,9 @@ final class MLXLocalModelService {
         let useModelId = modelId.isEmpty ? "mlx-community/Qwen2.5-1.5B-Instruct-4bit" : modelId
 
         let session = try await getOrCreateSession(modelId: useModelId)
-        let text = try await session.respond(to: prompt).trimmingCharacters(in: .whitespacesAndNewlines)
+        let temperature = config.loadLocalTemperature()
+        let tunedPrompt = temperatureTunedPrompt(basePrompt: prompt, temperature: temperature)
+        let text = try await session.respond(to: tunedPrompt).trimmingCharacters(in: .whitespacesAndNewlines)
 
         // Stability mode: release session/model between turns to avoid memory growth (OOM on iPad).
         self.session = nil
@@ -78,4 +80,24 @@ final class MLXLocalModelService {
         return newSession
     }
     #endif
+
+    private func temperatureTunedPrompt(basePrompt: String, temperature: Double) -> String {
+        let clamped = min(1.0, max(0.0, temperature))
+        let styleInstruction: String
+
+        if clamped <= 0.12 {
+            styleInstruction = "Generation mode: GREEDY. Be concise, deterministic, and avoid creative variation."
+        } else if clamped <= 0.45 {
+            styleInstruction = "Generation mode: BALANCED. Prefer accurate answers with mild variation."
+        } else {
+            styleInstruction = "Generation mode: SAMPLING. Allow more diverse wording while staying factual and relevant."
+        }
+
+        return """
+        \(styleInstruction)
+        Temperature slider: \(String(format: "%.2f", clamped)) (0.00=greedy, 1.00=sampling)
+
+        \(basePrompt)
+        """
+    }
 }
