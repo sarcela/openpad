@@ -834,6 +834,21 @@ final class LlamaLocalModelService {
             }
         }
 
+        // Common failure mode on smaller GGUF checkpoints: first line mirrors the user
+        // prompt (sometimes with role labels/quotes), followed by the real answer.
+        // Strip that leading echoed line conservatively only when non-empty content remains.
+        if let newline = trimmedOutput.firstIndex(of: "\n") {
+            let firstLine = String(trimmedOutput[..<newline])
+            let remainder = String(trimmedOutput[trimmedOutput.index(after: newline)...])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !remainder.isEmpty {
+                let normalizedFirstLine = normalizeEchoLine(firstLine)
+                if !normalizedFirstLine.isEmpty, normalizedFirstLine == normalizedPrompt {
+                    return remainder
+                }
+            }
+        }
+
         return trimmedOutput
     }
 
@@ -841,6 +856,15 @@ final class LlamaLocalModelService {
         value
             .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func normalizeEchoLine(_ line: String) -> String {
+        normalizeWhitespace(
+            line
+                .replacingOccurrences(of: #"(?im)^\s*(assistant|asistente|model|modelo)\s*:\s*"#, with: "", options: .regularExpression)
+                .replacingOccurrences(of: #"(?im)^\s*(you asked|you said|prompt|pregunta|user|usuario)\s*[:\-]\s*"#, with: "", options: .regularExpression)
+                .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "\"'`“”‘’«»[](){}*_")))
+        )
     }
 
     private static func isLowSignalResponse(_ text: String, mode: LlamaGenerationMode) -> Bool {
