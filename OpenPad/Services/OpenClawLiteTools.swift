@@ -309,9 +309,11 @@ final class OpenClawLiteTools {
         case "summarize_url":
             let urlString = (arguments["url"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             guard !urlString.isEmpty else { return .init(ok: false, output: "Missing argument: url") }
-            let fetched = await fetchHTTP(urlString: urlString, allowDirectHostBypass: true)
+            let resolved = resolvedContentURLString(urlString)
+            let fetched = await fetchHTTP(urlString: resolved, allowDirectHostBypass: true)
             guard fetched.ok else { return fetched }
-            return .init(ok: true, output: summarizeText(fetched.output))
+            let cleaned = stripLikelyScriptNoise(fetched.output)
+            return .init(ok: true, output: summarizeText(cleaned))
 
         case "calculate":
             let expression = (arguments["expression"] ?? arguments["expr"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1400,6 +1402,36 @@ final class OpenClawLiteTools {
         return rows.joined(separator: "\n")
     }
 
+    private func resolvedContentURLString(_ input: String) -> String {
+        guard let url = normalizedURL(from: input) else { return input }
+        guard let host = url.host?.lowercased() else { return input }
+
+        if host.contains("translate.goog"),
+           let comp = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+            let items = comp.queryItems ?? []
+            if let original = items.first(where: { ["_x_tr_url", "u", "url", "q"].contains($0.name.lowercased()) })?.value,
+               let decoded = original.removingPercentEncoding,
+               let originalURL = normalizedURL(from: decoded) {
+                return originalURL.absoluteString
+            }
+        }
+
+        return url.absoluteString
+    }
+
+    private func stripLikelyScriptNoise(_ text: String) -> String {
+        var out = text
+        let patterns = [
+            #"(?is)javascript\s*[-_ ]?snippet\s*:.*?(?=\n\n|$)"#,
+            #"(?is)document\.documentElement\.className.*?(?=\n\n|$)"#,
+            #"(?im)^\s*cookie\s*parsing.*$"#
+        ]
+        for p in patterns {
+            out = out.replacingOccurrences(of: p, with: "", options: .regularExpression)
+        }
+        return out.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private func normalizedURL(from input: String) -> URL? {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
         if let u = URL(string: trimmed), ["http", "https"].contains(u.scheme?.lowercased() ?? "") {
@@ -1433,6 +1465,10 @@ final class OpenClawLiteTools {
                 }
 
                 let text = String(data: data, encoding: .utf8) ?? ""
+                if contentType.contains("text/html") || text.lowercased().contains("<html") {
+                    let readable = self.htmlToText(text)
+                    return .init(ok: true, output: String(readable.prefix(6000)))
+                }
                 return .init(ok: true, output: String(text.prefix(6000)))
             } catch {
                 return .init(ok: false, output: "http_get error: \(error.localizedDescription)")
