@@ -32,6 +32,11 @@ enum LlamaServiceError: LocalizedError {
     }
 }
 
+enum LlamaGenerationMode {
+    case chat
+    case tools
+}
+
 final class LlamaLocalModelService {
     static var hasNativeModule: Bool {
         #if canImport(LlamaSwift)
@@ -67,7 +72,7 @@ final class LlamaLocalModelService {
         modelPath = resolved
     }
 
-    func runLocal(prompt: String) async throws -> String {
+    func runLocal(prompt: String, mode: LlamaGenerationMode = .chat) async throws -> String {
         guard let modelPath else { throw LlamaServiceError.modelNotConfigured }
         #if canImport(LlamaSwift)
         let timeoutSeconds: Double = LlamaLocalModelService.runtimeConfig.isEmergencyMemoryModeEnabled() ? 90 : 180
@@ -75,7 +80,7 @@ final class LlamaLocalModelService {
 
         do {
             return try await Task(priority: .userInitiated) {
-                try Self.runSync(prompt: prompt, modelPath: modelPath, deadline: deadline)
+                try Self.runSync(prompt: prompt, modelPath: modelPath, mode: mode, deadline: deadline)
             }.value
         } catch LlamaServiceError.backendBusyTimeout {
             // A previous generation can hold the backend lock briefly; retry once with a
@@ -83,7 +88,7 @@ final class LlamaLocalModelService {
             if Date().addingTimeInterval(0.55) < deadline {
                 try await Task.sleep(nanoseconds: 550_000_000)
                 return try await Task(priority: .userInitiated) {
-                    try Self.runSync(prompt: prompt, modelPath: modelPath, deadline: deadline)
+                    try Self.runSync(prompt: prompt, modelPath: modelPath, mode: mode, deadline: deadline)
                 }.value
             }
             throw LlamaServiceError.backendBusyTimeout
@@ -94,7 +99,7 @@ final class LlamaLocalModelService {
     }
 
     #if canImport(LlamaSwift)
-    private static func runSync(prompt: String, modelPath: String, deadline: Date) throws -> String {
+    private static func runSync(prompt: String, modelPath: String, mode: LlamaGenerationMode, deadline: Date) throws -> String {
         try throwIfCancelled()
         guard FileManager.default.fileExists(atPath: modelPath) else {
             throw LlamaServiceError.modelFileNotFound(modelPath)
@@ -200,7 +205,15 @@ final class LlamaLocalModelService {
         var output = ""
         var currentPos = Int32(processedPromptTokens)
         let contextLimit = Int32(contextParams.n_ctx)
-        let samplingTemperature = sanitizeTemperature(Float(runtimeConfig.loadLocalTemperature()))
+        let baseTemperature = sanitizeTemperature(Float(runtimeConfig.loadLocalTemperature()))
+        // Tool/planner turns are much more reliable with near-greedy decoding.
+        // Keep chat responses configurable, but clamp tool mode for deterministic JSON.
+        let samplingTemperature: Float = {
+            switch mode {
+            case .chat: return baseTemperature
+            case .tools: return min(baseTemperature, 0.05)
+            }
+        }()
         var lastToken: llama_token?
         var repeatCount = 0
         var generatedCount = 0

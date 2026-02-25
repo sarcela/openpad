@@ -28,9 +28,10 @@ final class LocalModelService {
     private func runLocalDirect(prompt: String, purpose: LocalInferencePurpose, modelOverride: String? = nil) async throws -> String {
         switch runtimeConfig.loadProvider() {
         case .llamaCpp:
+            let llamaMode: LlamaGenerationMode = (purpose == .tools) ? .tools : .chat
             do {
                 try autoConfigureModelIfPresent()
-                let out = try await llama.runLocal(prompt: prompt)
+                let out = try await llama.runLocal(prompt: prompt, mode: llamaMode)
                 return sanitizeModelOutput(out)
             } catch LlamaServiceError.modelNotConfigured {
                 try await Task.sleep(nanoseconds: 300_000_000)
@@ -39,7 +40,7 @@ final class LocalModelService {
                 return "The selected llama.swift model file is missing. Re-select a .gguf in Settings."
             } catch LlamaServiceError.emptyResponse {
                 let retryPrompt = "Answer directly in one short paragraph:\n\n\(String(prompt.suffix(1400)))"
-                if let retry = try? await llama.runLocal(prompt: retryPrompt) {
+                if let retry = try? await llama.runLocal(prompt: retryPrompt, mode: llamaMode) {
                     let sanitized = sanitizeModelOutput(retry)
                     if !sanitized.isEmpty { return sanitized }
                 }
@@ -48,7 +49,7 @@ final class LocalModelService {
                 let compactPrompt = String(prompt.suffix(1800))
                 if compactPrompt != prompt {
                     let retryPrompt = "Answer concisely and directly:\n\n\(compactPrompt)"
-                    if let retry = try? await llama.runLocal(prompt: retryPrompt) {
+                    if let retry = try? await llama.runLocal(prompt: retryPrompt, mode: llamaMode) {
                         let sanitized = sanitizeModelOutput(retry)
                         if !sanitized.isEmpty { return sanitized }
                     }
