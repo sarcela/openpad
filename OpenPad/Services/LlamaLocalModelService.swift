@@ -77,7 +77,7 @@ final class LlamaLocalModelService {
 
         var contextParams = llama_context_default_params()
         contextParams.n_ctx = 2048
-        contextParams.n_batch = min(512, contextParams.n_ctx)
+        contextParams.n_batch = min(contextParams.n_ctx, 2048)
         guard let context = llama_init_from_model(model, contextParams) else {
             throw LlamaServiceError.nativeBackendUnavailable
         }
@@ -106,9 +106,11 @@ final class LlamaLocalModelService {
         }
 
         guard tokenCount > 0 else { throw LlamaServiceError.tokenizationFailed }
-        let promptTokens = Array(tokens.prefix(Int(tokenCount)))
+        let maxPromptTokens = max(64, Int(contextParams.n_ctx) - 64)
+        let promptTokens = Array(tokens.prefix(Int(tokenCount)).suffix(maxPromptTokens))
 
-        var batch = llama_batch_init(contextParams.n_batch, 0, 1)
+        let batchCapacity = max(Int(contextParams.n_batch), promptTokens.count + 1)
+        var batch = llama_batch_init(Int32(batchCapacity), 0, 1)
         defer { llama_batch_free(batch) }
 
         batch.n_tokens = Int32(promptTokens.count)
@@ -133,7 +135,10 @@ final class LlamaLocalModelService {
             let vocabSize = Int(llama_vocab_n_tokens(vocab))
             if vocabSize <= 0 { break }
 
-            let nextToken = pickToken(logits: logits, vocabSize: vocabSize, vocab: vocab)
+            var nextToken = sampleToken(logits: logits, vocabSize: vocabSize, vocab: vocab, temperature: 0.2)
+            if isControlLikeToken(nextToken, vocab: vocab) {
+                nextToken = pickToken(logits: logits, vocabSize: vocabSize, vocab: vocab)
+            }
             if nextToken == llama_vocab_eos(vocab) { break }
 
             if let lastToken, lastToken == nextToken {
@@ -209,6 +214,13 @@ final class LlamaLocalModelService {
         return (bestLogit > -Float.greatestFiniteMagnitude / 2) ? best : fallback
     }
 
+    private static func isControlLikeToken(_ token: llama_token, vocab: OpaquePointer?) -> Bool {
+        guard let piece = tokenPieceString(token, vocab: vocab) else { return true }
+        let trimmed = piece.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return true }
+        return trimmed.contains("<|") || trimmed.contains("|>")
+    }
+
     private static func tokenPieceString(_ token: llama_token, vocab: OpaquePointer?) -> String? {
         var buffer = [CChar](repeating: 0, count: 128)
         var count = llama_token_to_piece(vocab, token, &buffer, Int32(buffer.count), 0, false)
@@ -234,13 +246,7 @@ final class LlamaLocalModelService {
         temperature: Float
     ) -> llama_token {
         if temperature <= 0.05 {
-            var maxLogit = logits[0]
-            var token: llama_token = 0
-            for i in 1..<vocabSize where logits[i] > maxLogit {
-                maxLogit = logits[i]
-                token = llama_token(i)
-            }
-            return token
+            return pickToken(logits: logits, vocabSize: vocabSize, vocab: vocab)
         }
 
         let clippedTemp = max(0.05, min(1.0, temperature))
@@ -249,16 +255,19 @@ final class LlamaLocalModelService {
         candidates.reserveCapacity(topK)
 
         for i in 0..<vocabSize {
+            let token = llama_token(i)
+            if isControlLikeToken(token, vocab: vocab) { continue }
+
             let l = logits[i]
             if candidates.count < topK {
-                candidates.append((llama_token(i), l))
+                candidates.append((token, l))
                 if candidates.count == topK {
                     candidates.sort { $0.logit > $1.logit }
                 }
                 continue
             }
             if let last = candidates.last, l > last.logit {
-                candidates[candidates.count - 1] = (llama_token(i), l)
+                candidates[candidates.count - 1] = (token, l)
                 candidates.sort { $0.logit > $1.logit }
             }
         }
