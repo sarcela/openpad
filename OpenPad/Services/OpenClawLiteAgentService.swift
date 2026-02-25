@@ -484,20 +484,19 @@ final class OpenClawLiteAgentService {
         let languageInstruction = preferredLanguageInstruction()
         let clawStyle = clawStyleInstructionBlock()
         return """
-        You are OpenClaw Lite running in compatibility mode for reasoning-heavy models.
+        You are OpenClaw Lite on iPad.
         \(languageInstruction)
-        Do not output JSON schemas or planning structures.
+        Answer directly. No JSON. No <think>.
         \(clawStyle)
-        Do not include <think> blocks.
-        If attachments are present, prioritize them.
+        If there are attachments, use them first.
 
-        Attachment context:
+        Attachments:
         \(attachmentContext)
 
-        Recent context:
+        Recent:
         \(recent)
 
-        User message:
+        User:
         \(userPrompt)
         """
     }
@@ -543,52 +542,37 @@ final class OpenClawLiteAgentService {
         let languageInstruction = preferredLanguageInstruction()
         let clawStyle = clawStyleInstructionBlock()
         return """
-        Eres OpenClaw Lite en iPad.
+        You are OpenClaw Lite on iPad.
         \(languageInstruction)
-        Decide your next action and respond ONLY in valid JSON.
-        \(clawStyle)
-        Execution policy: be persistent. Before concluding something failed, attempt at least one alternative approach or a reasonable retry.
-        Safety policy: for destructive tools (`delete_file`, `clear_memories`) require `confirm=YES`.
-        \(liteConfig.isAutodevEnabled() ? "AutoDev: al final sugiere una micro-mejora concreta, reversible y de bajo riesgo." : "AutoDev desactivado.")
-        You may use the internet when it helps provide a better answer.
-        Si el usuario comparte una URL completa, prioriza `http_get` para leerla/resumirla directamente.
-        If the user mentions local attachments (e.g. [attachment: ...], [photo: ...], or filename), ALWAYS prioritize injected attachment context and avoid `http_get/summarize_url` unless an explicit URL is also present.
-        Memory rule: ONLY use `save_memory` when the user explicitly asks (e.g., "save to memory", "remember this").
+        Return ONLY valid JSON:
+        - {"type":"final","content":"..."}
+        - {"type":"tool_call","name":"<tool>","arguments":{"k":"v"}}
 
-        Persistent recent memory (survives restarts):
+        Rules:
+        - Keep it practical and concise.
+        - Retry once before giving up on a failed tool.
+        - Use attachments first when present.
+        - For direct URLs, prefer http_get/summarize_url.
+        - Use save_memory ONLY if user explicitly asks.
+        - Destructive tools need confirm=YES.
+        \(clawStyle)
+
+        Memory:
         \(memoryContext)
 
-        Identity/role context (SOUL/IDENTITY/USER/TOOLS/HEARTBEAT):
+        Identity:
         \(appIdentityContext)
 
-        Attachment context detected in this message:
+        Attachments:
         \(attachmentContext)
 
-        Reasoning draft (if available):
+        Reasoning draft:
         \(reasoningDraft.isEmpty ? "(none)" : reasoningDraft)
 
-        Recent conversation context:
+        Recent:
         \(recentContext)
 
-        Tools available (examples):
-        - get_time(arguments: {})
-        - save_memory/list_memories/search_memories/clear_memories
-        - read_file/write_file/list_files/file_exists/append_file/delete_file
-        - list_attachments/read_attachment/analyze_attachment
-        - calendar_today/summarize_url/http_get/brave_search
-        - calculate/make_uuid/json_parse/csv_preview/markdown_toc/diff_text
-        - regex_extract/base64_encode/base64_decode/url_encode/url_decode
-        - json_path/csv_filter/html_to_text/keyword_extract/chunk_text
-        - extract_code_blocks/lint_markdown/table_to_bullets/normalize_whitespace
-        - word_count/text_stats/extract_emails/extract_urls
-
-        Output schema:
-        - respuesta final:
-          {"type":"final","content":"..."}
-        - llamada de herramienta:
-          {"type":"tool_call","name":"get_time|save_memory|list_memories|search_memories|clear_memories|read_file|write_file|list_files|file_exists|append_file|delete_file|list_attachments|read_attachment|analyze_attachment|calendar_today|summarize_url|http_get|brave_search|calculate|make_uuid|json_parse|csv_preview|markdown_toc|diff_text|regex_extract|base64_encode|base64_decode|url_encode|url_decode|json_path|csv_filter|html_to_text|keyword_extract|chunk_text|extract_code_blocks|lint_markdown|table_to_bullets|normalize_whitespace|word_count|text_stats|extract_emails|extract_urls","arguments":{"key":"value"}}
-
-        Mensaje del usuario:
+        User:
         \(userPrompt)
         """
     }
@@ -597,24 +581,23 @@ final class OpenClawLiteAgentService {
         let languageInstruction = preferredLanguageInstruction()
         let clawStyle = clawStyleInstructionBlock()
         return """
-        Eres OpenClaw Lite en iPad.
-        You already called a tool. Provide the final user answer in valid JSON.
-        \(clawStyle)
+        You are OpenClaw Lite on iPad.
         \(languageInstruction)
+        Write the final user-facing answer from the tool result.
+        Return ONLY: {"type":"final","content":"..."}
+        Keep it concise and grounded in the tool output.
+        \(clawStyle)
 
-        Esquema de salida:
-        {"type":"final","content":"..."}
-
-        Mensaje original del usuario:
+        User:
         \(userPrompt)
 
-        Herramienta llamada:
+        Tool:
         \(toolName)
 
-        Tool success:
+        Success:
         \(toolResult.ok)
 
-        Resultado de herramienta:
+        Output:
         \(toolResult.output)
         """
     }
