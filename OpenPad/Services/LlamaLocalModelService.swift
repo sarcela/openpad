@@ -443,17 +443,23 @@ final class LlamaLocalModelService {
     private static func tokenPieceBytes(_ token: llama_token, vocab: OpaquePointer?) -> [UInt8]? {
         guard let vocab else { return nil }
 
-        var buffer = [CChar](repeating: 0, count: 128)
-        var count = llama_token_to_piece(vocab, token, &buffer, Int32(buffer.count), 0, false)
+        func renderPiece(special: Bool) -> [UInt8]? {
+            var buffer = [CChar](repeating: 0, count: 128)
+            var count = llama_token_to_piece(vocab, token, &buffer, Int32(buffer.count), 0, special)
 
-        if count < 0 {
-            let needed = max(128, Int(-count) + 8)
-            buffer = [CChar](repeating: 0, count: needed)
-            count = llama_token_to_piece(vocab, token, &buffer, Int32(buffer.count), 0, false)
+            if count < 0 {
+                let needed = max(128, Int(-count) + 8)
+                buffer = [CChar](repeating: 0, count: needed)
+                count = llama_token_to_piece(vocab, token, &buffer, Int32(buffer.count), 0, special)
+            }
+
+            guard count > 0 else { return nil }
+            return buffer.prefix(Int(count)).map { UInt8(bitPattern: $0) }
         }
 
-        guard count > 0 else { return nil }
-        return buffer.prefix(Int(count)).map { UInt8(bitPattern: $0) }
+        // Try normal rendering first. If the token is special/control, many runtimes only
+        // expose its textual marker when `special=true`.
+        return renderPiece(special: false) ?? renderPiece(special: true)
     }
 
     private static func tokenPieceString(_ token: llama_token, vocab: OpaquePointer?) -> String? {
