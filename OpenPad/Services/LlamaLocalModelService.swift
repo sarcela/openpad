@@ -623,10 +623,8 @@ final class LlamaLocalModelService {
             "<|im_end|>",
             "<|im_start|>",
             "<|start_header_id|>user<|end_header_id|>",
-            "<|start_header_id|>assistant<|end_header_id|>",
             "<｜end▁of▁sentence｜>",
             "<｜User｜>",
-            "<｜Assistant｜>",
             "</s>",
             "[INST]",
             "[/INST]"
@@ -639,8 +637,9 @@ final class LlamaLocalModelService {
             }
         }
 
-        // Only clip role labels when they appear as an injected turn marker at line start.
-        if let regex = try? NSRegularExpression(pattern: #"(?im)^\s*(user|assistant|usuario|asistente)\s*:"#) {
+        // Clip when a new *user/system* turn marker leaks into generation.
+        // Do not clip on assistant labels; many models start with "Assistant:" before useful text.
+        if let regex = try? NSRegularExpression(pattern: #"(?im)^\s*(user|usuario|system|sistema)\s*:"#) {
             let nsRange = NSRange(text.startIndex..<text.endIndex, in: text)
             if let match = regex.firstMatch(in: text, options: [], range: nsRange),
                let swiftRange = Range(match.range, in: text) {
