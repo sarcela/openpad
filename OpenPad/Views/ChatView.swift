@@ -2650,7 +2650,7 @@ private struct SettingsView: View {
         }
     }
 
-    private func resolvedGGUFDownloadURL(from spec: String) -> URL? {
+    private func resolvedGGUFDownloadURL(from spec: String) async -> URL? {
         let clean = spec.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { return nil }
 
@@ -2660,19 +2660,65 @@ private struct SettingsView: View {
 
         // Support shorthand: owner/repo/path/to/file.gguf
         let parts = clean.split(separator: "/").map(String.init)
-        guard parts.count >= 3 else { return nil }
+        guard parts.count >= 2 else { return nil }
         let owner = parts[0]
         let repo = parts[1]
-        let filePath = parts.dropFirst(2).joined(separator: "/")
-        guard filePath.lowercased().hasSuffix(".gguf") else { return nil }
 
-        return URL(string: "https://huggingface.co/\(owner)/\(repo)/resolve/main/\(filePath)")
+        if parts.count >= 3 {
+            let filePath = parts.dropFirst(2).joined(separator: "/")
+            if filePath.lowercased().hasSuffix(".gguf") {
+                return URL(string: "https://huggingface.co/\(owner)/\(repo)/resolve/main/\(filePath)")
+            }
+        }
+
+        // Support plain repo id: owner/repo -> auto-pick a GGUF file
+        return await resolveGGUFURLFromRepo(owner: owner, repo: repo)
+    }
+
+    private func resolveGGUFURLFromRepo(owner: String, repo: String) async -> URL? {
+        guard let apiURL = URL(string: "https://huggingface.co/api/models/\(owner)/\(repo)") else { return nil }
+
+        do {
+            let (data, response) = try await URLSession.shared.data(from: apiURL)
+            if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+                return nil
+            }
+
+            guard
+                let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                let siblings = obj["siblings"] as? [[String: Any]]
+            else { return nil }
+
+            let ggufs = siblings
+                .compactMap { $0["rfilename"] as? String }
+                .filter { $0.lowercased().hasSuffix(".gguf") }
+
+            guard !ggufs.isEmpty else { return nil }
+
+            let preferred = ggufs.sorted { lhs, rhs in
+                func score(_ name: String) -> Int {
+                    let n = name.lowercased()
+                    if n.contains("q4_k_m") { return 0 }
+                    if n.contains("q4") { return 1 }
+                    if n.contains("q5") { return 2 }
+                    if n.contains("q8") { return 3 }
+                    return 9
+                }
+                let sl = score(lhs), sr = score(rhs)
+                if sl != sr { return sl < sr }
+                return lhs < rhs
+            }.first!
+
+            return URL(string: "https://huggingface.co/\(owner)/\(repo)/resolve/main/\(preferred)")
+        } catch {
+            return nil
+        }
     }
 
     private func downloadGGUFModel() async {
         let spec = ggufDownloadSpec.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let sourceURL = resolvedGGUFDownloadURL(from: spec) else {
-            importMessage = "Formato inválido. Usa URL directa o owner/repo/path/model.gguf"
+        guard let sourceURL = await resolvedGGUFDownloadURL(from: spec) else {
+            importMessage = "No pude resolver GGUF. Usa URL directa, owner/repo o owner/repo/path/model.gguf"
             return
         }
 
