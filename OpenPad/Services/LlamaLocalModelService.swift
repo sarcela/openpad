@@ -59,10 +59,12 @@ final class LlamaLocalModelService {
     func configureModel(path: String) throws {
         let clean = Self.normalizeModelPath(path)
         guard !clean.isEmpty else { throw LlamaServiceError.modelNotConfigured }
-        guard FileManager.default.fileExists(atPath: clean) else {
-            throw LlamaServiceError.modelFileNotFound(clean)
+
+        let resolved = try Self.resolveExistingModelPath(from: clean)
+        guard FileManager.default.fileExists(atPath: resolved) else {
+            throw LlamaServiceError.modelFileNotFound(resolved)
         }
-        modelPath = clean
+        modelPath = resolved
     }
 
     func runLocal(prompt: String) async throws -> String {
@@ -614,17 +616,14 @@ final class LlamaLocalModelService {
     }
 
     private static func clipAtStopSequence(_ text: String) -> String? {
-        let stops = [
-            "\nuser:",
-            "\nassistant:",
-            "\nusuario:",
-            "\nasistente:",
+        let literalStops = [
             "<|begin_of_text|>",
             "<|eot_id|>",
             "<|end|>",
             "<|im_end|>",
             "<|im_start|>",
             "<|start_header_id|>user<|end_header_id|>",
+            "<|start_header_id|>assistant<|end_header_id|>",
             "<｜end▁of▁sentence｜>",
             "<｜User｜>",
             "<｜Assistant｜>",
@@ -632,12 +631,24 @@ final class LlamaLocalModelService {
             "[INST]",
             "[/INST]"
         ]
-        guard let marker = stops
-            .compactMap({ text.range(of: $0, options: [.caseInsensitive])?.lowerBound })
-            .min()
-        else {
-            return nil
+
+        var markers: [String.Index] = []
+        for stop in literalStops {
+            if let range = text.range(of: stop, options: [.caseInsensitive]) {
+                markers.append(range.lowerBound)
+            }
         }
+
+        // Only clip role labels when they appear as an injected turn marker at line start.
+        if let regex = try? NSRegularExpression(pattern: #"(?im)^\s*(user|assistant|usuario|asistente)\s*:"#) {
+            let nsRange = NSRange(text.startIndex..<text.endIndex, in: text)
+            if let match = regex.firstMatch(in: text, options: [], range: nsRange),
+               let swiftRange = Range(match.range, in: text) {
+                markers.append(swiftRange.lowerBound)
+            }
+        }
+
+        guard let marker = markers.min() else { return nil }
         return String(text[..<marker]).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
@@ -645,7 +656,48 @@ final class LlamaLocalModelService {
         let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "" }
 
-        let expanded = (trimmed as NSString).expandingTildeInPath
+        let unwrapped = unwrapQuotedPath(trimmed)
+
+        if let fileURL = URL(string: unwrapped), fileURL.isFileURL {
+            let decoded = fileURL.path.removingPercentEncoding ?? fileURL.path
+            guard !decoded.isEmpty else { return "" }
+            return URL(fileURLWithPath: decoded).standardizedFileURL.path
+        }
+
+        let expanded = (unwrapped as NSString).expandingTildeInPath
         return URL(fileURLWithPath: expanded).standardizedFileURL.path
+    }
+
+    private static func resolveExistingModelPath(from normalizedPath: String) throws -> String {
+        if FileManager.default.fileExists(atPath: normalizedPath) {
+            return normalizedPath
+        }
+
+        // iOS app container paths can change across reinstalls/updates while file names remain stable.
+        let fileName = URL(fileURLWithPath: normalizedPath).lastPathComponent
+        guard !fileName.isEmpty else { return normalizedPath }
+
+        do {
+            let docs = try LocalModelConfig.shared.documentsDirectory()
+            let candidate = LocalModelConfig.shared.modelsDirectory(in: docs)
+                .appendingPathComponent(fileName, isDirectory: false)
+                .standardizedFileURL
+            if FileManager.default.fileExists(atPath: candidate.path) {
+                return candidate.path
+            }
+        } catch {
+            // Keep original path on lookup failures.
+        }
+
+        return normalizedPath
+    }
+
+    private static func unwrapQuotedPath(_ raw: String) -> String {
+        guard raw.count >= 2 else { return raw }
+        if (raw.hasPrefix("\"") && raw.hasSuffix("\"")) ||
+            (raw.hasPrefix("'") && raw.hasSuffix("'")) {
+            return String(raw.dropFirst().dropLast())
+        }
+        return raw
     }
 }
