@@ -73,7 +73,7 @@ final class LlamaLocalModelService {
         let timeoutSeconds: Double = LlamaLocalModelService.runtimeConfig.isEmergencyMemoryModeEnabled() ? 90 : 180
         let deadline = Date().addingTimeInterval(timeoutSeconds)
 
-        return try await Task.detached(priority: .userInitiated) {
+        return try await Task(priority: .userInitiated) {
             try Self.runSync(prompt: prompt, modelPath: modelPath, deadline: deadline)
         }.value
         #else
