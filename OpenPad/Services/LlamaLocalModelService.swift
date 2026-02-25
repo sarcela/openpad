@@ -572,18 +572,26 @@ final class LlamaLocalModelService {
     private static func isSpecialMarkerToken(_ piece: String) -> Bool {
         let trimmed = piece.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
-        return trimmed.contains("<|") ||
-            trimmed.contains("|>") ||
-            trimmed.hasPrefix("<｜") ||
-            trimmed.hasSuffix("｜>") ||
-            trimmed.contains("<start_of_turn>") ||
-            trimmed.contains("<end_of_turn>") ||
-            trimmed.contains("[INST]") ||
-            trimmed.contains("[/INST]") ||
-            trimmed.contains("<<SYS>>") ||
-            trimmed.contains("<</SYS>>") ||
-            trimmed.contains("### Instruction:") ||
-            trimmed.contains("### Response:")
+
+        let lower = trimmed.lowercased()
+
+        // Be strict here: broad checks like "|>" can incorrectly filter valid code/math
+        // tokens and hurt output quality.
+        if lower.hasPrefix("<｜") || lower.hasSuffix("｜>") { return true }
+        if lower.contains("<start_of_turn>") || lower.contains("<end_of_turn>") { return true }
+        if lower.contains("[inst]") || lower.contains("[/inst]") { return true }
+        if lower.contains("<<sys>>") || lower.contains("<</sys>>") { return true }
+        if lower.contains("### instruction:") || lower.contains("### response:") { return true }
+
+        // Match only full chat-protocol tags like <|im_start|>, <|eot_id|>, etc.
+        if let regex = try? NSRegularExpression(pattern: #"<\|[a-z0-9_\-]+\|>"#, options: [.caseInsensitive]) {
+            let nsRange = NSRange(lower.startIndex..<lower.endIndex, in: lower)
+            if regex.firstMatch(in: lower, options: [], range: nsRange) != nil {
+                return true
+            }
+        }
+
+        return false
     }
 
     private static func tokenPieceBytes(_ token: llama_token, vocab: OpaquePointer?) -> [UInt8]? {
