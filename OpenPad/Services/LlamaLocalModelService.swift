@@ -49,6 +49,7 @@ final class LlamaLocalModelService {
         let nBatch: Int32
         let maxNewTokens: Int
         let maxRepeats: Int
+        let minTokensBeforeEOS: Int
     }
 
     func configureModel(path: String) throws {
@@ -144,6 +145,7 @@ final class LlamaLocalModelService {
         let samplingTemperature = sanitizeTemperature(Float(runtimeConfig.loadLocalTemperature()))
         var lastToken: llama_token?
         var repeatCount = 0
+        var generatedCount = 0
 
         for _ in 0..<settings.maxNewTokens {
             if currentPos >= contextLimit { break }
@@ -153,7 +155,22 @@ final class LlamaLocalModelService {
 
             var nextToken = sampleToken(logits: logits, vocabSize: vocabSize, vocab: vocab, temperature: samplingTemperature)
             if isControlLikeToken(nextToken, vocab: vocab) {
-                nextToken = pickToken(logits: logits, vocabSize: vocabSize, vocab: vocab)
+                nextToken = bestTokenExcluding(
+                    logits: logits,
+                    vocabSize: vocabSize,
+                    vocab: vocab,
+                    excluded: Set([nextToken]),
+                    allowControlTokens: false
+                ) ?? pickToken(logits: logits, vocabSize: vocabSize, vocab: vocab)
+            }
+            if nextToken == llama_vocab_eos(vocab), generatedCount < settings.minTokensBeforeEOS {
+                nextToken = bestTokenExcluding(
+                    logits: logits,
+                    vocabSize: vocabSize,
+                    vocab: vocab,
+                    excluded: Set([llama_vocab_eos(vocab)]),
+                    allowControlTokens: false
+                ) ?? nextToken
             }
             if nextToken == llama_vocab_eos(vocab) { break }
 
@@ -173,6 +190,8 @@ final class LlamaLocalModelService {
                     break
                 }
             }
+
+            generatedCount += 1
 
             batch.n_tokens = 1
             batch.token[0] = nextToken
@@ -239,6 +258,33 @@ final class LlamaLocalModelService {
         }
 
         return llama_token(0)
+    }
+
+    private static func bestTokenExcluding(
+        logits: UnsafePointer<Float>,
+        vocabSize: Int,
+        vocab: OpaquePointer?,
+        excluded: Set<llama_token>,
+        allowControlTokens: Bool
+    ) -> llama_token? {
+        var bestToken: llama_token?
+        var bestLogit = -Float.greatestFiniteMagnitude
+
+        for i in 0..<vocabSize {
+            let token = llama_token(i)
+            if excluded.contains(token) { continue }
+
+            let logit = logits[i]
+            guard logit.isFinite else { continue }
+            if !allowControlTokens, isControlLikeToken(token, vocab: vocab) { continue }
+
+            if logit > bestLogit {
+                bestLogit = logit
+                bestToken = token
+            }
+        }
+
+        return bestToken
     }
 
     private static func isControlLikeToken(_ token: llama_token, vocab: OpaquePointer?) -> Bool {
@@ -349,16 +395,16 @@ final class LlamaLocalModelService {
         let profile = runtimeConfig.loadRunProfile()
 
         if emergency {
-            return GenerationSettings(nCtx: 1024, nBatch: 256, maxNewTokens: 140, maxRepeats: 4)
+            return GenerationSettings(nCtx: 1024, nBatch: 256, maxNewTokens: 140, maxRepeats: 4, minTokensBeforeEOS: 8)
         }
 
         switch profile {
         case .stable:
-            return GenerationSettings(nCtx: 1536, nBatch: 320, maxNewTokens: 180, maxRepeats: 5)
+            return GenerationSettings(nCtx: 1536, nBatch: 320, maxNewTokens: 180, maxRepeats: 5, minTokensBeforeEOS: 10)
         case .balanced:
-            return GenerationSettings(nCtx: 2048, nBatch: 512, maxNewTokens: 260, maxRepeats: 6)
+            return GenerationSettings(nCtx: 2048, nBatch: 512, maxNewTokens: 260, maxRepeats: 6, minTokensBeforeEOS: 12)
         case .turbo:
-            return GenerationSettings(nCtx: 2304, nBatch: 640, maxNewTokens: 300, maxRepeats: 7)
+            return GenerationSettings(nCtx: 2304, nBatch: 640, maxNewTokens: 300, maxRepeats: 7, minTokensBeforeEOS: 14)
         }
     }
 
