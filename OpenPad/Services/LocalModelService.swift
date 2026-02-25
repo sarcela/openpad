@@ -38,6 +38,11 @@ final class LocalModelService {
             } catch LlamaServiceError.modelFileNotFound(_) {
                 return "The selected llama.cpp model file is missing. Re-select a .gguf in Settings."
             } catch LlamaServiceError.emptyResponse {
+                let retryPrompt = "Answer directly in one short paragraph:\n\n\(String(prompt.suffix(1400)))"
+                if let retry = try? await llama.runLocal(prompt: retryPrompt) {
+                    let sanitized = sanitizeModelOutput(retry)
+                    if !sanitized.isEmpty { return sanitized }
+                }
                 return "The local llama.cpp model returned an empty answer. Please retry with a shorter prompt."
             } catch LlamaServiceError.decodeFailed(_) {
                 let compactPrompt = String(prompt.suffix(1800))

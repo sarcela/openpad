@@ -44,6 +44,13 @@ final class LlamaLocalModelService {
     private static let runtimeConfig = LocalRuntimeConfig.shared
     private var modelPath: String?
 
+    private struct GenerationSettings {
+        let nCtx: Int32
+        let nBatch: Int32
+        let maxNewTokens: Int
+        let maxRepeats: Int
+    }
+
     func configureModel(path: String) throws {
         let clean = Self.normalizeModelPath(path)
         guard !clean.isEmpty else { throw LlamaServiceError.modelNotConfigured }
@@ -79,9 +86,10 @@ final class LlamaLocalModelService {
         }
         defer { llama_model_free(model) }
 
+        let settings = generationSettings()
         var contextParams = llama_context_default_params()
-        contextParams.n_ctx = 2048
-        contextParams.n_batch = min(contextParams.n_ctx, 2048)
+        contextParams.n_ctx = settings.nCtx
+        contextParams.n_batch = min(contextParams.n_ctx, settings.nBatch)
         guard let context = llama_init_from_model(model, contextParams) else {
             throw LlamaServiceError.nativeBackendUnavailable
         }
@@ -137,7 +145,7 @@ final class LlamaLocalModelService {
         var lastToken: llama_token?
         var repeatCount = 0
 
-        for _ in 0..<260 {
+        for _ in 0..<settings.maxNewTokens {
             if currentPos >= contextLimit { break }
             guard let logits = llama_get_logits_ith(context, batch.n_tokens - 1) else { break }
             let vocabSize = Int(llama_vocab_n_tokens(vocab))
@@ -154,7 +162,7 @@ final class LlamaLocalModelService {
             } else {
                 repeatCount = 0
             }
-            if repeatCount >= 6 { break }
+            if repeatCount >= settings.maxRepeats { break }
             lastToken = nextToken
 
             if let pieceBytes = tokenPieceBytes(nextToken, vocab: vocab) {
@@ -183,10 +191,7 @@ final class LlamaLocalModelService {
             }
         }
 
-        let clean = output
-            .replacingOccurrences(of: #"(?is)<think>.*?</think>"#, with: "", options: .regularExpression)
-            .replacingOccurrences(of: #"(?im)^\s*(assistant|asistente)\s*:\s*"#, with: "", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let clean = sanitizeDecodedOutput(output)
 
         guard !clean.isEmpty else { throw LlamaServiceError.emptyResponse }
         return clean
@@ -208,12 +213,15 @@ final class LlamaLocalModelService {
                 fallbackLogit = logit
             }
 
-            guard let piece = tokenPieceString(token, vocab: vocab) else { continue }
-            let trimmed = piece.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.isEmpty { continue }
-            if trimmed.contains("<|") || trimmed.contains("|>") { continue }
+            var filteredOut = false
+            if let piece = tokenPieceString(token, vocab: vocab) {
+                let trimmed = piece.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed.isEmpty || trimmed.contains("<|") || trimmed.contains("|>") {
+                    filteredOut = true
+                }
+            }
 
-            if logit > bestLogit {
+            if !filteredOut, logit > bestLogit {
                 best = token
                 bestLogit = logit
             }
@@ -234,7 +242,7 @@ final class LlamaLocalModelService {
     }
 
     private static func isControlLikeToken(_ token: llama_token, vocab: OpaquePointer?) -> Bool {
-        guard let piece = tokenPieceString(token, vocab: vocab) else { return true }
+        guard let piece = tokenPieceString(token, vocab: vocab) else { return false }
         let trimmed = piece.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty { return true }
         return trimmed.contains("<|") || trimmed.contains("|>")
@@ -335,6 +343,32 @@ final class LlamaLocalModelService {
         return nucleus.last?.0 ?? candidates[0].token
     }
     #endif
+
+    private static func generationSettings() -> GenerationSettings {
+        let emergency = runtimeConfig.isEmergencyMemoryModeEnabled()
+        let profile = runtimeConfig.loadRunProfile()
+
+        if emergency {
+            return GenerationSettings(nCtx: 1024, nBatch: 256, maxNewTokens: 140, maxRepeats: 4)
+        }
+
+        switch profile {
+        case .stable:
+            return GenerationSettings(nCtx: 1536, nBatch: 320, maxNewTokens: 180, maxRepeats: 5)
+        case .balanced:
+            return GenerationSettings(nCtx: 2048, nBatch: 512, maxNewTokens: 260, maxRepeats: 6)
+        case .turbo:
+            return GenerationSettings(nCtx: 2304, nBatch: 640, maxNewTokens: 300, maxRepeats: 7)
+        }
+    }
+
+    private static func sanitizeDecodedOutput(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: #"(?is)<think>.*?</think>"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"(?im)^\s*(assistant|asistente)\s*:\s*"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"(?im)^\s*(user|usuario|system|sistema)\s*:.*$"#, with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
     private static func sanitizeTemperature(_ temperature: Float) -> Float {
         guard temperature.isFinite else { return 0.2 }
