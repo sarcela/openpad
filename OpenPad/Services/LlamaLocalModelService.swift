@@ -1248,14 +1248,14 @@ final class LlamaLocalModelService {
             }
         }
 
-        // Clip when a new user/system turn marker leaks on a fresh line.
-        // Anchoring to line starts avoids false positives in normal prose/code.
+        // Clip when explicit chat-template turn markers leak on a fresh line.
+        // Keep this strict: broad role-label patterns like `User:` can appear in normal
+        // answers and clipping them causes premature truncation/empty outputs.
         let turnLeakPatterns = [
             #"(?im)^\s*<\|im_start\|>\s*(user|system)\b"#,
             #"(?im)^\s*<\|start_header_id\|>\s*(user|system)\s*<\|end_header_id\|>"#,
             #"(?im)^\s*<start_of_turn>\s*(user|system)\b"#,
-            #"(?im)^\s*(###\s*(instruction|user|input)\s*:|\[INST\]|<｜User｜>)"#,
-            #"(?im)^\s*(user|usuario|system|sistema)\s*:"#
+            #"(?im)^\s*(###\s*(instruction|user|input)\s*:|\[INST\]|<｜User｜>)"#
         ]
         let nsRange = NSRange(text.startIndex..<text.endIndex, in: text)
         for pattern in turnLeakPatterns {
