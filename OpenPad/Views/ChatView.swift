@@ -1834,6 +1834,16 @@ private struct SettingsView: View {
                                     .font(.caption2)
                                     .foregroundColor(.secondary)
                             }
+
+                            HStack(spacing: 8) {
+                                Button("Preciso") { localTemperature = 0.05 }
+                                    .buttonStyle(.bordered)
+                                Button("Balanceado") { localTemperature = 0.20 }
+                                    .buttonStyle(.bordered)
+                                Button("Creativo") { localTemperature = 0.55 }
+                                    .buttonStyle(.bordered)
+                            }
+                            .font(.caption)
                         }
 
                         if runtimeProvider == .mlx {
