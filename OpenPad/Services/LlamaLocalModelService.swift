@@ -147,8 +147,19 @@ final class LlamaLocalModelService {
         )
         let maxPromptTokensByContext = max(64, Int(contextParams.n_ctx) - reservedForGeneration)
         let maxPromptTokens = maxPromptTokensByContext
-        let promptTokens = Array(tokens.prefix(Int(tokenCount)).suffix(maxPromptTokens))
-        print("[LLAMA] prompt_tokens=\(promptTokens.count) n_ctx=\(contextParams.n_ctx) n_batch=\(contextParams.n_batch)")
+
+        let allPromptTokens = Array(tokens.prefix(Int(tokenCount)))
+        let promptTokens: [llama_token]
+        if allPromptTokens.count <= maxPromptTokens {
+            promptTokens = allPromptTokens
+        } else {
+            // Keep BOS/system priming at the front and trim oldest middle context first.
+            let headCount = min(1, allPromptTokens.count)
+            let tailCount = max(0, maxPromptTokens - headCount)
+            promptTokens = Array(allPromptTokens.prefix(headCount) + allPromptTokens.suffix(tailCount))
+        }
+
+        print("[LLAMA] prompt_tokens=\(promptTokens.count) (raw=\(allPromptTokens.count)) n_ctx=\(contextParams.n_ctx) n_batch=\(contextParams.n_batch)")
 
         let batchCapacity = max(Int(contextParams.n_batch), 2)
         var batch = llama_batch_init(Int32(batchCapacity), 0, 1)
