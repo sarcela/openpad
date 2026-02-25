@@ -879,15 +879,18 @@ final class LlamaLocalModelService {
             return .mistralInstruct
         }
 
-        // Llama 3/3.1/3.2 and derivatives generally expect header-id chat templates.
+        // Llama 3/3.1/3.2/4 and derivatives generally expect header-id chat templates.
         // Normalize separators so names like "Llama_3.2" still map correctly.
-        let llama3Hints = [
+        let llamaHeaderTemplateHints = [
             "llama-3", "llama3", "meta-llama-3", "meta-llama3",
             // Common variants after normalization (e.g. "Llama-3.1" -> "llama-3-1").
             "llama-3-1", "llama-31", "llama31",
-            "llama-3-2", "llama-32", "llama32"
+            "llama-3-2", "llama-32", "llama32",
+            // Newer Llama checkpoints (e.g. Llama-4 Scout/Maverick) still use
+            // chat-header style framing; avoid misclassifying them as [INST].
+            "llama-4", "llama4", "meta-llama-4", "meta-llama4"
         ]
-        if llama3Hints.contains(where: { modelSignature.contains($0) }) {
+        if llamaHeaderTemplateHints.contains(where: { modelSignature.contains($0) }) {
             return .llama3
         }
 
