@@ -928,8 +928,7 @@ final class LlamaLocalModelService {
     }
 
     private static func sanitizeDecodedOutput(_ text: String) -> String {
-        text
-            .replacingOccurrences(of: #"(?is)<think>.*?</think>"#, with: "", options: .regularExpression)
+        stripReasoningBlocks(from: text)
             .replacingOccurrences(of: #"(?im)^\s*(assistant|asistente|model|modelo)\s*:\s*"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"(?im)^\s*(assistant|asistente|model|modelo)\s*$"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"(?im)^\s*(user|usuario|system|sistema)\s*:.*$"#, with: "", options: .regularExpression)
@@ -958,6 +957,26 @@ final class LlamaLocalModelService {
             .replacingOccurrences(of: "### User:", with: "")
             .replacingOccurrences(of: #"\n{3,}"#, with: "\n\n", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func stripReasoningBlocks(from text: String) -> String {
+        var cleaned = text
+
+        let patterns = [
+            #"(?is)<think>.*?</think>"#,
+            #"(?is)<thinking>.*?</thinking>"#,
+            #"(?is)```(?:thinking|reasoning)\b.*?```"#,
+            // Some local checkpoints truncate before a closing marker; drop the dangling tail.
+            #"(?is)<think>.*$"#,
+            #"(?is)<thinking>.*$"#,
+            #"(?is)```(?:thinking|reasoning)\b.*$"#
+        ]
+
+        for pattern in patterns {
+            cleaned = cleaned.replacingOccurrences(of: pattern, with: "", options: .regularExpression)
+        }
+
+        return cleaned
     }
 
     private static func stripPromptEcho(from output: String, userPrompt: String) -> String {
