@@ -342,6 +342,19 @@ final class ChatViewModel: ObservableObject {
         if preset == .balanceado, runtimeConfig.shouldDowngradeBalancedToLight() {
             runtimeConfig.applyModelPresetRuntimeDefaults(.ligero)
             backgroundStatus = "Model policy: fallback in 2/3 turns → preset downgraded to Ligero."
+            return
+        }
+
+        if preset == .ligero, runtimeConfig.shouldUpgradeLightToBalanced() {
+            runtimeConfig.applyModelPresetRuntimeDefaults(.balanceado)
+            backgroundStatus = "Model policy: stable low-latency streak → preset upgraded to Balanceado."
+            return
+        }
+
+        if preset == .balanceado, runtimeConfig.shouldUpgradeBalancedToQuality() {
+            runtimeConfig.applyModelPresetRuntimeDefaults(.calidad)
+            backgroundStatus = "Model policy: sustained stable performance → preset upgraded to Calidad."
+            return
         }
     }
 

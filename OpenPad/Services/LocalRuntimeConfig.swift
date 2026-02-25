@@ -397,6 +397,44 @@ struct LocalRuntimeConfig {
         return fallbackCount >= 2
     }
 
+    func shouldUpgradeLightToBalanced() -> Bool {
+        let signals = UserDefaults.standard.array(forKey: Keys.presetPolicySignals) as? [[String: Any]] ?? []
+        let recent = Array(signals.suffix(4))
+        guard recent.count >= 4 else { return false }
+
+        for row in recent {
+            if (row["fallbackUsed"] as? Bool) == true {
+                return false
+            }
+            let latency = row["latencyMs"] as? Int ?? Int.max
+            if latency > 5000 { return false }
+        }
+        return true
+    }
+
+    func shouldUpgradeBalancedToQuality() -> Bool {
+        let signals = UserDefaults.standard.array(forKey: Keys.presetPolicySignals) as? [[String: Any]] ?? []
+        let recent = Array(signals.suffix(5))
+        guard recent.count >= 5 else { return false }
+
+        for row in recent {
+            if (row["fallbackUsed"] as? Bool) == true {
+                return false
+            }
+            let latency = row["latencyMs"] as? Int ?? Int.max
+            if latency > 3500 { return false }
+        }
+
+        #if canImport(UIKit)
+        let thermal = ProcessInfo.processInfo.thermalState
+        if thermal == .serious || thermal == .critical {
+            return false
+        }
+        #endif
+
+        return true
+    }
+
     func shouldDowngradeQualityToBalancedForThermal() -> Bool {
         #if canImport(UIKit)
         let thermal = ProcessInfo.processInfo.thermalState
