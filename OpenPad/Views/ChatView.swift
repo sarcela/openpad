@@ -1778,6 +1778,8 @@ private struct SettingsView: View {
     @State private var selectedModelPath: String = ""
     @State private var ggufDownloadSpec = ""
     @State private var isDownloadingGGUF = false
+    @State private var ggufDownloadProgress: Double = 0
+    @State private var ggufDownloadPhase: String = "idle"
 
     @State private var embeddingModels: [URL] = []
     @State private var selectedEmbeddingModelPath: String = ""
@@ -2135,6 +2137,27 @@ private struct SettingsView: View {
                         Text("Ejemplos: https://.../model.gguf  o  bartowski/Llama-3.2-3B-Instruct-GGUF/model-q4_k_m.gguf")
                             .font(.caption2)
                             .foregroundColor(.secondary)
+
+                        if isDownloadingGGUF || ggufDownloadPhase == "ready" {
+                            ProgressView(value: ggufDownloadProgress, total: 1.0)
+                                .progressViewStyle(.linear)
+
+                            HStack {
+                                Text("Progreso estimado: \(Int(ggufDownloadProgress * 100))%")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                Text(ggufDownloadPhaseLabel())
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+
+                            if ggufDownloadPhase == "verifying" {
+                                Text("Finishing download and verifying GGUF…")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
                     } header: {
                         Text("Local chat model")
                     }
@@ -2654,12 +2677,38 @@ private struct SettingsView: View {
         }
 
         isDownloadingGGUF = true
-        defer { isDownloadingGGUF = false }
+        ggufDownloadProgress = 0.03
+        ggufDownloadPhase = "downloading"
+
+        let progressTask = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 450_000_000)
+                await MainActor.run {
+                    if isDownloadingGGUF {
+                        if ggufDownloadProgress < 0.92 {
+                            ggufDownloadProgress = min(0.92, ggufDownloadProgress + 0.04)
+                            ggufDownloadPhase = "downloading"
+                        } else {
+                            ggufDownloadPhase = "verifying"
+                            ggufDownloadProgress = (ggufDownloadProgress >= 0.98) ? 0.93 : (ggufDownloadProgress + 0.01)
+                        }
+                    }
+                }
+            }
+        }
+
+        defer {
+            progressTask.cancel()
+            isDownloadingGGUF = false
+            if ggufDownloadPhase != "ready" { ggufDownloadPhase = "idle" }
+        }
 
         do {
             let (tempURL, response) = try await URLSession.shared.download(from: sourceURL)
             if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
                 importMessage = "Descarga GGUF falló (HTTP \(http.statusCode))"
+                ggufDownloadProgress = 0
+                ggufDownloadPhase = "idle"
                 return
             }
 
@@ -2678,9 +2727,13 @@ private struct SettingsView: View {
             refreshModels()
             selectedModelPath = destination.path
             localConfig.saveSelectedModelPath(destination.path)
+            ggufDownloadProgress = 1.0
+            ggufDownloadPhase = "ready"
             importMessage = "Modelo descargado: \(fileName)"
         } catch {
             importMessage = "No pude descargar GGUF: \(error.localizedDescription)"
+            ggufDownloadProgress = 0
+            ggufDownloadPhase = "idle"
         }
     }
 
@@ -2744,6 +2797,15 @@ private struct SettingsView: View {
         openClawLiteConfig.unmarkMLXModelDownloaded(clean)
         mlxDownloadedModels = openClawLiteConfig.loadDownloadedMLXModels()
         importMessage = "Modelo marcado como no descargado: \(clean)"
+    }
+
+    private func ggufDownloadPhaseLabel() -> String {
+        switch ggufDownloadPhase {
+        case "downloading": return "Descargando"
+        case "verifying": return "Verificando"
+        case "ready": return "Listo"
+        default: return ""
+        }
     }
 
     private func mlxDownloadPhaseLabel() -> String {
