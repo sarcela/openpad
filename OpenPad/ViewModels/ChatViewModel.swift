@@ -506,7 +506,6 @@ final class AppMemoryStore {
         // Disabled: avoid noisy heartbeat logs in app memory files.
     }
 
-
     private func cleanupNoisyLegacyEntries() throws {
         let targets = ["USER.md", "TOOLS.md", "HEARTBEAT.md", "IMPROVEMENTS.md", "INTERACTIONS_LOG.md", "TOOL_TRACE_LOG.md", "HEARTBEAT_LOG.md"]
         let dir = try appMemoryDirectory()
@@ -525,17 +524,11 @@ final class AppMemoryStore {
             let filtered = lines.filter { line in
                 let l = line.trimmingCharacters(in: .whitespaces)
                 if l.isEmpty { return true }
-                if l.hasPrefix("- [") && (l.contains("user:") || l.contains("assistant:") || l.contains("issues=") ) { return false }
-                if l.hasPrefix("-") && l.contains("T") && l.contains(":") && l.contains("session started") { return false }
+                if l.hasPrefix("- [") && (l.contains("user:") || l.contains("assistant:") || l.contains("issues=")) { return false }
+                if l.hasPrefix("-") && l.contains("session started") { return false }
                 return true
             }
-            text = filtered.joined(separator: "
-").replacingOccurrences(of: "
-
-
-", with: "
-
-")
+            text = filtered.joined(separator: "\n").replacingOccurrences(of: "\n\n\n", with: "\n\n")
             try? text.write(to: file, atomically: true, encoding: .utf8)
         }
     }
@@ -629,39 +622,6 @@ final class SelfImprovementService {
         append(payload, to: "TOOL_RULES.md")
     }
 
-
-    private func cleanupNoisyLegacyEntries() throws {
-        let targets = ["USER.md", "TOOLS.md", "HEARTBEAT.md", "IMPROVEMENTS.md", "INTERACTIONS_LOG.md", "TOOL_TRACE_LOG.md", "HEARTBEAT_LOG.md"]
-        let dir = try appMemoryDirectory()
-
-        for name in targets {
-            let file = dir.appendingPathComponent(name)
-            guard fm.fileExists(atPath: file.path) else { continue }
-
-            if ["INTERACTIONS_LOG.md", "TOOL_TRACE_LOG.md", "HEARTBEAT_LOG.md"].contains(name) {
-                try? fm.removeItem(at: file)
-                continue
-            }
-
-            guard var text = try? String(contentsOf: file, encoding: .utf8) else { continue }
-            let lines = text.components(separatedBy: .newlines)
-            let filtered = lines.filter { line in
-                let l = line.trimmingCharacters(in: .whitespaces)
-                if l.isEmpty { return true }
-                if l.hasPrefix("- [") && (l.contains("user:") || l.contains("assistant:") || l.contains("issues=") ) { return false }
-                if l.hasPrefix("-") && l.contains("T") && l.contains(":") && l.contains("session started") { return false }
-                return true
-            }
-            text = filtered.joined(separator: "
-").replacingOccurrences(of: "
-
-
-", with: "
-
-")
-            try? text.write(to: file, atomically: true, encoding: .utf8)
-        }
-    }
 
     private func appMemoryDirectory() throws -> URL {
         let docs = try LocalModelConfig.shared.documentsDirectory()
