@@ -501,6 +501,11 @@ final class LlamaLocalModelService {
             return fallback
         }
 
+        // If logits are unusable (NaN/inf only), terminate gracefully instead of
+        // forcing token 0 (often BOS/control), which can create noisy loops.
+        if let vocab {
+            return llama_vocab_eos(vocab)
+        }
         return llama_token(0)
     }
 
