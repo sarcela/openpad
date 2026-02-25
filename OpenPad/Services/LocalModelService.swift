@@ -7,6 +7,7 @@ enum LocalInferencePurpose {
 
 final class LocalModelService {
     private let llama = LlamaLocalModelService()
+    private let ollama = OllamaLocalModelService()
     private let mlx = MLXLocalModelService()
 
     private let runtimeConfig = LocalRuntimeConfig.shared
@@ -36,6 +37,9 @@ final class LocalModelService {
                 try await Task.sleep(nanoseconds: 300_000_000)
                 return "No llama.cpp model selected. Add a .gguf in Models and select it in Settings."
             }
+        case .ollama:
+            let out = try await ollama.runLocal(prompt: prompt)
+            return sanitizeModelOutput(out)
         case .mlx:
             let chatModel = runtimeConfig.loadMLXModelName()
             let chosenModel: String?

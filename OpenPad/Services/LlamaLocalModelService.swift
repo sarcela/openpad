@@ -76,7 +76,7 @@ final class LlamaLocalModelService {
 
         var contextParams = llama_context_default_params()
         contextParams.n_ctx = 2048
-        contextParams.n_batch = 512
+        contextParams.n_batch = min(512, contextParams.n_ctx)
         guard let context = llama_init_from_model(model, contextParams) else {
             throw LlamaServiceError.nativeBackendUnavailable
         }
@@ -85,14 +85,25 @@ final class LlamaLocalModelService {
         let vocab = llama_model_get_vocab(model)
         let framedPrompt = """
         You are OpenPad, a concise and practical assistant.
+        Answer directly with useful text only.
         User: \(prompt.trimmingCharacters(in: .whitespacesAndNewlines))
         Assistant:
         """
 
-        var tokens = [llama_token](repeating: 0, count: max(512, framedPrompt.utf8.count + 8))
-        let tokenCount = framedPrompt.withCString { cText in
+        var tokenCapacity = max(512, framedPrompt.utf8.count + 32)
+        var tokens = [llama_token](repeating: 0, count: tokenCapacity)
+        var tokenCount = framedPrompt.withCString { cText in
             llama_tokenize(vocab, cText, Int32(strlen(cText)), &tokens, Int32(tokens.count), true, true)
         }
+
+        if tokenCount < 0 {
+            tokenCapacity = max(tokenCapacity * 2, Int(-tokenCount) + 8)
+            tokens = [llama_token](repeating: 0, count: tokenCapacity)
+            tokenCount = framedPrompt.withCString { cText in
+                llama_tokenize(vocab, cText, Int32(strlen(cText)), &tokens, Int32(tokens.count), true, true)
+            }
+        }
+
         guard tokenCount > 0 else { throw LlamaServiceError.tokenizationFailed }
         let promptTokens = Array(tokens.prefix(Int(tokenCount)))
 
@@ -113,24 +124,36 @@ final class LlamaLocalModelService {
 
         var output = ""
         var currentPos = batch.n_tokens
+        var lastToken: llama_token?
+        var repeatCount = 0
 
-        for _ in 0..<240 {
+        for _ in 0..<260 {
             guard let logits = llama_get_logits_ith(context, batch.n_tokens - 1) else { break }
             let vocabSize = Int(llama_vocab_n_tokens(vocab))
             if vocabSize <= 0 { break }
 
-            var maxLogit = logits[0]
-            var nextToken: llama_token = 0
-            for i in 1..<vocabSize where logits[i] > maxLogit {
-                maxLogit = logits[i]; nextToken = llama_token(i)
-            }
+            let nextToken = pickToken(logits: logits, vocabSize: vocabSize, vocab: vocab)
             if nextToken == llama_vocab_eos(vocab) { break }
 
-            var buffer = [CChar](repeating: 0, count: 128)
+            if let lastToken, lastToken == nextToken {
+                repeatCount += 1
+            } else {
+                repeatCount = 0
+            }
+            if repeatCount >= 8 { break }
+            lastToken = nextToken
+
+            var buffer = [CChar](repeating: 0, count: 160)
             let length = llama_token_to_piece(vocab, nextToken, &buffer, Int32(buffer.count), 0, false)
             if length > 0 {
                 let bytes = buffer.prefix(Int(length)).map { UInt8(bitPattern: $0) }
-                if let piece = String(bytes: bytes, encoding: .utf8) { output += piece }
+                if let piece = String(bytes: bytes, encoding: .utf8) {
+                    output += piece
+                    let lower = output.lowercased()
+                    if lower.contains("\nuser:") || lower.contains("\nassistant:") || lower.contains("<|eot_id|>") {
+                        break
+                    }
+                }
             }
 
             batch.n_tokens = 1
@@ -146,16 +169,65 @@ final class LlamaLocalModelService {
         }
 
         let clean = output
+            .replacingOccurrences(of: #"(?is)<think>.*?</think>"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"(?im)^\s*(assistant|asistente)\s*:\s*"#, with: "", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
+
         guard !clean.isEmpty else { throw LlamaServiceError.emptyResponse }
         return clean
+    }
+
+    private static func pickToken(logits: UnsafePointer<Float>, vocabSize: Int, vocab: OpaquePointer?) -> llama_token {
+        var best = llama_token(0)
+        var bestLogit = -Float.greatestFiniteMagnitude
+        var fallback = llama_token(0)
+        var fallbackLogit = -Float.greatestFiniteMagnitude
+
+        for i in 0..<vocabSize {
+            let token = llama_token(i)
+            let logit = logits[i]
+            if logit > fallbackLogit {
+                fallback = token
+                fallbackLogit = logit
+            }
+
+            guard let piece = tokenPieceString(token, vocab: vocab) else { continue }
+            let trimmed = piece.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty { continue }
+            if trimmed.contains("<|") || trimmed.contains("|>") { continue }
+
+            if logit > bestLogit {
+                best = token
+                bestLogit = logit
+            }
+        }
+
+        if let vocab, best == llama_vocab_eos(vocab), fallback != best {
+            return fallback
+        }
+        return (bestLogit > -Float.greatestFiniteMagnitude / 2) ? best : fallback
+    }
+
+    private static func tokenPieceString(_ token: llama_token, vocab: OpaquePointer?) -> String? {
+        var buffer = [CChar](repeating: 0, count: 128)
+        var count = llama_token_to_piece(vocab, token, &buffer, Int32(buffer.count), 0, false)
+
+        if count < 0 {
+            let needed = max(128, Int(-count) + 8)
+            buffer = [CChar](repeating: 0, count: needed)
+            count = llama_token_to_piece(vocab, token, &buffer, Int32(buffer.count), 0, false)
+        }
+
+        guard count > 0 else { return nil }
+        let bytes = buffer.prefix(Int(count)).map { UInt8(bitPattern: $0) }
+        return String(bytes: bytes, encoding: .utf8)
     }
     #endif
 
     private static func normalizeModelPath(_ path: String) -> String {
         let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "" }
+
         let expanded = (trimmed as NSString).expandingTildeInPath
         return URL(fileURLWithPath: expanded).standardizedFileURL.path
     }
