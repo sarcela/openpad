@@ -566,52 +566,67 @@ final class LlamaLocalModelService {
     }
 
     private static func detectPromptFamily(from modelPath: String) -> PromptFamily {
-        let modelName = URL(fileURLWithPath: modelPath)
+        let fileName = URL(fileURLWithPath: modelPath)
             .deletingPathExtension()
             .lastPathComponent
             .lowercased()
+        let normalizedFileName = normalizeModelIdentifier(fileName)
+
+        // Also inspect parent folders/repo slug hints for imported models with generic filenames.
+        let normalizedPath = normalizeModelIdentifier(modelPath.lowercased())
+        let modelSignature = normalizedFileName + " " + normalizedPath
 
         // Llama 2 chat/instruct checkpoints expect [INST] wrappers and degrade with Llama 3 templates.
         // Check this first so names like "llama-2-...-instruct" don't get misclassified.
         let llama2Hints = ["llama-2", "llama2"]
-        if llama2Hints.contains(where: { modelName.contains($0) }) &&
-            (modelName.contains("chat") || modelName.contains("instruct")) {
+        if llama2Hints.contains(where: { modelSignature.contains($0) }) &&
+            (modelSignature.contains("chat") || modelSignature.contains("instruct")) {
             return .mistralInstruct
         }
 
         // Llama 3/3.1/3.2 and derivatives generally expect header-id chat templates.
-        // Avoid broad "instruct" heuristics: they incorrectly route older checkpoints.
-        let llama3Hints = ["llama-3", "llama3", "meta-llama-3", "meta-llama3", "llama-31", "llama-32"]
-        if llama3Hints.contains(where: { modelName.contains($0) }) {
+        // Normalize separators so names like "Llama_3.2" still map correctly.
+        let llama3Hints = [
+            "llama-3", "llama3", "meta-llama-3", "meta-llama3",
+            "llama-31", "llama31", "llama-32", "llama32"
+        ]
+        if llama3Hints.contains(where: { modelSignature.contains($0) }) {
             return .llama3
         }
 
         // Qwen/Phi/DeepSeek and similar instruct variants usually expect ChatML markers.
-        let chatMLHints = ["qwen", "phi", "deepseek", "yi", "internlm"]
-        if chatMLHints.contains(where: { modelName.contains($0) }) {
+        let chatMLHints = ["qwen", "phi", "deepseek", "yi", "internlm", "smollm"]
+        if chatMLHints.contains(where: { modelSignature.contains($0) }) {
             return .chatML
         }
 
         // Gemma / Gemma 2 style checkpoints generally expect turn tags.
         let gemmaHints = ["gemma", "medgemma"]
-        if gemmaHints.contains(where: { modelName.contains($0) }) {
+        if gemmaHints.contains(where: { modelSignature.contains($0) }) {
             return .gemma
         }
 
         // Mistral/Mixtral-style instruct models tend to follow [INST] wrappers.
-        let mistralInstructHints = ["mistral", "mixtral", "zephyr", "openchat", "solar", "nous-hermes-2"]
-        if mistralInstructHints.contains(where: { modelName.contains($0) }) {
+        let mistralInstructHints = ["mistral", "mixtral", "zephyr", "openchat", "solar", "nous-hermes-2", "nemo-instruct"]
+        if mistralInstructHints.contains(where: { modelSignature.contains($0) }) {
             return .mistralInstruct
         }
 
         return .plain
     }
 
+    private static func normalizeModelIdentifier(_ raw: String) -> String {
+        raw
+            .replacingOccurrences(of: "_", with: "-")
+            .replacingOccurrences(of: ".", with: "-")
+            .replacingOccurrences(of: " ", with: "-")
+    }
+
     private static func sanitizeDecodedOutput(_ text: String) -> String {
         text
             .replacingOccurrences(of: #"(?is)<think>.*?</think>"#, with: "", options: .regularExpression)
-            .replacingOccurrences(of: #"(?im)^\s*(assistant|asistente)\s*:\s*"#, with: "", options: .regularExpression)
-            .replacingOccurrences(of: #"(?im)^\s*(assistant|asistente)\s*$"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"(?im)^\s*(assistant|asistente|model|modelo)\s*:\s*"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"(?im)^\s*(assistant|asistente|model|modelo)\s*$"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"(?im)^\s*(user|usuario|system|sistema)\s*:.*$"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: "<|begin_of_text|>", with: "")
             .replacingOccurrences(of: "<|eot_id|>", with: "")
