@@ -66,7 +66,7 @@ final class LlamaLocalModelService {
     func runLocal(prompt: String) async throws -> String {
         guard let modelPath else { throw LlamaServiceError.modelNotConfigured }
         #if canImport(LlamaSwift)
-        let timeoutSeconds: Double = LlamaLocalModelService.runtimeConfig.isEmergencyMemoryModeEnabled() ? 35 : 55
+        let timeoutSeconds: Double = LlamaLocalModelService.runtimeConfig.isEmergencyMemoryModeEnabled() ? 90 : 180
         return try await withThrowingTaskGroup(of: String.self) { group in
             group.addTask {
                 try Self.runSync(prompt: prompt, modelPath: modelPath)
