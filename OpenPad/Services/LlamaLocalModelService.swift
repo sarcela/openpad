@@ -605,7 +605,9 @@ final class LlamaLocalModelService {
         // Normalize separators so names like "Llama_3.2" still map correctly.
         let llama3Hints = [
             "llama-3", "llama3", "meta-llama-3", "meta-llama3",
-            "llama-31", "llama31", "llama-32", "llama32"
+            // Common variants after normalization (e.g. "Llama-3.1" -> "llama-3-1").
+            "llama-3-1", "llama-31", "llama31",
+            "llama-3-2", "llama-32", "llama32"
         ]
         if llama3Hints.contains(where: { modelSignature.contains($0) }) {
             return .llama3
