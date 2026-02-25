@@ -1785,8 +1785,6 @@ private struct SettingsView: View {
 
     @State private var runtimeProvider: LocalRuntimeProvider = .mlx
     @State private var localTemperature: Double = 0.2
-    @State private var llamaBaseURL = ""
-    @State private var llamaModel = ""
     @State private var mlxModelName = ""
     @State private var mlxToolsModelName = ""
     @State private var mlxReasoningModelName = ""
@@ -1816,7 +1814,6 @@ private struct SettingsView: View {
     @State private var showEmbeddingInspector = false
     @State private var showAdvancedModelIDs = false
     @State private var showAdvancedNetwork = false
-    @State private var showLlamaFallbackSettings = false
     @State private var recentContextWindow: Double = 10
     @State private var automationLoopEnabled = false
     @State private var lowPowerModeEnabled = false
@@ -2082,34 +2079,9 @@ private struct SettingsView: View {
 
                     if runtimeProvider == .llamaCpp {
                         Section("Backend llama.swift") {
-                            if isNativeLlamaModuleDetected {
-                                Toggle("Show llama-server fallback settings", isOn: $showLlamaFallbackSettings)
-
-                                if isNativeLlamaModuleAvailable {
-                                    Text("Native llama.swift backend is available. Keep fallback server hidden unless you need troubleshooting or strict loopback fallback.")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                } else {
-                                    Text("A llama module is present, but native generation is not wired in this build yet. Configure llama-server fallback.")
-                                        .font(.caption)
-                                        .foregroundColor(.orange)
-                                }
-                            }
-
-                            if !isNativeLlamaModuleAvailable || showLlamaFallbackSettings {
-                                TextField("llama-server URL", text: $llamaBaseURL)
-                                    .textInputAutocapitalization(.never)
-                                    .autocorrectionDisabled()
-                                TextField("Modelo (opcional)", text: $llamaModel)
-                                    .textInputAutocapitalization(.never)
-                                    .autocorrectionDisabled()
-                                Text("If model is empty, the selected .gguf filename is used.")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                                Text("Tip: you can enter 127.0.0.1:8080 (scheme is optional).")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                            }
+                            Text("Native llama.swift backend enabled. Server fallback settings were removed.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
                         }
 
                     Section {
@@ -2376,19 +2348,11 @@ private struct SettingsView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
                         let persistedLlama = runtimeConfig.loadLlama()
-                        let trimmedLlamaBaseURL = llamaBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
-                        let trimmedLlamaModel = llamaModel.trimmingCharacters(in: .whitespacesAndNewlines)
-                        let hasLlamaEdits =
-                            trimmedLlamaBaseURL != persistedLlama.baseURL.trimmingCharacters(in: .whitespacesAndNewlines) ||
-                            trimmedLlamaModel != persistedLlama.model.trimmingCharacters(in: .whitespacesAndNewlines)
-                        let shouldUseLlamaFallback = !isNativeLlamaModuleAvailable || showLlamaFallbackSettings || hasLlamaEdits
-                        let effectiveLlamaBaseURL = shouldUseLlamaFallback ? trimmedLlamaBaseURL : persistedLlama.baseURL
-                        let effectiveLlamaModel = shouldUseLlamaFallback ? trimmedLlamaModel : persistedLlama.model
 
                         remoteConfig.save(provider: remoteProvider, baseURL: baseURL, token: token, model: model, organization: remoteOrganization, project: remoteProject)
                         runtimeConfig.saveProvider(runtimeProvider)
                         runtimeConfig.saveLocalTemperature(localTemperature)
-                        runtimeConfig.saveLlama(baseURL: effectiveLlamaBaseURL, model: effectiveLlamaModel)
+                        runtimeConfig.saveLlama(baseURL: persistedLlama.baseURL, model: persistedLlama.model)
                         runtimeConfig.saveMLXModelName(mlxModelName)
                         runtimeConfig.saveMLXToolsModelName(mlxToolsModelName)
                         runtimeConfig.saveMLXReasoningModelName(mlxReasoningModelName)
@@ -2433,13 +2397,6 @@ private struct SettingsView: View {
 
                 runtimeProvider = runtimeConfig.loadProvider()
                 localTemperature = runtimeConfig.loadLocalTemperature()
-                let llama = runtimeConfig.loadLlama()
-                llamaBaseURL = llama.baseURL
-                llamaModel = llama.model
-                showLlamaFallbackSettings =
-                    !isNativeLlamaModuleAvailable ||
-                    !llama.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-                    llama.baseURL != "http://127.0.0.1:8080"
                 mlxModelName = runtimeConfig.loadMLXModelName()
                 mlxToolsModelName = runtimeConfig.loadMLXToolsModelName()
                 mlxReasoningModelName = runtimeConfig.loadMLXReasoningModelName()
