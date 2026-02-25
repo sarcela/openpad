@@ -44,6 +44,7 @@ struct LocalRuntimeConfig {
         static let mlxSeparateToolsModelEnabled = "local.mlx.tools.separate.enabled"
         static let recentContextWindow = "agent.recent.context.window"
         static let runProfile = "agent.run.profile"
+        static let localTemperature = "local.runtime.temperature"
         static let emergencyMemoryMode = "agent.memory.emergency.mode"
         static let mlxReasoningModel = "local.mlx.reasoning.model"
         static let mlxVisionModel = "local.mlx.vision.model"
@@ -130,6 +131,15 @@ struct LocalRuntimeConfig {
 
     func saveRunProfile(_ profile: RunProfile) {
         UserDefaults.standard.set(profile.rawValue, forKey: Keys.runProfile)
+    }
+
+    func loadLocalTemperature() -> Double {
+        let value = UserDefaults.standard.object(forKey: Keys.localTemperature) as? Double
+        return min(1.0, max(0.0, value ?? 0.2))
+    }
+
+    func saveLocalTemperature(_ value: Double) {
+        UserDefaults.standard.set(min(1.0, max(0.0, value)), forKey: Keys.localTemperature)
     }
 
     func loadRecentContextWindow() -> Int {

@@ -37,6 +37,7 @@ final class LlamaLocalModelService {
 
     private static let backendLock = NSLock()
     private static var backendInitialized = false
+    private static let runtimeConfig = LocalRuntimeConfig.shared
     private var modelPath: String?
 
     func configureModel(path: String) throws {
@@ -221,6 +222,80 @@ final class LlamaLocalModelService {
         guard count > 0 else { return nil }
         let bytes = buffer.prefix(Int(count)).map { UInt8(bitPattern: $0) }
         return String(bytes: bytes, encoding: .utf8)
+    }
+    #endif
+
+
+    #if canImport(LlamaSwift)
+    private static func sampleToken(
+        logits: UnsafePointer<Float>,
+        vocabSize: Int,
+        vocab: OpaquePointer?,
+        temperature: Float
+    ) -> llama_token {
+        if temperature <= 0.05 {
+            var maxLogit = logits[0]
+            var token: llama_token = 0
+            for i in 1..<vocabSize where logits[i] > maxLogit {
+                maxLogit = logits[i]
+                token = llama_token(i)
+            }
+            return token
+        }
+
+        let clippedTemp = max(0.05, min(1.0, temperature))
+        let topK = min(64, vocabSize)
+        var candidates: [(token: llama_token, logit: Float)] = []
+        candidates.reserveCapacity(topK)
+
+        for i in 0..<vocabSize {
+            let l = logits[i]
+            if candidates.count < topK {
+                candidates.append((llama_token(i), l))
+                if candidates.count == topK {
+                    candidates.sort { $0.logit > $1.logit }
+                }
+                continue
+            }
+            if let last = candidates.last, l > last.logit {
+                candidates[candidates.count - 1] = (llama_token(i), l)
+                candidates.sort { $0.logit > $1.logit }
+            }
+        }
+
+        guard !candidates.isEmpty else { return 0 }
+
+        let maxLogit = candidates[0].logit
+        var probs: [(llama_token, Double)] = []
+        var total = 0.0
+        for c in candidates {
+            let p = exp(Double((c.logit - maxLogit) / clippedTemp))
+            probs.append((c.token, p))
+            total += p
+        }
+        if total <= 0 { return candidates[0].token }
+
+        for i in probs.indices { probs[i].1 /= total }
+
+        // Nucleus top-p = 0.9
+        var nucleus: [(llama_token, Double)] = []
+        var cumulative = 0.0
+        for p in probs {
+            nucleus.append(p)
+            cumulative += p.1
+            if cumulative >= 0.9 && nucleus.count >= 2 { break }
+        }
+
+        let nsum = nucleus.reduce(0.0) { $0 + $1.1 }
+        if nsum <= 0 { return candidates[0].token }
+
+        let r = Double.random(in: 0..<1)
+        var run = 0.0
+        for (tok, prob) in nucleus {
+            run += prob / nsum
+            if r <= run { return tok }
+        }
+        return nucleus.last?.0 ?? candidates[0].token
     }
     #endif
 
