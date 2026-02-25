@@ -117,7 +117,7 @@ struct ChatView: View {
                             }
 
 
-                            if vm.isLoading && (debugExecutionModeEnabled || !vm.liveDebugTrace.isEmpty) {
+                            if vm.isLoading && !vm.liveDebugTrace.isEmpty {
                                 VStack(alignment: .leading, spacing: 6) {
                                     Label("Debug (temporary)", systemImage: "ladybug")
                                         .font(.caption)
