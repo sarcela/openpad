@@ -1169,13 +1169,11 @@ final class LlamaLocalModelService {
                 return candidate.path
             }
 
-            // If the file was renamed/re-quantized, prefer a model with the same stem in app storage.
-            let stem = URL(fileURLWithPath: fileName).deletingPathExtension().lastPathComponent.lowercased()
-            if !stem.isEmpty {
+            // If the file was renamed/re-quantized, prefer the closest stem match in app storage.
+            let requestedStem = URL(fileURLWithPath: fileName).deletingPathExtension().lastPathComponent.lowercased()
+            if !requestedStem.isEmpty {
                 let available = LocalModelConfig.shared.availableModels(in: docs)
-                if let stemMatch = available.first(where: {
-                    $0.deletingPathExtension().lastPathComponent.lowercased() == stem
-                }) {
+                if let stemMatch = bestStemMatch(for: requestedStem, in: available) {
                     return stemMatch.path
                 }
             }
@@ -1184,6 +1182,38 @@ final class LlamaLocalModelService {
         }
 
         return normalizedPath
+    }
+
+    private static func bestStemMatch(for requestedStem: String, in available: [URL]) -> URL? {
+        guard !available.isEmpty else { return nil }
+
+        // 1) Exact normalized match.
+        let requestedNormalized = normalizeStemForMatch(requestedStem)
+        guard !requestedNormalized.isEmpty else { return nil }
+
+        if let exact = available.first(where: {
+            normalizeStemForMatch($0.deletingPathExtension().lastPathComponent.lowercased()) == requestedNormalized
+        }) {
+            return exact
+        }
+
+        // 2) Relaxed contains match so re-quantized/renamed files still resolve.
+        if let relaxed = available.first(where: {
+            let candidate = normalizeStemForMatch($0.deletingPathExtension().lastPathComponent.lowercased())
+            return candidate.contains(requestedNormalized) || requestedNormalized.contains(candidate)
+        }) {
+            return relaxed
+        }
+
+        return nil
+    }
+
+    private static func normalizeStemForMatch(_ raw: String) -> String {
+        raw
+            .replacingOccurrences(of: #"[-_ ]q\d+([_.-]k[_.-]?[msl])?"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"[-_ ](iq\d+|fp16|f16|f32|bf16|int4|int8|instruct|chat|gguf)"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"[^a-z0-9]+"#, with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private static func unwrapQuotedPath(_ raw: String) -> String {
