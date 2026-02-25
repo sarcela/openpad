@@ -73,9 +73,21 @@ final class LlamaLocalModelService {
         let timeoutSeconds: Double = LlamaLocalModelService.runtimeConfig.isEmergencyMemoryModeEnabled() ? 90 : 180
         let deadline = Date().addingTimeInterval(timeoutSeconds)
 
-        return try await Task(priority: .userInitiated) {
-            try Self.runSync(prompt: prompt, modelPath: modelPath, deadline: deadline)
-        }.value
+        do {
+            return try await Task(priority: .userInitiated) {
+                try Self.runSync(prompt: prompt, modelPath: modelPath, deadline: deadline)
+            }.value
+        } catch LlamaServiceError.backendBusyTimeout {
+            // A previous generation can hold the backend lock briefly; retry once with a
+            // short backoff to avoid surfacing transient busy errors to the UI.
+            if Date().addingTimeInterval(0.55) < deadline {
+                try await Task.sleep(nanoseconds: 550_000_000)
+                return try await Task(priority: .userInitiated) {
+                    try Self.runSync(prompt: prompt, modelPath: modelPath, deadline: deadline)
+                }.value
+            }
+            throw LlamaServiceError.backendBusyTimeout
+        }
         #else
         throw LlamaServiceError.nativeBackendUnavailable
         #endif
@@ -247,8 +259,14 @@ final class LlamaLocalModelService {
                 outputBytes.append(contentsOf: pieceBytes)
                 output = decodeUTF8Prefix(outputBytes, previous: output)
                 if let clipped = clipAtStopSequence(output) {
-                    output = clipped
-                    break
+                    if clipped.isEmpty {
+                        // Some checkpoints emit a stop marker before any real text.
+                        // Ignore that marker and continue sampling instead of ending empty.
+                        output = ""
+                    } else {
+                        output = clipped
+                        break
+                    }
                 }
             }
 
