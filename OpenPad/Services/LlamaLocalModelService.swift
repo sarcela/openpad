@@ -1143,7 +1143,6 @@ final class LlamaLocalModelService {
         guard !trimmed.isEmpty else { return true }
 
         let markers = [
-            "<|", "|>",
             "<start_of_turn>", "<end_of_turn>",
             "<｜", "｜>",
             "[INST]", "[/INST]", "<<SYS>>", "<</SYS>>",
@@ -1152,9 +1151,18 @@ final class LlamaLocalModelService {
         ]
 
         let lower = trimmed.lowercased()
-        let markerHits = markers.reduce(into: 0) { count, marker in
+        var markerHits = markers.reduce(into: 0) { count, marker in
             if lower.contains(marker.lowercased()) {
                 count += 1
+            }
+        }
+
+        // Match actual chat-protocol tags like <|im_start|> / <|eot_id|>.
+        // Avoid broad "|>" checks that can misclassify normal code/math text.
+        if let regex = try? NSRegularExpression(pattern: #"<\|[a-z0-9_\-]+\|>"#, options: [.caseInsensitive]) {
+            let range = NSRange(lower.startIndex..<lower.endIndex, in: lower)
+            if regex.firstMatch(in: lower, options: [], range: range) != nil {
+                markerHits += 1
             }
         }
 
