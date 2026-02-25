@@ -117,7 +117,14 @@ final class LlamaLocalModelService {
 
         for family in attempts {
             do {
-                let result = try runSync(prompt: prompt, modelPath: modelPath, mode: mode, deadline: deadline, promptFamily: family)
+                let result = try runSync(
+                    prompt: prompt,
+                    modelPath: modelPath,
+                    mode: mode,
+                    deadline: deadline,
+                    promptFamily: family,
+                    forceDeterministicSampling: false
+                )
                 if family != preferred {
                     print("[LLAMA] recovered_using_prompt_family=\(promptFamilyLabel(family)) preferred=\(promptFamilyLabel(preferred))")
                 }
@@ -125,8 +132,29 @@ final class LlamaLocalModelService {
             } catch let error as LlamaServiceError {
                 switch error {
                 case .emptyResponse, .decodeFailed(_), .tokenizationFailed:
-                    lastRecoverableError = error
-                    continue
+                    // Retry once with near-greedy sampling before changing prompt template.
+                    // This improves stability on small/quantized checkpoints that can emit
+                    // low-signal garbage under higher temperatures.
+                    do {
+                        let deterministic = try runSync(
+                            prompt: prompt,
+                            modelPath: modelPath,
+                            mode: mode,
+                            deadline: deadline,
+                            promptFamily: family,
+                            forceDeterministicSampling: true
+                        )
+                        print("[LLAMA] recovered_using_low_temp family=\(promptFamilyLabel(family))")
+                        return deterministic
+                    } catch let retryError as LlamaServiceError {
+                        switch retryError {
+                        case .emptyResponse, .decodeFailed(_), .tokenizationFailed:
+                            lastRecoverableError = retryError
+                            continue
+                        default:
+                            throw retryError
+                        }
+                    }
                 default:
                     throw error
                 }
@@ -136,7 +164,14 @@ final class LlamaLocalModelService {
         throw lastRecoverableError ?? .emptyResponse
     }
 
-    private static func runSync(prompt: String, modelPath: String, mode: LlamaGenerationMode, deadline: Date, promptFamily: PromptFamily) throws -> String {
+    private static func runSync(
+        prompt: String,
+        modelPath: String,
+        mode: LlamaGenerationMode,
+        deadline: Date,
+        promptFamily: PromptFamily,
+        forceDeterministicSampling: Bool
+    ) throws -> String {
         try throwIfCancelled()
         guard FileManager.default.fileExists(atPath: modelPath) else {
             throw LlamaServiceError.modelFileNotFound(modelPath)
@@ -270,6 +305,9 @@ final class LlamaLocalModelService {
         // Tool/planner turns are much more reliable with near-greedy decoding.
         // Keep chat responses configurable, but clamp tool mode for deterministic JSON.
         let samplingTemperature: Float = {
+            if forceDeterministicSampling {
+                return min(baseTemperature, 0.12)
+            }
             switch mode {
             case .chat: return baseTemperature
             case .tools: return min(baseTemperature, 0.05)
