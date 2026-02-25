@@ -460,16 +460,16 @@ final class LlamaLocalModelService {
         let profile = runtimeConfig.loadRunProfile()
 
         if emergency {
-            return GenerationSettings(nCtx: 1024, nBatch: 256, maxNewTokens: 140, maxRepeats: 4, minTokensBeforeEOS: 8)
+            return GenerationSettings(nCtx: 896, nBatch: 96, maxNewTokens: 96, maxRepeats: 4, minTokensBeforeEOS: 8)
         }
 
         switch profile {
         case .stable:
-            return GenerationSettings(nCtx: 1536, nBatch: 320, maxNewTokens: 180, maxRepeats: 5, minTokensBeforeEOS: 10)
+            return GenerationSettings(nCtx: 1024, nBatch: 128, maxNewTokens: 110, maxRepeats: 5, minTokensBeforeEOS: 10)
         case .balanced:
-            return GenerationSettings(nCtx: 2048, nBatch: 512, maxNewTokens: 260, maxRepeats: 6, minTokensBeforeEOS: 12)
+            return GenerationSettings(nCtx: 1280, nBatch: 160, maxNewTokens: 140, maxRepeats: 6, minTokensBeforeEOS: 12)
         case .turbo:
-            return GenerationSettings(nCtx: 2304, nBatch: 640, maxNewTokens: 300, maxRepeats: 7, minTokensBeforeEOS: 14)
+            return GenerationSettings(nCtx: 1536, nBatch: 192, maxNewTokens: 170, maxRepeats: 7, minTokensBeforeEOS: 14)
         }
     }
 
