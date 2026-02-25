@@ -560,18 +560,19 @@ final class LlamaLocalModelService {
             .lastPathComponent
             .lowercased()
 
-        // Llama 3/3.1/3.2 and derivatives generally expect header-id chat templates.
-        let llama3Hints = ["llama-3", "llama3", "meta-llama", "openhermes", "instruct"]
-        if llama3Hints.contains(where: { modelName.contains($0) }) &&
-            (modelName.contains("llama") || modelName.contains("hermes")) {
-            return .llama3
-        }
-
-        // Llama 2 chat/instruct checkpoints expect [INST] wrappers and degrade with plain prompts.
+        // Llama 2 chat/instruct checkpoints expect [INST] wrappers and degrade with Llama 3 templates.
+        // Check this first so names like "llama-2-...-instruct" don't get misclassified.
         let llama2Hints = ["llama-2", "llama2"]
         if llama2Hints.contains(where: { modelName.contains($0) }) &&
             (modelName.contains("chat") || modelName.contains("instruct")) {
             return .mistralInstruct
+        }
+
+        // Llama 3/3.1/3.2 and derivatives generally expect header-id chat templates.
+        // Avoid broad "instruct" heuristics: they incorrectly route older checkpoints.
+        let llama3Hints = ["llama-3", "llama3", "meta-llama-3", "meta-llama3", "llama-31", "llama-32"]
+        if llama3Hints.contains(where: { modelName.contains($0) }) {
+            return .llama3
         }
 
         // Qwen/Phi/DeepSeek and similar instruct variants usually expect ChatML markers.
