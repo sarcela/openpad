@@ -67,12 +67,13 @@ final class LlamaLocalModelService {
         guard let modelPath else { throw LlamaServiceError.modelNotConfigured }
         #if canImport(LlamaSwift)
         let timeoutSeconds: Double = LlamaLocalModelService.runtimeConfig.isEmergencyMemoryModeEnabled() ? 90 : 180
+        let deadline = Date().addingTimeInterval(timeoutSeconds)
         return try await withThrowingTaskGroup(of: String.self) { group in
             group.addTask {
-                try Self.runSync(prompt: prompt, modelPath: modelPath)
+                try Self.runSync(prompt: prompt, modelPath: modelPath, deadline: deadline)
             }
             group.addTask {
-                try await Task.sleep(nanoseconds: UInt64(timeoutSeconds * 1_000_000_000))
+                try await Task.sleep(nanoseconds: UInt64((timeoutSeconds + 2) * 1_000_000_000))
                 throw LlamaServiceError.generationTimedOut
             }
 
@@ -88,12 +89,13 @@ final class LlamaLocalModelService {
     }
 
     #if canImport(LlamaSwift)
-    private static func runSync(prompt: String, modelPath: String) throws -> String {
+    private static func runSync(prompt: String, modelPath: String, deadline: Date) throws -> String {
         guard FileManager.default.fileExists(atPath: modelPath) else {
             throw LlamaServiceError.modelFileNotFound(modelPath)
         }
 
-        guard backendLock.lock(before: Date().addingTimeInterval(2.0)) else {
+        let lockWaitSeconds = min(12.0, max(3.0, Date().distance(to: deadline) * 0.25))
+        guard backendLock.lock(before: Date().addingTimeInterval(lockWaitSeconds)) else {
             throw LlamaServiceError.backendBusyTimeout
         }
         defer { backendLock.unlock() }
@@ -155,6 +157,7 @@ final class LlamaLocalModelService {
         var processedPromptTokens = 0
         var start = 0
         while start < promptTokens.count {
+            if Date() >= deadline { throw LlamaServiceError.generationTimedOut }
             let end = min(start + batchCapacity, promptTokens.count)
             let chunk = Array(promptTokens[start..<end])
 
@@ -187,6 +190,7 @@ final class LlamaLocalModelService {
         let repeatWindowSize = 64
 
         for _ in 0..<settings.maxNewTokens {
+            if Date() >= deadline { throw LlamaServiceError.generationTimedOut }
             if currentPos >= contextLimit { break }
             guard let logits = llama_get_logits_ith(context, batch.n_tokens - 1) else { break }
             let vocabSize = Int(llama_vocab_n_tokens(vocab))
@@ -497,6 +501,7 @@ final class LlamaLocalModelService {
             .replacingOccurrences(of: "<｜end▁of▁sentence｜>", with: "")
             .replacingOccurrences(of: "<｜User｜>", with: "")
             .replacingOccurrences(of: "<｜Assistant｜>", with: "")
+            .replacingOccurrences(of: #"\n{3,}"#, with: "\n\n", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 

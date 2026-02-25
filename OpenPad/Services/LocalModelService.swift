@@ -58,6 +58,8 @@ final class LocalModelService {
                 return "The prompt could not be tokenized by the local llama.swift model. Try removing unusual symbols and retry."
             } catch LlamaServiceError.vocabularyUnavailable {
                 return "The selected llama.swift model did not expose a usable vocabulary. Re-select a valid GGUF and retry."
+            } catch LlamaServiceError.backendBusyTimeout {
+                return "llama.swift is still finishing a previous response. Please retry in a few seconds."
             } catch LlamaServiceError.generationTimedOut {
                 return "The local llama.swift model took too long to answer (timeout raised to 180s). Try a shorter prompt or use a smaller GGUF if this keeps happening."
             } catch LlamaServiceError.nativeBackendUnavailable {
