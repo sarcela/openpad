@@ -184,7 +184,7 @@ final class LlamaLocalModelService {
 
             if let pieceBytes = tokenPieceBytes(nextToken, vocab: vocab) {
                 outputBytes.append(contentsOf: pieceBytes)
-                output = String(decoding: outputBytes, as: UTF8.self)
+                output = decodeUTF8Prefix(outputBytes, previous: output)
                 if let clipped = clipAtStopSequence(output) {
                     output = clipped
                     break
@@ -390,6 +390,26 @@ final class LlamaLocalModelService {
     }
     #endif
 
+    private static func decodeUTF8Prefix(_ data: Data, previous: String) -> String {
+        if let full = String(data: data, encoding: .utf8) {
+            return full
+        }
+
+        // Token streams can end in partial multi-byte sequences between decode steps.
+        // Keep the last known-good text instead of injecting replacement glyphs.
+        let maxTrim = min(4, data.count)
+        if maxTrim > 1 {
+            for trim in 1..<maxTrim {
+                let candidate = data.dropLast(trim)
+                if let prefix = String(data: candidate, encoding: .utf8) {
+                    return prefix
+                }
+            }
+        }
+
+        return previous
+    }
+
     private static func generationSettings() -> GenerationSettings {
         let emergency = runtimeConfig.isEmergencyMemoryModeEnabled()
         let profile = runtimeConfig.loadRunProfile()
@@ -413,6 +433,12 @@ final class LlamaLocalModelService {
             .replacingOccurrences(of: #"(?is)<think>.*?</think>"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"(?im)^\s*(assistant|asistente)\s*:\s*"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"(?im)^\s*(user|usuario|system|sistema)\s*:.*$"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: "<|eot_id|>", with: "")
+            .replacingOccurrences(of: "<|end|>", with: "")
+            .replacingOccurrences(of: "<|im_end|>", with: "")
+            .replacingOccurrences(of: "<｜end▁of▁sentence｜>", with: "")
+            .replacingOccurrences(of: "<｜User｜>", with: "")
+            .replacingOccurrences(of: "<｜Assistant｜>", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
@@ -422,7 +448,18 @@ final class LlamaLocalModelService {
     }
 
     private static func clipAtStopSequence(_ text: String) -> String? {
-        let stops = ["\nuser:", "\nassistant:", "<|eot_id|>", "<|end|>"]
+        let stops = [
+            "\nuser:",
+            "\nassistant:",
+            "\nusuario:",
+            "\nasistente:",
+            "<|eot_id|>",
+            "<|end|>",
+            "<|im_end|>",
+            "<｜end▁of▁sentence｜>",
+            "<｜User｜>",
+            "<｜Assistant｜>"
+        ]
         guard let marker = stops
             .compactMap({ text.range(of: $0, options: [.caseInsensitive])?.lowerBound })
             .min()
