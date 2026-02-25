@@ -534,46 +534,43 @@ final class OpenClawLiteAgentService {
         let profile = runtimeConfig.loadRunProfile()
         let lowPower = OpenClawLiteConfig.shared.isLowPowerModeEnabled()
         let budget = contextManager.budget(profile: profile, lowPower: lowPower)
-        let memoryLimit = lowPower ? 4 : (profile == .turbo ? 10 : 6)
-        let memoryContext = String(tools.recentMemories(limit: memoryLimit).prefix(budget.memoryChars))
-        let appIdentityContext = String(appMemoryContext(maxChars: lowPower ? 1200 : 2600).prefix(budget.memoryChars))
+        let memoryLimit = lowPower ? 3 : (profile == .turbo ? 8 : 5)
+        let memoryContext = String(tools.recentMemories(limit: memoryLimit).prefix(lowPower ? 700 : min(1200, budget.memoryChars)))
+        let appIdentityContext = String(appMemoryContext(maxChars: lowPower ? 500 : 900).prefix(lowPower ? 500 : 900))
         let attachmentContext = buildAttachmentContext(from: userPrompt, recentMessages: recentMessages)
         let recentContext = buildRecentContext(from: recentMessages)
         let languageInstruction = preferredLanguageInstruction()
         let clawStyle = clawStyleInstructionBlock()
+
+        let hasAttachments = attachmentContext != "(no attachments)" && !attachmentContext.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let hasReasoning = !reasoningDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+
         return """
         You are OpenClaw Lite on iPad.
         \(languageInstruction)
+
+        USER:
+        \(userPrompt)
+
         Return ONLY valid JSON:
         - {"type":"final","content":"..."}
         - {"type":"tool_call","name":"<tool>","arguments":{"k":"v"}}
 
-        Rules:
-        - Keep it practical and concise.
-        - Retry once before giving up on a failed tool.
-        - Use attachments first when present.
-        - For direct URLs, prefer http_get/summarize_url.
-        - Use save_memory ONLY if user explicitly asks.
-        - Destructive tools need confirm=YES.
+        Minimal rules:
+        - Be concise and practical.
+        - Use attachment context first when present.
+        - If user gives a direct URL, prefer http_get/summarize_url.
+        - Use save_memory only if user explicitly asks.
+        - Destructive tools require confirm=YES.
+        - Retry a failed tool once.
         \(clawStyle)
 
-        Memory:
-        \(memoryContext)
+        \(hasAttachments ? "ATTACHMENTS:\n\(attachmentContext)\n" : "")
+        \(hasReasoning ? "REASONING DRAFT:\n\(String(reasoningDraft.prefix(800)))\n" : "")
+        RECENT:\n\(String(recentContext.prefix(lowPower ? 900 : 1400)))
 
-        Identity:
-        \(appIdentityContext)
-
-        Attachments:
-        \(attachmentContext)
-
-        Reasoning draft:
-        \(reasoningDraft.isEmpty ? "(none)" : reasoningDraft)
-
-        Recent:
-        \(recentContext)
-
-        User:
-        \(userPrompt)
+        MEMORY (short):\n\(memoryContext)
+        IDENTITY (short):\n\(appIdentityContext)
         """
     }
 
