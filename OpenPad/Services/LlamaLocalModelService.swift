@@ -1225,40 +1225,40 @@ final class LlamaLocalModelService {
     }
 
     private static func clipAtStopSequence(_ text: String) -> String? {
-        let literalStops = [
-            "<|begin_of_text|>",
+        // Hard terminators are generally safe to clip anywhere.
+        // Avoid clipping on start-of-turn markers by default: users can legitimately
+        // ask about tokens like <|im_start|> or [INST], and clipping those harms quality.
+        let hardStops = [
             "<|eot_id|>",
             "<|eom_id|>",
             "<|end|>",
             "<|end_of_text|>",
             "<|im_end|>",
-            "<|im_start|>",
-            "<|start_header_id|>user<|end_header_id|>",
             "<｜end▁of▁sentence｜>",
-            "<｜User｜>",
             "</s>",
-            "[INST]",
-            "[/INST]",
-            "### Instruction:",
-            "### User:",
-            "### Input:",
-            "<start_of_turn>user",
-            "<start_of_turn>system",
             "<end_of_turn>"
         ]
 
         var markers: [String.Index] = []
-        for stop in literalStops {
+        for stop in hardStops {
             if let range = text.range(of: stop, options: [.caseInsensitive]) {
                 markers.append(range.lowerBound)
             }
         }
 
-        // Clip when a new *user/system* turn marker leaks into generation.
-        // Do not clip on assistant labels; many models start with "Assistant:" before useful text.
-        if let regex = try? NSRegularExpression(pattern: #"(?im)^\s*(user|usuario|system|sistema)\s*:"#) {
-            let nsRange = NSRange(text.startIndex..<text.endIndex, in: text)
-            if let match = regex.firstMatch(in: text, options: [], range: nsRange),
+        // Clip when a new user/system turn marker leaks on a fresh line.
+        // Anchoring to line starts avoids false positives in normal prose/code.
+        let turnLeakPatterns = [
+            #"(?im)^\s*<\|im_start\|>\s*(user|system)\b"#,
+            #"(?im)^\s*<\|start_header_id\|>\s*(user|system)\s*<\|end_header_id\|>"#,
+            #"(?im)^\s*<start_of_turn>\s*(user|system)\b"#,
+            #"(?im)^\s*(###\s*(instruction|user|input)\s*:|\[INST\]|<｜User｜>)"#,
+            #"(?im)^\s*(user|usuario|system|sistema)\s*:"#
+        ]
+        let nsRange = NSRange(text.startIndex..<text.endIndex, in: text)
+        for pattern in turnLeakPatterns {
+            if let regex = try? NSRegularExpression(pattern: pattern),
+               let match = regex.firstMatch(in: text, options: [], range: nsRange),
                let swiftRange = Range(match.range, in: text) {
                 markers.append(swiftRange.lowerBound)
             }
