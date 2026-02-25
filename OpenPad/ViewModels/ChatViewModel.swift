@@ -488,6 +488,7 @@ final class AppMemoryStore {
             try ensureFile("USER.md", defaultText: "# USER\nName:\nPreferences:\n")
             try ensureFile("TOOLS.md", defaultText: "# TOOLS\nLocal notes and environment-specific details.\n")
             try ensureFile("HEARTBEAT.md", defaultText: "# HEARTBEAT\nKeep checks lightweight and avoid unnecessary background work.\n")
+            try cleanupNoisyLegacyEntries()
         } catch {
             // non-fatal
         }
@@ -503,6 +504,40 @@ final class AppMemoryStore {
 
     func noteHeartbeat(_ text: String) {
         // Disabled: avoid noisy heartbeat logs in app memory files.
+    }
+
+
+    private func cleanupNoisyLegacyEntries() throws {
+        let targets = ["USER.md", "TOOLS.md", "HEARTBEAT.md", "IMPROVEMENTS.md", "INTERACTIONS_LOG.md", "TOOL_TRACE_LOG.md", "HEARTBEAT_LOG.md"]
+        let dir = try appMemoryDirectory()
+
+        for name in targets {
+            let file = dir.appendingPathComponent(name)
+            guard fm.fileExists(atPath: file.path) else { continue }
+
+            if ["INTERACTIONS_LOG.md", "TOOL_TRACE_LOG.md", "HEARTBEAT_LOG.md"].contains(name) {
+                try? fm.removeItem(at: file)
+                continue
+            }
+
+            guard var text = try? String(contentsOf: file, encoding: .utf8) else { continue }
+            let lines = text.components(separatedBy: .newlines)
+            let filtered = lines.filter { line in
+                let l = line.trimmingCharacters(in: .whitespaces)
+                if l.isEmpty { return true }
+                if l.hasPrefix("- [") && (l.contains("user:") || l.contains("assistant:") || l.contains("issues=") ) { return false }
+                if l.hasPrefix("-") && l.contains("T") && l.contains(":") && l.contains("session started") { return false }
+                return true
+            }
+            text = filtered.joined(separator: "
+").replacingOccurrences(of: "
+
+
+", with: "
+
+")
+            try? text.write(to: file, atomically: true, encoding: .utf8)
+        }
     }
 
     private func appMemoryDirectory() throws -> URL {
@@ -592,6 +627,40 @@ final class SelfImprovementService {
         guard !hints.isEmpty else { return }
         let payload = hints.map { "- [\(ts)] \($0)" }.joined(separator: "\n") + "\n"
         append(payload, to: "TOOL_RULES.md")
+    }
+
+
+    private func cleanupNoisyLegacyEntries() throws {
+        let targets = ["USER.md", "TOOLS.md", "HEARTBEAT.md", "IMPROVEMENTS.md", "INTERACTIONS_LOG.md", "TOOL_TRACE_LOG.md", "HEARTBEAT_LOG.md"]
+        let dir = try appMemoryDirectory()
+
+        for name in targets {
+            let file = dir.appendingPathComponent(name)
+            guard fm.fileExists(atPath: file.path) else { continue }
+
+            if ["INTERACTIONS_LOG.md", "TOOL_TRACE_LOG.md", "HEARTBEAT_LOG.md"].contains(name) {
+                try? fm.removeItem(at: file)
+                continue
+            }
+
+            guard var text = try? String(contentsOf: file, encoding: .utf8) else { continue }
+            let lines = text.components(separatedBy: .newlines)
+            let filtered = lines.filter { line in
+                let l = line.trimmingCharacters(in: .whitespaces)
+                if l.isEmpty { return true }
+                if l.hasPrefix("- [") && (l.contains("user:") || l.contains("assistant:") || l.contains("issues=") ) { return false }
+                if l.hasPrefix("-") && l.contains("T") && l.contains(":") && l.contains("session started") { return false }
+                return true
+            }
+            text = filtered.joined(separator: "
+").replacingOccurrences(of: "
+
+
+", with: "
+
+")
+            try? text.write(to: file, atomically: true, encoding: .utf8)
+        }
     }
 
     private func appMemoryDirectory() throws -> URL {
