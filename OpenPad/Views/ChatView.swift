@@ -118,15 +118,26 @@ struct ChatView: View {
 
 
                             if vm.isLoading && !vm.liveDebugTrace.isEmpty {
-                                VStack(alignment: .leading, spacing: 4) {
+                                VStack(alignment: .leading, spacing: 6) {
                                     Label("Debug (temporary)", systemImage: "ladybug")
                                         .font(.caption)
                                         .foregroundColor(.secondary)
+
                                     ForEach(vm.liveDebugTrace, id: \.self) { line in
-                                        Text("• \(line)")
-                                            .font(.caption2)
-                                            .foregroundColor(.secondary)
-                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                        HStack(alignment: .top, spacing: 6) {
+                                            Text(debugStageChip(for: line))
+                                                .font(.caption2.weight(.semibold))
+                                                .padding(.horizontal, 6)
+                                                .padding(.vertical, 2)
+                                                .background(debugStageColor(for: line).opacity(0.18))
+                                                .foregroundColor(debugStageColor(for: line))
+                                                .clipShape(Capsule())
+
+                                            Text(debugMessageText(for: line))
+                                                .font(.caption2)
+                                                .foregroundColor(.secondary)
+                                                .frame(maxWidth: .infinity, alignment: .leading)
+                                        }
                                     }
                                 }
                                 .padding(.horizontal)
@@ -388,6 +399,33 @@ struct ChatView: View {
         let url = dir.appendingPathComponent(safeName)
         try data.write(to: url, options: .atomic)
         return url
+    }
+
+    private func debugStageChip(for line: String) -> String {
+        let lower = line.lowercased()
+        if lower.contains("intent router") || lower.contains("intent") { return "Intent" }
+        if lower.contains("planner") { return "Planner" }
+        if lower.contains("tool") || lower.contains("fallback") || lower.contains("retry") { return "Tool" }
+        if lower.contains("quality gate") || lower.contains("sanitize") || lower.contains("finalize") { return "Gate" }
+        if lower.contains("raw mode") { return "Raw" }
+        return "Step"
+    }
+
+    private func debugStageColor(for line: String) -> Color {
+        switch debugStageChip(for: line) {
+        case "Intent": return .blue
+        case "Planner": return .purple
+        case "Tool": return .orange
+        case "Gate": return .green
+        case "Raw": return .pink
+        default: return .gray
+        }
+    }
+
+    private func debugMessageText(for line: String) -> String {
+        line
+            .replacingOccurrences(of: "[LOCAL]", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func selectedModelBannerText() -> String {
