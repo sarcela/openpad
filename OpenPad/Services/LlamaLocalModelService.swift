@@ -1386,12 +1386,14 @@ final class LlamaLocalModelService {
         preferLowerMemoryFallback: Bool
     ) -> Int {
         let hint = quantizationHint(from: candidate)
-        var score = quantizationQualityRank(from: hint)
+        var score: Int
 
-        if preferLowerMemoryFallback, isHighMemoryQuantizationHint(hint) {
-            // Avoid auto-recovering to fp16/fp32 variants unless explicitly requested.
-            // Those checkpoints are much more likely to fail on iPad due to memory use.
-            score -= 500
+        if preferLowerMemoryFallback {
+            // During auto-recovery, we prioritize runtime stability over theoretical quality.
+            // Favor lower-memory quantizations first to reduce OOM/crash risk on-device.
+            score = 10_000 - quantizationMemoryRank(from: hint)
+        } else {
+            score = quantizationQualityRank(from: hint)
         }
 
         if let requestedHint, !requestedHint.isEmpty, hint == requestedHint {
@@ -1400,9 +1402,27 @@ final class LlamaLocalModelService {
         return score
     }
 
-    private static func isHighMemoryQuantizationHint(_ hint: String?) -> Bool {
-        guard let hint else { return false }
-        return ["fp32", "f32", "fp16", "f16", "bf16"].contains(hint)
+    private static func quantizationMemoryRank(from hint: String?) -> Int {
+        guard let hint else { return 140 }
+
+        switch hint {
+        case "fp32", "f32": return 320
+        case "fp16", "f16", "bf16": return 160
+        default:
+            if hint.hasPrefix("iq") {
+                let digits = hint.dropFirst(2)
+                if let level = Int(digits) {
+                    return max(20, level * 10)
+                }
+            }
+            if hint.hasPrefix("q") {
+                let digits = hint.dropFirst(1)
+                if let level = Int(digits) {
+                    return max(20, level * 10)
+                }
+            }
+            return 140
+        }
     }
 
     private static func quantizationHint(from stem: String) -> String? {
