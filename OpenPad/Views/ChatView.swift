@@ -2141,7 +2141,7 @@ private struct SettingsView: View {
                             .font(.caption2)
                             .foregroundColor(.secondary)
 
-                        if isDownloadingGGUF || ggufDownloadPhase == "ready" {
+                        if isDownloadingGGUF || ggufDownloadPhase == "verifying" {
                             ProgressView(value: ggufDownloadProgress, total: 1.0)
                                 .progressViewStyle(.linear)
 
@@ -2160,6 +2160,10 @@ private struct SettingsView: View {
                                     .font(.caption2)
                                     .foregroundColor(.secondary)
                             }
+                        } else if ggufDownloadPhase == "ready" {
+                            Label("GGUF listo", systemImage: "checkmark.circle.fill")
+                                .font(.caption)
+                                .foregroundColor(.green)
                         }
                     } header: {
                         Text("Local chat model")

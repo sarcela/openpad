@@ -63,7 +63,8 @@ final class LlamaLocalModelService {
 
     private static let defaultSystemPrompt = "You are OpenPad, a concise and practical assistant. Answer directly with useful text only."
 
-    func configureModel(path: String) throws {
+    @discardableResult
+    func configureModel(path: String) throws -> String {
         let clean = Self.normalizeModelPath(path)
         guard !clean.isEmpty else { throw LlamaServiceError.modelNotConfigured }
 
@@ -72,6 +73,7 @@ final class LlamaLocalModelService {
             throw LlamaServiceError.modelFileNotFound(resolved)
         }
         modelPath = resolved
+        return resolved
     }
 
     func runLocal(prompt: String, mode: LlamaGenerationMode = .chat) async throws -> String {
@@ -1281,7 +1283,8 @@ final class LlamaLocalModelService {
         }
 
         let expanded = (unwrapped as NSString).expandingTildeInPath
-        return URL(fileURLWithPath: expanded).standardizedFileURL.path
+        let decoded = expanded.removingPercentEncoding ?? expanded
+        return URL(fileURLWithPath: decoded).standardizedFileURL.path
     }
 
     private static func resolveExistingModelPath(from normalizedPath: String) throws -> String {

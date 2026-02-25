@@ -165,14 +165,14 @@ final class LocalModelService {
 
         for candidate in candidates {
             do {
-                try llama.configureModel(path: candidate)
+                let resolved = try llama.configureModel(path: candidate)
 
-                if selected != candidate {
-                    modelConfig.saveSelectedModelPath(candidate)
+                if selected != resolved {
+                    modelConfig.saveSelectedModelPath(resolved)
                 }
-                if persisted != candidate {
+                if persisted != resolved {
                     let cfg = runtimeConfig.loadLlama()
-                    runtimeConfig.saveLlama(baseURL: cfg.baseURL, model: candidate)
+                    runtimeConfig.saveLlama(baseURL: cfg.baseURL, model: resolved)
                 }
                 return
             } catch LlamaServiceError.modelNotConfigured {
