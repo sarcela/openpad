@@ -2671,8 +2671,25 @@ private struct SettingsView: View {
             }
         }
 
-        // Support plain repo id: owner/repo -> auto-pick a GGUF file
-        return await resolveGGUFURLFromRepo(owner: owner, repo: repo)
+        // 1) direct repo
+        if let directRepoGGUF = await resolveGGUFURLFromRepo(owner: owner, repo: repo) {
+            return directRepoGGUF
+        }
+
+        // 2) common GGUF mirrors for base repos (e.g., meta-llama/...)
+        let mirrorRepos = [
+            ("bartowski", "\(repo)-GGUF"),
+            ("TheBloke", "\(repo)-GGUF")
+        ]
+        for (mirrorOwner, mirrorRepo) in mirrorRepos {
+            if let url = await resolveGGUFURLFromRepo(owner: mirrorOwner, repo: mirrorRepo) {
+                importMessage = "No GGUF en \(owner)/\(repo). Usando mirror: \(mirrorOwner)/\(mirrorRepo)"
+                return url
+            }
+        }
+
+        importMessage = "Ese repo no contiene archivos GGUF descargables. Prueba un repo *-GGUF (ej: bartowski/...-GGUF)."
+        return nil
     }
 
     private func resolveGGUFURLFromRepo(owner: String, repo: String) async -> URL? {
