@@ -80,7 +80,7 @@ final class LlamaLocalModelService {
 
         do {
             return try await Task(priority: .userInitiated) {
-                try Self.runSync(prompt: prompt, modelPath: modelPath, mode: mode, deadline: deadline)
+                try Self.runSyncWithTemplateFallback(prompt: prompt, modelPath: modelPath, mode: mode, deadline: deadline)
             }.value
         } catch LlamaServiceError.backendBusyTimeout {
             // A previous generation can hold the backend lock briefly; retry once with a
@@ -88,7 +88,7 @@ final class LlamaLocalModelService {
             if Date().addingTimeInterval(0.55) < deadline {
                 try await Task.sleep(nanoseconds: 550_000_000)
                 return try await Task(priority: .userInitiated) {
-                    try Self.runSync(prompt: prompt, modelPath: modelPath, mode: mode, deadline: deadline)
+                    try Self.runSyncWithTemplateFallback(prompt: prompt, modelPath: modelPath, mode: mode, deadline: deadline)
                 }.value
             }
             throw LlamaServiceError.backendBusyTimeout
@@ -99,7 +99,33 @@ final class LlamaLocalModelService {
     }
 
     #if canImport(LlamaSwift)
-    private static func runSync(prompt: String, modelPath: String, mode: LlamaGenerationMode, deadline: Date) throws -> String {
+    private static func runSyncWithTemplateFallback(prompt: String, modelPath: String, mode: LlamaGenerationMode, deadline: Date) throws -> String {
+        let preferred = detectPromptFamily(from: modelPath)
+        let attempts = promptFamilyFallbackOrder(preferred: preferred)
+        var lastRecoverableError: LlamaServiceError?
+
+        for family in attempts {
+            do {
+                let result = try runSync(prompt: prompt, modelPath: modelPath, mode: mode, deadline: deadline, promptFamily: family)
+                if family != preferred {
+                    print("[LLAMA] recovered_using_prompt_family=\(promptFamilyLabel(family)) preferred=\(promptFamilyLabel(preferred))")
+                }
+                return result
+            } catch let error as LlamaServiceError {
+                switch error {
+                case .emptyResponse, .decodeFailed(_), .tokenizationFailed:
+                    lastRecoverableError = error
+                    continue
+                default:
+                    throw error
+                }
+            }
+        }
+
+        throw lastRecoverableError ?? .emptyResponse
+    }
+
+    private static func runSync(prompt: String, modelPath: String, mode: LlamaGenerationMode, deadline: Date, promptFamily: PromptFamily) throws -> String {
         try throwIfCancelled()
         guard FileManager.default.fileExists(atPath: modelPath) else {
             throw LlamaServiceError.modelFileNotFound(modelPath)
@@ -132,7 +158,8 @@ final class LlamaLocalModelService {
         }
         let framedPrompt = buildFramedPrompt(
             userPrompt: prompt,
-            modelPath: modelPath
+            modelPath: modelPath,
+            promptFamily: promptFamily
         )
 
         var tokenCapacity = max(512, framedPrompt.utf8.count + 32)
@@ -547,11 +574,11 @@ final class LlamaLocalModelService {
         }
     }
 
-    private static func buildFramedPrompt(userPrompt: String, modelPath: String) -> String {
+    private static func buildFramedPrompt(userPrompt: String, modelPath: String, promptFamily: PromptFamily? = nil) -> String {
         let cleanUserPrompt = userPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let systemPrompt = "You are OpenPad, a concise and practical assistant. Answer directly with useful text only."
 
-        switch detectPromptFamily(from: modelPath) {
+        switch promptFamily ?? detectPromptFamily(from: modelPath) {
         case .chatML:
             return """
             <|im_start|>system
@@ -614,6 +641,40 @@ final class LlamaLocalModelService {
         case mistralInstruct
         case gemma
         case alpaca
+    }
+
+    private static func promptFamilyFallbackOrder(preferred: PromptFamily) -> [PromptFamily] {
+        // Try model-specific framing first, then progressively more permissive templates.
+        let order: [PromptFamily] = [
+            preferred,
+            .llama3,
+            .chatML,
+            .mistralInstruct,
+            .gemma,
+            .alpaca,
+            .plain
+        ]
+
+        var seen = Set<String>()
+        var unique: [PromptFamily] = []
+        for family in order {
+            let key = promptFamilyLabel(family)
+            if seen.contains(key) { continue }
+            seen.insert(key)
+            unique.append(family)
+        }
+        return unique
+    }
+
+    private static func promptFamilyLabel(_ family: PromptFamily) -> String {
+        switch family {
+        case .plain: return "plain"
+        case .chatML: return "chatml"
+        case .llama3: return "llama3"
+        case .mistralInstruct: return "mistral_instruct"
+        case .gemma: return "gemma"
+        case .alpaca: return "alpaca"
+        }
     }
 
     private static func detectPromptFamily(from modelPath: String) -> PromptFamily {
