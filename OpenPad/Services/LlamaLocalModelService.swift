@@ -339,6 +339,11 @@ final class LlamaLocalModelService {
         if isLowSignalResponse(deEchoed, mode: mode) {
             throw LlamaServiceError.emptyResponse
         }
+        if mode == .chat, isTemplateLeakResponse(deEchoed) {
+            // Treat template/marker-heavy emissions as a failed attempt so the caller
+            // can retry with the next prompt family instead of returning noisy output.
+            throw LlamaServiceError.emptyResponse
+        }
         let generatedText = deEchoed
         print("Generated text: \(generatedText)")
         return generatedText
@@ -857,6 +862,35 @@ final class LlamaLocalModelService {
 
         // Treat punctuation-only / marker-only emissions as low-quality so callers can retry.
         return true
+    }
+
+    private static func isTemplateLeakResponse(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return true }
+
+        let markers = [
+            "<|", "|>",
+            "<start_of_turn>", "<end_of_turn>",
+            "<｜", "｜>",
+            "[INST]", "[/INST]", "<<SYS>>", "<</SYS>>",
+            "### Instruction:", "### Response:", "### User:",
+            "begin_of_text", "start_header_id", "end_header_id", "eot_id"
+        ]
+
+        let lower = trimmed.lowercased()
+        let markerHits = markers.reduce(into: 0) { count, marker in
+            if lower.contains(marker.lowercased()) {
+                count += 1
+            }
+        }
+
+        // If multiple protocol markers leak, output quality is typically unusable.
+        if markerHits >= 2 { return true }
+
+        // Single marker with very short text is usually just framing residue.
+        if markerHits == 1, trimmed.count <= 80 { return true }
+
+        return false
     }
 
     private static func sanitizeTemperature(_ temperature: Float) -> Float {
