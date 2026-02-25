@@ -296,12 +296,7 @@ final class LlamaLocalModelService {
                 fallbackLogit = logit
             }
 
-            var filteredOut = false
-            if let piece = tokenPieceString(token, vocab: vocab) {
-                if isSpecialMarkerToken(piece) {
-                    filteredOut = true
-                }
-            }
+            let filteredOut = isControlLikeToken(token, vocab: vocab)
 
             if !filteredOut, logit > bestLogit {
                 best = token
@@ -351,8 +346,12 @@ final class LlamaLocalModelService {
     }
 
     private static func isControlLikeToken(_ token: llama_token, vocab: OpaquePointer?) -> Bool {
-        guard let piece = tokenPieceString(token, vocab: vocab) else { return false }
-        return isSpecialMarkerToken(piece)
+        guard let bytes = tokenPieceBytes(token, vocab: vocab), !bytes.isEmpty else { return false }
+
+        // Some special/control tokens are not always valid UTF-8; decode lossily so we can
+        // still detect marker patterns and avoid sampling them into visible output.
+        let lossyPiece = String(decoding: bytes, as: UTF8.self)
+        return isSpecialMarkerToken(lossyPiece)
     }
 
     private static func isSpecialMarkerToken(_ piece: String) -> Bool {
@@ -363,7 +362,13 @@ final class LlamaLocalModelService {
             trimmed.hasPrefix("<｜") ||
             trimmed.hasSuffix("｜>") ||
             trimmed.contains("<start_of_turn>") ||
-            trimmed.contains("<end_of_turn>")
+            trimmed.contains("<end_of_turn>") ||
+            trimmed.contains("[INST]") ||
+            trimmed.contains("[/INST]") ||
+            trimmed.contains("<<SYS>>") ||
+            trimmed.contains("<</SYS>>") ||
+            trimmed.contains("### Instruction:") ||
+            trimmed.contains("### Response:")
     }
 
     private static func tokenPieceBytes(_ token: llama_token, vocab: OpaquePointer?) -> [UInt8]? {
