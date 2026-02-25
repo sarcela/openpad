@@ -361,7 +361,9 @@ final class LlamaLocalModelService {
         return trimmed.contains("<|") ||
             trimmed.contains("|>") ||
             trimmed.hasPrefix("<｜") ||
-            trimmed.hasSuffix("｜>")
+            trimmed.hasSuffix("｜>") ||
+            trimmed.contains("<start_of_turn>") ||
+            trimmed.contains("<end_of_turn>")
     }
 
     private static func tokenPieceBytes(_ token: llama_token, vocab: OpaquePointer?) -> [UInt8]? {
@@ -538,6 +540,14 @@ final class LlamaLocalModelService {
 
             \(cleanUserPrompt) [/INST]
             """
+        case .gemma:
+            return """
+            <start_of_turn>system
+            \(systemPrompt)<end_of_turn>
+            <start_of_turn>user
+            \(cleanUserPrompt)<end_of_turn>
+            <start_of_turn>model
+            """
         case .plain:
             return """
             \(systemPrompt)
@@ -552,6 +562,7 @@ final class LlamaLocalModelService {
         case chatML
         case llama3
         case mistralInstruct
+        case gemma
     }
 
     private static func detectPromptFamily(from modelPath: String) -> PromptFamily {
@@ -581,6 +592,12 @@ final class LlamaLocalModelService {
             return .chatML
         }
 
+        // Gemma / Gemma 2 style checkpoints generally expect turn tags.
+        let gemmaHints = ["gemma", "medgemma"]
+        if gemmaHints.contains(where: { modelName.contains($0) }) {
+            return .gemma
+        }
+
         // Mistral/Mixtral-style instruct models tend to follow [INST] wrappers.
         let mistralInstructHints = ["mistral", "mixtral", "zephyr", "openchat", "solar", "nous-hermes-2"]
         if mistralInstructHints.contains(where: { modelName.contains($0) }) {
@@ -606,6 +623,8 @@ final class LlamaLocalModelService {
             .replacingOccurrences(of: "<｜end▁of▁sentence｜>", with: "")
             .replacingOccurrences(of: "<｜User｜>", with: "")
             .replacingOccurrences(of: "<｜Assistant｜>", with: "")
+            .replacingOccurrences(of: "<start_of_turn>", with: "")
+            .replacingOccurrences(of: "<end_of_turn>", with: "")
             .replacingOccurrences(of: "<s>", with: "")
             .replacingOccurrences(of: "</s>", with: "")
             .replacingOccurrences(of: "[INST]", with: "")
@@ -679,7 +698,10 @@ final class LlamaLocalModelService {
             "<｜User｜>",
             "</s>",
             "[INST]",
-            "[/INST]"
+            "[/INST]",
+            "<start_of_turn>user",
+            "<start_of_turn>system",
+            "<end_of_turn>"
         ]
 
         var markers: [String.Index] = []
