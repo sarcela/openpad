@@ -364,6 +364,8 @@ final class LlamaLocalModelService {
     }
 
     private static func tokenPieceBytes(_ token: llama_token, vocab: OpaquePointer?) -> [UInt8]? {
+        guard let vocab else { return nil }
+
         var buffer = [CChar](repeating: 0, count: 128)
         var count = llama_token_to_piece(vocab, token, &buffer, Int32(buffer.count), 0, false)
 
@@ -562,6 +564,13 @@ final class LlamaLocalModelService {
         if llama3Hints.contains(where: { modelName.contains($0) }) &&
             (modelName.contains("llama") || modelName.contains("hermes")) {
             return .llama3
+        }
+
+        // Llama 2 chat/instruct checkpoints expect [INST] wrappers and degrade with plain prompts.
+        let llama2Hints = ["llama-2", "llama2"]
+        if llama2Hints.contains(where: { modelName.contains($0) }) &&
+            (modelName.contains("chat") || modelName.contains("instruct")) {
+            return .mistralInstruct
         }
 
         // Qwen/Phi/DeepSeek and similar instruct variants usually expect ChatML markers.
