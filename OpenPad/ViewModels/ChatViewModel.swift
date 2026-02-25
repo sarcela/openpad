@@ -443,7 +443,7 @@ final class ChatViewModel: ObservableObject {
     private func providerBadgeFromTrace(_ trace: [String]) -> String? {
         guard let line = trace.last(where: { $0.contains("model_used=") })?.lowercased() else { return nil }
         if line.contains("provider:mlx") { return "MLX" }
-        if line.contains("provider:llama_cpp") { return "LLAMA" }
+        if line.contains("provider:llama_cpp") || line.contains("provider:llama_swift") { return "LLAMA" }
         if line.contains("provider:ollama") { return "OLLAMA" }
         return "LOCAL"
     }
