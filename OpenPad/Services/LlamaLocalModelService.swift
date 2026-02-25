@@ -228,6 +228,19 @@ final class LlamaLocalModelService {
             start = end
         }
 
+        let maxNewTokens = adaptiveMaxNewTokens(
+            base: settings.maxNewTokens,
+            mode: mode,
+            promptTokenCount: promptTokens.count,
+            contextSize: Int(contextParams.n_ctx)
+        )
+        let minTokensBeforeEOS = adaptiveMinTokensBeforeEOS(
+            base: settings.minTokensBeforeEOS,
+            mode: mode,
+            promptTokenCount: promptTokens.count,
+            maxNewTokens: maxNewTokens
+        )
+
         var outputBytes = Data()
         var output = ""
         var currentPos = Int32(processedPromptTokens)
@@ -247,7 +260,7 @@ final class LlamaLocalModelService {
         var recentTokens: [llama_token] = []
         let repeatWindowSize = 64
 
-        for _ in 0..<settings.maxNewTokens {
+        for _ in 0..<maxNewTokens {
             try throwIfCancelled()
             if Date() >= deadline { throw LlamaServiceError.generationTimedOut }
             if currentPos >= contextLimit { break }
@@ -272,7 +285,7 @@ final class LlamaLocalModelService {
                     allowControlTokens: false
                 ) ?? pickToken(logits: logits, vocabSize: vocabSize, vocab: vocab)
             }
-            if nextToken == llama_vocab_eos(vocab), generatedCount < settings.minTokensBeforeEOS {
+            if nextToken == llama_vocab_eos(vocab), generatedCount < minTokensBeforeEOS {
                 nextToken = bestTokenExcluding(
                     logits: logits,
                     vocabSize: vocabSize,
@@ -347,6 +360,54 @@ final class LlamaLocalModelService {
         let generatedText = deEchoed
         print("Generated text: \(generatedText)")
         return generatedText
+    }
+
+    private static func adaptiveMaxNewTokens(
+        base: Int,
+        mode: LlamaGenerationMode,
+        promptTokenCount: Int,
+        contextSize: Int
+    ) -> Int {
+        let safeContext = max(contextSize, 1)
+        let promptRatio = Double(promptTokenCount) / Double(safeContext)
+        let minTokens = max(48, min(base, 96))
+
+        switch mode {
+        case .tools:
+            // Keep planner/tool generations bounded for deterministic JSON and latency.
+            return max(minTokens, min(base, 128))
+        case .chat:
+            // Short prompts can afford a bit more budget; this reduces clipped answers.
+            let boost: Int
+            if promptRatio <= 0.20 {
+                boost = 72
+            } else if promptRatio <= 0.35 {
+                boost = 44
+            } else if promptRatio <= 0.50 {
+                boost = 20
+            } else {
+                boost = 0
+            }
+
+            let contextHeadroom = max(24, contextSize - promptTokenCount - 8)
+            let upperBound = min(240, contextHeadroom)
+            return max(minTokens, min(base + boost, upperBound))
+        }
+    }
+
+    private static func adaptiveMinTokensBeforeEOS(
+        base: Int,
+        mode: LlamaGenerationMode,
+        promptTokenCount: Int,
+        maxNewTokens: Int
+    ) -> Int {
+        switch mode {
+        case .tools:
+            return min(max(base, 6), max(8, maxNewTokens / 2))
+        case .chat:
+            let floor = promptTokenCount < 180 ? max(base, 14) : max(base, 10)
+            return min(floor, max(10, maxNewTokens / 2))
+        }
     }
 
     private static func pickToken(logits: UnsafePointer<Float>, vocabSize: Int, vocab: OpaquePointer?) -> llama_token {
