@@ -887,7 +887,7 @@ final class LlamaLocalModelService {
         }
 
         // Qwen/Phi/DeepSeek and similar instruct variants usually expect ChatML markers.
-        let chatMLHints = ["qwen", "phi", "deepseek", "yi", "internlm", "smollm"]
+        let chatMLHints = ["qwen", "qwq", "phi", "deepseek", "yi", "internlm", "smollm", "granite"]
         if chatMLHints.contains(where: { modelSignature.contains($0) }) {
             return .chatML
         }
@@ -1196,11 +1196,16 @@ final class LlamaLocalModelService {
 
         do {
             let docs = try LocalModelConfig.shared.documentsDirectory()
-            let candidate = LocalModelConfig.shared.modelsDirectory(in: docs)
-                .appendingPathComponent(fileName, isDirectory: false)
-                .standardizedFileURL
-            if FileManager.default.fileExists(atPath: candidate.path) {
-                return candidate.path
+            let modelsDir = LocalModelConfig.shared.modelsDirectory(in: docs)
+
+            // Try exact filename candidates first (decoded and query-fragment stripped variants).
+            for candidateName in modelFileNameCandidates(from: fileName) {
+                let candidate = modelsDir
+                    .appendingPathComponent(candidateName, isDirectory: false)
+                    .standardizedFileURL
+                if FileManager.default.fileExists(atPath: candidate.path) {
+                    return candidate.path
+                }
             }
 
             // If the file was renamed/re-quantized, prefer the closest stem match in app storage.
@@ -1216,6 +1221,35 @@ final class LlamaLocalModelService {
         }
 
         return normalizedPath
+    }
+
+    private static func modelFileNameCandidates(from rawFileName: String) -> [String] {
+        let base = rawFileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !base.isEmpty else { return [] }
+
+        var candidates: [String] = []
+
+        func appendUnique(_ value: String) {
+            let clean = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !clean.isEmpty else { return }
+            if !candidates.contains(clean) {
+                candidates.append(clean)
+            }
+        }
+
+        appendUnique(base)
+        appendUnique(base.removingPercentEncoding ?? base)
+
+        for value in Array(candidates) {
+            if let hashIndex = value.firstIndex(of: "#") {
+                appendUnique(String(value[..<hashIndex]))
+            }
+            if let queryIndex = value.firstIndex(of: "?") {
+                appendUnique(String(value[..<queryIndex]))
+            }
+        }
+
+        return candidates
     }
 
     private static func bestStemMatch(for requestedStem: String, in available: [URL]) -> URL? {
