@@ -70,9 +70,22 @@ final class LlamaLocalModelService {
     func runLocal(prompt: String) async throws -> String {
         guard let modelPath else { throw LlamaServiceError.modelNotConfigured }
         #if canImport(LlamaSwift) || canImport(llama) || canImport(LlamaCpp)
-        return try await Task.detached(priority: .userInitiated) {
-            try Self.runSync(prompt: prompt, modelPath: modelPath)
-        }.value
+        let timeoutSeconds: Double = runtimeConfig.isEmergencyMemoryModeEnabled() ? 35 : 55
+        return try await withThrowingTaskGroup(of: String.self) { group in
+            group.addTask {
+                try Self.runSync(prompt: prompt, modelPath: modelPath)
+            }
+            group.addTask {
+                try await Task.sleep(nanoseconds: UInt64(timeoutSeconds * 1_000_000_000))
+                throw LlamaServiceError.generationTimedOut
+            }
+
+            guard let first = try await group.next() else {
+                throw LlamaServiceError.generationTimedOut
+            }
+            group.cancelAll()
+            return first
+        }
         #else
         throw LlamaServiceError.nativeBackendUnavailable
         #endif
@@ -84,7 +97,10 @@ final class LlamaLocalModelService {
             throw LlamaServiceError.modelFileNotFound(modelPath)
         }
 
-        backendLock.lock(); defer { backendLock.unlock() }
+        guard backendLock.lock(before: Date().addingTimeInterval(2.0)) else {
+            throw LlamaServiceError.backendBusyTimeout
+        }
+        defer { backendLock.unlock() }
         if !backendInitialized { llama_backend_init(); backendInitialized = true }
 
         let modelParams = llama_model_default_params()
@@ -96,7 +112,7 @@ final class LlamaLocalModelService {
         let settings = generationSettings()
         var contextParams = llama_context_default_params()
         contextParams.n_ctx = settings.nCtx
-        contextParams.n_batch = min(contextParams.n_ctx, settings.nBatch)
+        contextParams.n_batch = min(contextParams.n_ctx, min(settings.nBatch, 256))
         guard let context = llama_init_from_model(model, contextParams) else {
             throw LlamaServiceError.nativeBackendUnavailable
         }
