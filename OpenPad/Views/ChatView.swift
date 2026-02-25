@@ -234,10 +234,14 @@ struct ChatView: View {
                                     .onChange(of: vm.messages.count) { _, _ in
                                         guard autoScrollEnabled else { return }
                                         if let last = vm.messages.last {
-                                            withAnimation(.easeOut(duration: 0.2)) {
-                                                if vm.isLoading {
+                                            if vm.isLoading {
+                                                var t = Transaction()
+                                                t.disablesAnimations = true
+                                                withTransaction(t) {
                                                     proxy.scrollTo("typing-indicator", anchor: .bottom)
-                                                } else {
+                                                }
+                                            } else {
+                                                withAnimation(.easeOut(duration: 0.2)) {
                                                     proxy.scrollTo(last.id, anchor: .bottom)
                                                 }
                                             }
@@ -246,10 +250,14 @@ struct ChatView: View {
                                     .onChange(of: vm.scrollToBottomSignal) { _, _ in
                                         guard autoScrollEnabled else { return }
                                         DispatchQueue.main.async {
-                                            withAnimation(.easeOut(duration: 0.2)) {
-                                                if vm.isLoading {
+                                            if vm.isLoading {
+                                                var t = Transaction()
+                                                t.disablesAnimations = true
+                                                withTransaction(t) {
                                                     proxy.scrollTo("typing-indicator", anchor: .bottom)
-                                                } else if let last = vm.messages.last {
+                                                }
+                                            } else if let last = vm.messages.last {
+                                                withAnimation(.easeOut(duration: 0.2)) {
                                                     proxy.scrollTo(last.id, anchor: .bottom)
                                                 }
                                             }
@@ -258,7 +266,9 @@ struct ChatView: View {
                                     .onChange(of: vm.isLoading) { _, loading in
                                         guard loading, autoScrollEnabled else { return }
                                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                                            withAnimation(.easeOut(duration: 0.2)) {
+                                            var t = Transaction()
+                                            t.disablesAnimations = true
+                                            withTransaction(t) {
                                                 proxy.scrollTo("typing-indicator", anchor: .bottom)
                                             }
                                         }
