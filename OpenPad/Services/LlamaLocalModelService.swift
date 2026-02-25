@@ -2,10 +2,6 @@ import Foundation
 
 #if canImport(LlamaSwift)
 import LlamaSwift
-#elseif canImport(llama)
-import llama
-#elseif canImport(LlamaCpp)
-import LlamaCpp
 #endif
 
 enum LlamaServiceError: LocalizedError {
@@ -28,15 +24,15 @@ enum LlamaServiceError: LocalizedError {
         case .decodeFailed(let code): return "llama_decode failed (\(code))."
         case .emptyResponse: return "llama.swift returned an empty response."
         case .vocabularyUnavailable: return "Failed to load tokenizer vocabulary from the selected model."
-        case .backendBusyTimeout: return "llama.cpp backend is busy (likely a previous generation got stuck)."
-        case .generationTimedOut: return "llama.cpp generation timed out."
+        case .backendBusyTimeout: return "llama.swift backend is busy (likely a previous generation got stuck)."
+        case .generationTimedOut: return "llama.swift generation timed out."
         }
     }
 }
 
 final class LlamaLocalModelService {
     static var hasNativeModule: Bool {
-        #if canImport(LlamaSwift) || canImport(llama) || canImport(LlamaCpp)
+        #if canImport(LlamaSwift)
         true
         #else
         false
@@ -69,8 +65,8 @@ final class LlamaLocalModelService {
 
     func runLocal(prompt: String) async throws -> String {
         guard let modelPath else { throw LlamaServiceError.modelNotConfigured }
-        #if canImport(LlamaSwift) || canImport(llama) || canImport(LlamaCpp)
-        let timeoutSeconds: Double = runtimeConfig.isEmergencyMemoryModeEnabled() ? 35 : 55
+        #if canImport(LlamaSwift)
+        let timeoutSeconds: Double = LlamaLocalModelService.runtimeConfig.isEmergencyMemoryModeEnabled() ? 35 : 55
         return try await withThrowingTaskGroup(of: String.self) { group in
             group.addTask {
                 try Self.runSync(prompt: prompt, modelPath: modelPath)
@@ -91,7 +87,7 @@ final class LlamaLocalModelService {
         #endif
     }
 
-    #if canImport(LlamaSwift) || canImport(llama) || canImport(LlamaCpp)
+    #if canImport(LlamaSwift)
     private static func runSync(prompt: String, modelPath: String) throws -> String {
         guard FileManager.default.fileExists(atPath: modelPath) else {
             throw LlamaServiceError.modelFileNotFound(modelPath)
@@ -111,8 +107,8 @@ final class LlamaLocalModelService {
 
         let settings = generationSettings()
         var contextParams = llama_context_default_params()
-        contextParams.n_ctx = settings.nCtx
-        contextParams.n_batch = min(contextParams.n_ctx, min(settings.nBatch, 256))
+        contextParams.n_ctx = UInt32(settings.nCtx)
+        contextParams.n_batch = min(contextParams.n_ctx, UInt32(min(settings.nBatch, 256)))
         guard let context = llama_init_from_model(model, contextParams) else {
             throw LlamaServiceError.nativeBackendUnavailable
         }
@@ -356,7 +352,7 @@ final class LlamaLocalModelService {
     #endif
 
 
-    #if canImport(LlamaSwift) || canImport(llama) || canImport(LlamaCpp)
+    #if canImport(LlamaSwift)
     private static func sampleToken(
         logits: UnsafePointer<Float>,
         vocabSize: Int,
