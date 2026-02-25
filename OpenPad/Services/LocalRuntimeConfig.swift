@@ -49,6 +49,22 @@ enum ModelPreset: String, CaseIterable, Identifiable {
     }
 }
 
+enum AppThemeMode: String, CaseIterable, Identifiable {
+    case system
+    case light
+    case dark
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .system: return "System"
+        case .light: return "Claro"
+        case .dark: return "Obscuro"
+        }
+    }
+}
+
 struct LocalRuntimeConfig {
     static let shared = LocalRuntimeConfig()
 
@@ -86,6 +102,7 @@ struct LocalRuntimeConfig {
         static let modelPreset = "local.model.preset"
         static let modelPresetAppliedAt = "local.model.preset.applied_at"
         static let presetPolicySignals = "local.model.preset.policy.signals"
+        static let appThemeMode = "app.theme.mode"
     }
 
     func loadProvider() -> LocalRuntimeProvider {
@@ -442,5 +459,14 @@ struct LocalRuntimeConfig {
         #else
         return false
         #endif
+    }
+
+    func loadAppThemeMode() -> AppThemeMode {
+        let raw = UserDefaults.standard.string(forKey: Keys.appThemeMode) ?? AppThemeMode.system.rawValue
+        return AppThemeMode(rawValue: raw) ?? .system
+    }
+
+    func saveAppThemeMode(_ mode: AppThemeMode) {
+        UserDefaults.standard.set(mode.rawValue, forKey: Keys.appThemeMode)
     }
 }

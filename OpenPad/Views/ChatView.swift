@@ -42,6 +42,7 @@ struct ChatView: View {
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var attachmentStatus = ""
     @State private var autoScrollEnabled = true
+    @State private var appThemeMode: AppThemeMode = .system
 
     private let localConfig = LocalModelConfig.shared
     private let runtimeConfig = LocalRuntimeConfig.shared
@@ -329,6 +330,11 @@ struct ChatView: View {
         .sheet(isPresented: $showSettings) {
             SettingsView(vm: vm)
         }
+        .onChange(of: showSettings) { _, presented in
+            if !presented {
+                appThemeMode = runtimeConfig.loadAppThemeMode()
+            }
+        }
         .confirmationDialog("Attach", isPresented: $showAttachmentOptions, titleVisibility: .visible) {
             Button("File") { showAttachmentFileImporter = true }
             Button("Photo from library") { showPhotoPicker = true }
@@ -355,6 +361,7 @@ struct ChatView: View {
             }
         }
         .onAppear {
+            appThemeMode = runtimeConfig.loadAppThemeMode()
             if openClawLiteConfig.isAutomationLoopEnabled() {
                 cronRunner.start()
             } else {
@@ -373,6 +380,15 @@ struct ChatView: View {
             default:
                 break
             }
+        }
+        .preferredColorScheme(resolvedColorScheme)
+    }
+
+    private var resolvedColorScheme: ColorScheme? {
+        switch appThemeMode {
+        case .system: return nil
+        case .light: return .light
+        case .dark: return .dark
         }
     }
 
@@ -1853,6 +1869,7 @@ private struct SettingsView: View {
     @State private var lowPowerModeEnabled = false
     @State private var emergencyMemoryModeEnabled = false
     @State private var autodevEnabled = false
+    @State private var appThemeMode: AppThemeMode = .system
     @State private var qualityGateStrictness = "balanced"
     @State private var selfImprovingAgentEnabled = true
     @State private var offlineStrictModeEnabled = false
@@ -2333,6 +2350,12 @@ private struct SettingsView: View {
                         Text("Strict").tag("strict")
                     }
 
+                    Picker("Apariencia", selection: $appThemeMode) {
+                        ForEach(AppThemeMode.allCases) { mode in
+                            Text(mode.title).tag(mode)
+                        }
+                    }
+
                     Toggle("Self-improving agent", isOn: $selfImprovingAgentEnabled)
                     Toggle("Offline strict mode (never fallback to remote)", isOn: $offlineStrictModeEnabled)
                     Toggle("Force attachment-first answers", isOn: $forceAttachmentFirstEnabled)
@@ -2463,6 +2486,7 @@ private struct SettingsView: View {
                         openClawLiteConfig.setLowPowerModeEnabled(lowPowerModeEnabled)
                         runtimeConfig.setEmergencyMemoryModeEnabled(emergencyMemoryModeEnabled)
                         runtimeConfig.saveQualityGateStrictness(qualityGateStrictness)
+                        runtimeConfig.saveAppThemeMode(appThemeMode)
                         runtimeConfig.setSelfImprovingAgentEnabled(selfImprovingAgentEnabled)
                         runtimeConfig.setOfflineStrictModeEnabled(offlineStrictModeEnabled)
                         runtimeConfig.setForceAttachmentFirstEnabled(forceAttachmentFirstEnabled)
@@ -2509,6 +2533,7 @@ private struct SettingsView: View {
                 lowPowerModeEnabled = openClawLiteConfig.isLowPowerModeEnabled()
                 emergencyMemoryModeEnabled = runtimeConfig.isEmergencyMemoryModeEnabled()
                 qualityGateStrictness = runtimeConfig.loadQualityGateStrictness()
+                appThemeMode = runtimeConfig.loadAppThemeMode()
                 selfImprovingAgentEnabled = runtimeConfig.isSelfImprovingAgentEnabled()
                 offlineStrictModeEnabled = runtimeConfig.isOfflineStrictModeEnabled()
                 forceAttachmentFirstEnabled = runtimeConfig.isForceAttachmentFirstEnabled()
