@@ -144,29 +144,40 @@ final class LlamaLocalModelService {
             max(32, Int(contextParams.n_ctx) / 3)
         )
         let maxPromptTokensByContext = max(64, Int(contextParams.n_ctx) - reservedForGeneration)
-        let maxPromptTokensByBatch = max(16, Int(contextParams.n_batch) - 1)
-        let maxPromptTokens = min(maxPromptTokensByContext, maxPromptTokensByBatch)
+        let maxPromptTokens = maxPromptTokensByContext
         let promptTokens = Array(tokens.prefix(Int(tokenCount)).suffix(maxPromptTokens))
+        print("[LLAMA] prompt_tokens=\(promptTokens.count) n_ctx=\(contextParams.n_ctx) n_batch=\(contextParams.n_batch)")
 
         let batchCapacity = max(Int(contextParams.n_batch), 2)
         var batch = llama_batch_init(Int32(batchCapacity), 0, 1)
         defer { llama_batch_free(batch) }
 
-        batch.n_tokens = Int32(promptTokens.count)
-        for i in 0..<promptTokens.count {
-            batch.token[i] = promptTokens[i]
-            batch.pos[i] = Int32(i)
-            batch.n_seq_id[i] = 1
-            if let seqIDs = batch.seq_id, let seqID = seqIDs[i] { seqID[0] = 0 }
-            batch.logits[i] = (i == promptTokens.count - 1) ? 1 : 0
-        }
+        var processedPromptTokens = 0
+        var start = 0
+        while start < promptTokens.count {
+            let end = min(start + batchCapacity, promptTokens.count)
+            let chunk = Array(promptTokens[start..<end])
 
-        let firstDecode = llama_decode(context, batch)
-        guard firstDecode == 0 else { throw LlamaServiceError.decodeFailed(firstDecode) }
+            batch.n_tokens = Int32(chunk.count)
+            for i in 0..<chunk.count {
+                batch.token[i] = chunk[i]
+                batch.pos[i] = Int32(processedPromptTokens + i)
+                batch.n_seq_id[i] = 1
+                if let seqIDs = batch.seq_id, let seqID = seqIDs[i] { seqID[0] = 0 }
+                let isLastPromptToken = (end == promptTokens.count) && (i == chunk.count - 1)
+                batch.logits[i] = isLastPromptToken ? 1 : 0
+            }
+
+            let decodeResult = llama_decode(context, batch)
+            guard decodeResult == 0 else { throw LlamaServiceError.decodeFailed(decodeResult) }
+
+            processedPromptTokens += chunk.count
+            start = end
+        }
 
         var outputBytes = Data()
         var output = ""
-        var currentPos = batch.n_tokens
+        var currentPos = Int32(processedPromptTokens)
         let contextLimit = Int32(contextParams.n_ctx)
         let samplingTemperature = sanitizeTemperature(Float(runtimeConfig.loadLocalTemperature()))
         var lastToken: llama_token?
