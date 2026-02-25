@@ -485,9 +485,12 @@ final class AppMemoryStore {
             try fm.createDirectory(at: dir, withIntermediateDirectories: true)
             try ensureFile("SOUL.md", defaultText: "# SOUL\nBe genuinely helpful, concise when possible, and thorough when needed.\n")
             try ensureFile("IDENTITY.md", defaultText: "# IDENTITY\nName: OpenPad\nRole: Local-first iPad assistant\n")
-            try ensureFile("USER.md", defaultText: "# USER\nName:\nPreferences:\n\n## Live Notes\n")
-            try ensureFile("TOOLS.md", defaultText: "# TOOLS\nLocal notes and environment-specific details.\n\n## Runtime Notes\n")
+            try ensureFile("USER.md", defaultText: "# USER\nName:\nPreferences:\n")
+            try ensureFile("TOOLS.md", defaultText: "# TOOLS\nLocal notes and environment-specific details.\n")
             try ensureFile("HEARTBEAT.md", defaultText: "# HEARTBEAT\nKeep checks lightweight and avoid unnecessary background work.\n")
+            try ensureFile("INTERACTIONS_LOG.md", defaultText: "# INTERACTIONS LOG\n")
+            try ensureFile("TOOL_TRACE_LOG.md", defaultText: "# TOOL TRACE LOG\n")
+            try ensureFile("HEARTBEAT_LOG.md", defaultText: "# HEARTBEAT LOG\n")
         } catch {
             // non-fatal
         }
@@ -497,7 +500,7 @@ final class AppMemoryStore {
         do {
             let ts = ISO8601DateFormatter().string(from: Date())
             let line = "- [\(ts)] user: \(String(user.prefix(180))) | assistant: \(String(assistant.prefix(220)))\n"
-            try append(line, to: "USER.md")
+            try append(line, to: "INTERACTIONS_LOG.md")
         } catch {}
     }
 
@@ -506,14 +509,14 @@ final class AppMemoryStore {
         do {
             let ts = ISO8601DateFormatter().string(from: Date())
             let joined = trace.prefix(6).joined(separator: " | ")
-            try append("- [\(ts)] \(joined)\n", to: "TOOLS.md")
+            try append("- [\(ts)] \(joined)\n", to: "TOOL_TRACE_LOG.md")
         } catch {}
     }
 
     func noteHeartbeat(_ text: String) {
         do {
             let ts = ISO8601DateFormatter().string(from: Date())
-            try append("\n- \(ts): \(text)\n", to: "HEARTBEAT.md")
+            try append("- \(ts): \(text)\n", to: "HEARTBEAT_LOG.md")
         } catch {}
     }
 

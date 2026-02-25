@@ -264,7 +264,7 @@ struct LocalRuntimeConfig {
     }
 
     func isSelfImprovingAgentEnabled() -> Bool {
-        UserDefaults.standard.object(forKey: Keys.selfImprovingAgentEnabled) as? Bool ?? true
+        UserDefaults.standard.object(forKey: Keys.selfImprovingAgentEnabled) as? Bool ?? false
     }
 
     func setSelfImprovingAgentEnabled(_ enabled: Bool) {
