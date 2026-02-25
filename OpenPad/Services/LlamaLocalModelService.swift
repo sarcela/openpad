@@ -75,14 +75,23 @@ final class LlamaLocalModelService {
     }
 
     func runLocal(prompt: String, mode: LlamaGenerationMode = .chat) async throws -> String {
-        guard let modelPath else { throw LlamaServiceError.modelNotConfigured }
+        guard let configuredModelPath = modelPath else { throw LlamaServiceError.modelNotConfigured }
+        let resolvedModelPath = try Self.resolveExistingModelPath(from: configuredModelPath)
+        guard FileManager.default.fileExists(atPath: resolvedModelPath) else {
+            throw LlamaServiceError.modelFileNotFound(resolvedModelPath)
+        }
+        if resolvedModelPath != configuredModelPath {
+            modelPath = resolvedModelPath
+            print("[LLAMA] model_path_recovered from=\(configuredModelPath) to=\(resolvedModelPath)")
+        }
+
         #if canImport(LlamaSwift)
         let timeoutSeconds: Double = LlamaLocalModelService.runtimeConfig.isEmergencyMemoryModeEnabled() ? 90 : 180
         let deadline = Date().addingTimeInterval(timeoutSeconds)
 
         do {
             return try await Task(priority: .userInitiated) {
-                try Self.runSyncWithTemplateFallback(prompt: prompt, modelPath: modelPath, mode: mode, deadline: deadline)
+                try Self.runSyncWithTemplateFallback(prompt: prompt, modelPath: resolvedModelPath, mode: mode, deadline: deadline)
             }.value
         } catch LlamaServiceError.backendBusyTimeout {
             // A previous generation can hold the backend lock briefly; retry once with a
@@ -90,7 +99,7 @@ final class LlamaLocalModelService {
             if Date().addingTimeInterval(0.55) < deadline {
                 try await Task.sleep(nanoseconds: 550_000_000)
                 return try await Task(priority: .userInitiated) {
-                    try Self.runSyncWithTemplateFallback(prompt: prompt, modelPath: modelPath, mode: mode, deadline: deadline)
+                    try Self.runSyncWithTemplateFallback(prompt: prompt, modelPath: resolvedModelPath, mode: mode, deadline: deadline)
                 }.value
             }
             throw LlamaServiceError.backendBusyTimeout
@@ -272,6 +281,8 @@ final class LlamaLocalModelService {
         var recentTokens: [llama_token] = []
         var controlTokenCache: [llama_token: Bool] = [:]
         let repeatWindowSize = 64
+        var staleDecodeSteps = 0
+        let staleDecodeLimit = max(10, min(24, maxNewTokens / 3))
 
         for _ in 0..<maxNewTokens {
             try throwIfCancelled()
@@ -324,6 +335,7 @@ final class LlamaLocalModelService {
                 recentTokens.removeFirst(recentTokens.count - repeatWindowSize)
             }
 
+            let previousOutput = output
             if let pieceBytes = tokenPieceBytes(nextToken, vocab: vocab) {
                 outputBytes.append(contentsOf: pieceBytes)
                 output = decodeUTF8Prefix(outputBytes, previous: output)
@@ -340,6 +352,21 @@ final class LlamaLocalModelService {
                         break
                     }
                 }
+            }
+
+            if output == previousOutput {
+                staleDecodeSteps += 1
+            } else {
+                staleDecodeSteps = 0
+            }
+
+            if staleDecodeSteps >= staleDecodeLimit {
+                // Protect against native decoding loops that keep emitting non-renderable
+                // fragments (or partial UTF-8 tails) without advancing visible text.
+                if output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    throw LlamaServiceError.emptyResponse
+                }
+                break
             }
 
             generatedCount += 1
