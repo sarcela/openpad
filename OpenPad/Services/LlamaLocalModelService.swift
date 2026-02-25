@@ -262,7 +262,10 @@ final class LlamaLocalModelService {
                     if clipped.isEmpty {
                         // Some checkpoints emit a stop marker before any real text.
                         // Ignore that marker and continue sampling instead of ending empty.
+                        // Also drop accumulated bytes so future decode attempts don't keep
+                        // re-emitting the same clipped marker prefix.
                         output = ""
+                        outputBytes.removeAll(keepingCapacity: true)
                     } else {
                         output = clipped
                         break
