@@ -153,8 +153,10 @@ final class LlamaLocalModelService {
         if allPromptTokens.count <= maxPromptTokens {
             promptTokens = allPromptTokens
         } else {
-            // Keep BOS/system priming at the front and trim oldest middle context first.
-            let headCount = min(1, allPromptTokens.count)
+            // Keep an instruction prefix (system + role scaffolding) and trim oldest middle context first.
+            // Preserving only BOS hurts answer quality when long prompts get clipped.
+            let targetPrefix = min(96, max(16, maxPromptTokens / 8))
+            let headCount = min(targetPrefix, allPromptTokens.count)
             let tailCount = max(0, maxPromptTokens - headCount)
             promptTokens = Array(allPromptTokens.prefix(headCount) + allPromptTokens.suffix(tailCount))
         }
