@@ -41,6 +41,7 @@ struct ChatView: View {
     @State private var showAudioRecorder = false
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var attachmentStatus = ""
+    @State private var autoScrollEnabled = true
 
     private let localConfig = LocalModelConfig.shared
     private let runtimeConfig = LocalRuntimeConfig.shared
@@ -184,6 +185,7 @@ struct ChatView: View {
                                     .overlay(alignment: .bottomTrailing) {
                                         if vm.messages.count > 6 {
                                             Button {
+                                                autoScrollEnabled = true
                                                 if let last = vm.messages.last {
                                                     withAnimation(.easeOut(duration: 0.2)) {
                                                         if vm.isLoading {
@@ -194,17 +196,30 @@ struct ChatView: View {
                                                     }
                                                 }
                                             } label: {
-                                                Image(systemName: "arrow.down.circle.fill")
-                                                    .font(.system(size: 28))
-                                                    .foregroundColor(.accentColor)
-                                                    .padding(10)
-                                                    .background(.ultraThinMaterial)
-                                                    .clipShape(Circle())
+                                                HStack(spacing: 6) {
+                                                    Image(systemName: "arrow.down.circle.fill")
+                                                        .font(.system(size: 24))
+                                                    if !autoScrollEnabled {
+                                                        Text("Bajar")
+                                                            .font(.caption.weight(.semibold))
+                                                    }
+                                                }
+                                                .foregroundColor(.accentColor)
+                                                .padding(10)
+                                                .background(.ultraThinMaterial)
+                                                .clipShape(Capsule())
                                             }
                                             .padding(14)
+                                            .opacity(autoScrollEnabled ? 0.65 : 1.0)
                                         }
                                     }
                                     .defaultScrollAnchor(.bottom)
+                                    .simultaneousGesture(
+                                        DragGesture(minimumDistance: 8)
+                                            .onChanged { _ in
+                                                autoScrollEnabled = false
+                                            }
+                                    )
                                     .onAppear {
                                         if let last = vm.messages.last {
                                             if vm.isLoading {
@@ -215,6 +230,7 @@ struct ChatView: View {
                                         }
                                     }
                                     .onChange(of: vm.messages.count) { _, _ in
+                                        guard autoScrollEnabled else { return }
                                         if let last = vm.messages.last {
                                             withAnimation(.easeOut(duration: 0.2)) {
                                                 if vm.isLoading {
@@ -226,6 +242,7 @@ struct ChatView: View {
                                         }
                                     }
                                     .onChange(of: vm.scrollToBottomSignal) { _, _ in
+                                        guard autoScrollEnabled else { return }
                                         DispatchQueue.main.async {
                                             withAnimation(.easeOut(duration: 0.2)) {
                                                 if vm.isLoading {
@@ -237,7 +254,7 @@ struct ChatView: View {
                                         }
                                     }
                                     .onChange(of: vm.isLoading) { _, loading in
-                                        guard loading else { return }
+                                        guard loading, autoScrollEnabled else { return }
                                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                                             withAnimation(.easeOut(duration: 0.2)) {
                                                 proxy.scrollTo("typing-indicator", anchor: .bottom)
@@ -259,11 +276,13 @@ struct ChatView: View {
                                 .buttonStyle(.bordered)
 
                                 ComposerTextView(text: $vm.inputText, isEnabled: !vm.isLoading) {
+                                    autoScrollEnabled = true
                                     vm.send()
                                 }
                                 .frame(minHeight: 38, maxHeight: 120)
 
                                 Button {
+                                    autoScrollEnabled = true
                                     vm.send()
                                 } label: {
                                     Image(systemName: vm.isLoading ? "hourglass" : "paperplane.fill")
