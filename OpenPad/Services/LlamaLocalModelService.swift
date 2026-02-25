@@ -2,6 +2,10 @@ import Foundation
 
 #if canImport(LlamaSwift)
 import LlamaSwift
+#elseif canImport(llama)
+import llama
+#elseif canImport(LlamaCpp)
+import LlamaCpp
 #endif
 
 enum LlamaServiceError: LocalizedError {
@@ -26,7 +30,7 @@ enum LlamaServiceError: LocalizedError {
 
 final class LlamaLocalModelService {
     static var hasNativeModule: Bool {
-        #if canImport(LlamaSwift)
+        #if canImport(LlamaSwift) || canImport(llama) || canImport(LlamaCpp)
         true
         #else
         false
@@ -51,7 +55,7 @@ final class LlamaLocalModelService {
 
     func runLocal(prompt: String) async throws -> String {
         guard let modelPath else { throw LlamaServiceError.modelNotConfigured }
-        #if canImport(LlamaSwift)
+        #if canImport(LlamaSwift) || canImport(llama) || canImport(LlamaCpp)
         return try await Task.detached(priority: .userInitiated) {
             try Self.runSync(prompt: prompt, modelPath: modelPath)
         }.value
@@ -60,7 +64,7 @@ final class LlamaLocalModelService {
         #endif
     }
 
-    #if canImport(LlamaSwift)
+    #if canImport(LlamaSwift) || canImport(llama) || canImport(LlamaCpp)
     private static func runSync(prompt: String, modelPath: String) throws -> String {
         guard FileManager.default.fileExists(atPath: modelPath) else {
             throw LlamaServiceError.modelFileNotFound(modelPath)
@@ -125,6 +129,7 @@ final class LlamaLocalModelService {
         let firstDecode = llama_decode(context, batch)
         guard firstDecode == 0 else { throw LlamaServiceError.decodeFailed(firstDecode) }
 
+        var outputBytes = Data()
         var output = ""
         var currentPos = batch.n_tokens
         let contextLimit = Int32(contextParams.n_ctx)
@@ -152,8 +157,9 @@ final class LlamaLocalModelService {
             if repeatCount >= 6 { break }
             lastToken = nextToken
 
-            if let piece = tokenPieceString(nextToken, vocab: vocab) {
-                output += piece
+            if let pieceBytes = tokenPieceBytes(nextToken, vocab: vocab) {
+                outputBytes.append(contentsOf: pieceBytes)
+                output = String(decoding: outputBytes, as: UTF8.self)
                 if let clipped = clipAtStopSequence(output) {
                     output = clipped
                     break
@@ -234,7 +240,7 @@ final class LlamaLocalModelService {
         return trimmed.contains("<|") || trimmed.contains("|>")
     }
 
-    private static func tokenPieceString(_ token: llama_token, vocab: OpaquePointer?) -> String? {
+    private static func tokenPieceBytes(_ token: llama_token, vocab: OpaquePointer?) -> [UInt8]? {
         var buffer = [CChar](repeating: 0, count: 128)
         var count = llama_token_to_piece(vocab, token, &buffer, Int32(buffer.count), 0, false)
 
@@ -245,13 +251,17 @@ final class LlamaLocalModelService {
         }
 
         guard count > 0 else { return nil }
-        let bytes = buffer.prefix(Int(count)).map { UInt8(bitPattern: $0) }
+        return buffer.prefix(Int(count)).map { UInt8(bitPattern: $0) }
+    }
+
+    private static func tokenPieceString(_ token: llama_token, vocab: OpaquePointer?) -> String? {
+        guard let bytes = tokenPieceBytes(token, vocab: vocab) else { return nil }
         return String(bytes: bytes, encoding: .utf8)
     }
     #endif
 
 
-    #if canImport(LlamaSwift)
+    #if canImport(LlamaSwift) || canImport(llama) || canImport(LlamaCpp)
     private static func sampleToken(
         logits: UnsafePointer<Float>,
         vocabSize: Int,
