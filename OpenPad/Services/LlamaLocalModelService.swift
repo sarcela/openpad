@@ -415,12 +415,24 @@ final class LlamaLocalModelService {
     }
 
     private static func isControlLikeToken(_ token: llama_token, vocab: OpaquePointer?) -> Bool {
-        guard let bytes = tokenPieceBytes(token, vocab: vocab), !bytes.isEmpty else { return false }
+        // Empty/unrenderable pieces are usually BOS/EOS/control slots; sampling them tends to
+        // waste decode steps and can yield empty/low-signal responses.
+        guard let bytes = tokenPieceBytes(token, vocab: vocab), !bytes.isEmpty else { return true }
 
         // Some special/control tokens are not always valid UTF-8; decode lossily so we can
         // still detect marker patterns and avoid sampling them into visible output.
         let lossyPiece = String(decoding: bytes, as: UTF8.self)
-        return isSpecialMarkerToken(lossyPiece)
+        if isSpecialMarkerToken(lossyPiece) { return true }
+
+        // When decoding fails hard, some runtimes surface replacement-only glyphs.
+        // Treat those as control-like to keep visible output quality stable.
+        let trimmed = lossyPiece.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            let onlyReplacementScalars = trimmed.unicodeScalars.allSatisfy { $0.value == 0xFFFD }
+            if onlyReplacementScalars { return true }
+        }
+
+        return false
     }
 
     private static func isSpecialMarkerToken(_ piece: String) -> Bool {
