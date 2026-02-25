@@ -910,8 +910,10 @@ final class LlamaLocalModelService {
         }
 
         // Qwen/Phi/DeepSeek and similar instruct variants usually expect ChatML markers.
+        // Use token-aware hint matching to avoid substring false positives (e.g. "yi"
+        // inside "community"/"tiny") that can degrade output quality via wrong templates.
         let chatMLHints = ["qwen", "qwq", "phi", "deepseek", "yi", "internlm", "smollm", "granite"]
-        if chatMLHints.contains(where: { modelSignature.contains($0) }) {
+        if containsAnyModelHint(chatMLHints, in: modelSignature) {
             return .chatML
         }
 
@@ -941,6 +943,22 @@ final class LlamaLocalModelService {
             .replacingOccurrences(of: "_", with: "-")
             .replacingOccurrences(of: ".", with: "-")
             .replacingOccurrences(of: " ", with: "-")
+    }
+
+    private static func containsAnyModelHint(_ hints: [String], in value: String) -> Bool {
+        hints.contains { containsModelHint($0, in: value) }
+    }
+
+    private static func containsModelHint(_ hint: String, in value: String) -> Bool {
+        let escaped = NSRegularExpression.escapedPattern(for: hint.lowercased())
+        let pattern = "(?:^|[^a-z0-9])\(escaped)(?:$|[^a-z0-9])"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else {
+            return value.contains(hint.lowercased())
+        }
+
+        let lower = value.lowercased()
+        let range = NSRange(lower.startIndex..<lower.endIndex, in: lower)
+        return regex.firstMatch(in: lower, options: [], range: range) != nil
     }
 
     private static func sanitizeDecodedOutput(_ text: String) -> String {
