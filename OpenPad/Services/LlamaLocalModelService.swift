@@ -127,10 +127,12 @@ final class LlamaLocalModelService {
 
         var output = ""
         var currentPos = batch.n_tokens
+        let contextLimit = Int32(contextParams.n_ctx)
         var lastToken: llama_token?
         var repeatCount = 0
 
         for _ in 0..<260 {
+            if currentPos >= contextLimit { break }
             guard let logits = llama_get_logits_ith(context, batch.n_tokens - 1) else { break }
             let vocabSize = Int(llama_vocab_n_tokens(vocab))
             if vocabSize <= 0 { break }
@@ -149,16 +151,11 @@ final class LlamaLocalModelService {
             if repeatCount >= 8 { break }
             lastToken = nextToken
 
-            var buffer = [CChar](repeating: 0, count: 160)
-            let length = llama_token_to_piece(vocab, nextToken, &buffer, Int32(buffer.count), 0, false)
-            if length > 0 {
-                let bytes = buffer.prefix(Int(length)).map { UInt8(bitPattern: $0) }
-                if let piece = String(bytes: bytes, encoding: .utf8) {
-                    output += piece
-                    let lower = output.lowercased()
-                    if lower.contains("\nuser:") || lower.contains("\nassistant:") || lower.contains("<|eot_id|>") {
-                        break
-                    }
+            if let piece = tokenPieceString(nextToken, vocab: vocab) {
+                output += piece
+                let lower = output.lowercased()
+                if lower.contains("\nuser:") || lower.contains("\nassistant:") || lower.contains("<|eot_id|>") {
+                    break
                 }
             }
 
