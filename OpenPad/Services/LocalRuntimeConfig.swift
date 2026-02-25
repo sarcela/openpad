@@ -61,6 +61,7 @@ struct LocalRuntimeConfig {
         static let offlineStrictMode = "agent.offline.strict.enabled"
         static let forceAttachmentFirst = "agent.attachment.first.enabled"
         static let clawStyleMode = "agent.claw_style.enabled"
+        static let rawMode = "agent.raw_mode.enabled"
     }
 
     func loadProvider() -> LocalRuntimeProvider {
@@ -290,5 +291,13 @@ struct LocalRuntimeConfig {
 
     func setClawStyleModeEnabled(_ enabled: Bool) {
         UserDefaults.standard.set(enabled, forKey: Keys.clawStyleMode)
+    }
+
+    func isRawModeEnabled() -> Bool {
+        UserDefaults.standard.object(forKey: Keys.rawMode) as? Bool ?? false
+    }
+
+    func setRawModeEnabled(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: Keys.rawMode)
     }
 }

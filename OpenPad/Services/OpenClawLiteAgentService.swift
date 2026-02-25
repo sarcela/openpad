@@ -25,6 +25,28 @@ final class OpenClawLiteAgentService {
         ensureAppMemoryFilesIfNeeded()
         trace.append("model_used=provider:\(runtimeConfig.loadProvider().rawValue.lowercased()) chat:\(runtimeConfig.loadMLXModelName()) tools:\(runtimeConfig.isSeparateMLXToolsModelEnabled() ? runtimeConfig.loadMLXToolsModelName() : runtimeConfig.loadMLXModelName())")
 
+        if runtimeConfig.isRawModeEnabled() {
+            trace.append("raw_mode: direct local model response (planner/tools/gate bypassed)")
+            let attachmentContext = buildAttachmentContext(from: userPrompt, recentMessages: recentMessages)
+            let recent = buildRecentContext(from: recentMessages)
+            let prompt = """
+            You are OpenClaw Lite in RAW mode.
+            Answer directly without JSON schemas or tool planning.
+            Keep it concise and practical.
+
+            Recent context:
+            \(recent)
+
+            Attachment context:
+            \(attachmentContext)
+
+            User message:
+            \(userPrompt)
+            """
+            let out = try await localModelService.runLocal(prompt: prompt, purpose: .chat)
+            return .init(text: out.trimmingCharacters(in: .whitespacesAndNewlines), trace: trace)
+        }
+
         if let routed = try await runDeterministicIntentRoute(userPrompt: userPrompt, recentMessages: recentMessages, trace: trace) {
             return routed
         }

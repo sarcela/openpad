@@ -1758,6 +1758,7 @@ private struct SettingsView: View {
     @State private var offlineStrictModeEnabled = false
     @State private var forceAttachmentFirstEnabled = true
     @State private var clawStyleModeEnabled = false
+    @State private var rawModeEnabled = false
     @State private var toolPermissions: [String: Bool] = [:]
     @State private var settingsSearch = ""
     @State private var settingsCategory: SettingsCategory = .all
@@ -2200,6 +2201,7 @@ private struct SettingsView: View {
                     Toggle("Offline strict mode (never fallback to remote)", isOn: $offlineStrictModeEnabled)
                     Toggle("Force attachment-first answers", isOn: $forceAttachmentFirstEnabled)
                     Toggle("Claw-style reasoning mode", isOn: $clawStyleModeEnabled)
+                    Toggle("Raw model mode (skip planner/tools/quality gate)", isOn: $rawModeEnabled)
 
                     if lowPowerModeEnabled || emergencyMemoryModeEnabled || offlineStrictModeEnabled {
                         Text("Reduces context, OCR, and retries. Emergency mode also enforces stricter prompt condensation and smaller context windows.")
@@ -2334,6 +2336,7 @@ private struct SettingsView: View {
                         runtimeConfig.setOfflineStrictModeEnabled(offlineStrictModeEnabled)
                         runtimeConfig.setForceAttachmentFirstEnabled(forceAttachmentFirstEnabled)
                         runtimeConfig.setClawStyleModeEnabled(clawStyleModeEnabled)
+                        runtimeConfig.setRawModeEnabled(rawModeEnabled)
                         openClawLiteConfig.setAutodevEnabled(autodevEnabled)
                         for (tool, enabled) in toolPermissions {
                             openClawLiteConfig.setToolEnabled(tool, enabled: enabled)
@@ -2383,6 +2386,7 @@ private struct SettingsView: View {
                 offlineStrictModeEnabled = runtimeConfig.isOfflineStrictModeEnabled()
                 forceAttachmentFirstEnabled = runtimeConfig.isForceAttachmentFirstEnabled()
                 clawStyleModeEnabled = runtimeConfig.isClawStyleModeEnabled()
+                rawModeEnabled = runtimeConfig.isRawModeEnabled()
                 mlxDownloadedModels = openClawLiteConfig.loadDownloadedMLXModels()
 
                 refreshModels()
