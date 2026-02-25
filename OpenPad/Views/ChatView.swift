@@ -226,11 +226,21 @@ struct ChatView: View {
                                         }
                                     }
                                     .onChange(of: vm.scrollToBottomSignal) { _, _ in
-                                        withAnimation(.easeOut(duration: 0.2)) {
-                                            if vm.isLoading {
+                                        DispatchQueue.main.async {
+                                            withAnimation(.easeOut(duration: 0.2)) {
+                                                if vm.isLoading {
+                                                    proxy.scrollTo("typing-indicator", anchor: .bottom)
+                                                } else if let last = vm.messages.last {
+                                                    proxy.scrollTo(last.id, anchor: .bottom)
+                                                }
+                                            }
+                                        }
+                                    }
+                                    .onChange(of: vm.isLoading) { _, loading in
+                                        guard loading else { return }
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                                            withAnimation(.easeOut(duration: 0.2)) {
                                                 proxy.scrollTo("typing-indicator", anchor: .bottom)
-                                            } else if let last = vm.messages.last {
-                                                proxy.scrollTo(last.id, anchor: .bottom)
                                             }
                                         }
                                     }
@@ -634,38 +644,35 @@ private struct MessageRowView: View {
 }
 
 private struct TypingIndicatorRow: View {
-    @State private var phase = 0
-
     var body: some View {
-        HStack(alignment: .bottom, spacing: 8) {
-            Image(systemName: "sparkles")
-                .font(.caption)
-                .foregroundColor(.white)
-                .frame(width: 24, height: 24)
-                .background(Color.purple)
-                .clipShape(Circle())
+        TimelineView(.animation(minimumInterval: 0.3)) { context in
+            let tick = Int(context.date.timeIntervalSinceReferenceDate / 0.3)
+            let phase = tick % 3
 
-            HStack(spacing: 4) {
-                ForEach(0..<3, id: \.self) { i in
-                    Circle()
-                        .fill(Color.secondary.opacity(phase == i ? 0.9 : 0.35))
-                        .frame(width: 6, height: 6)
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background(Color(.secondarySystemBackground))
-            .clipShape(RoundedRectangle(cornerRadius: 14))
-            .task {
-                while true {
-                    try? await Task.sleep(nanoseconds: 300_000_000)
-                    phase = (phase + 1) % 3
-                }
-            }
+            HStack(alignment: .bottom, spacing: 8) {
+                Image(systemName: "sparkles")
+                    .font(.caption)
+                    .foregroundColor(.white)
+                    .frame(width: 24, height: 24)
+                    .background(Color.purple)
+                    .clipShape(Circle())
 
-            Spacer(minLength: 24)
+                HStack(spacing: 4) {
+                    ForEach(0..<3, id: \.self) { i in
+                        Circle()
+                            .fill(Color.secondary.opacity(phase == i ? 0.9 : 0.35))
+                            .frame(width: 6, height: 6)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(Color(.secondarySystemBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+
+                Spacer(minLength: 24)
+            }
+            .padding(.vertical, 4)
         }
-        .padding(.vertical, 4)
     }
 }
 
