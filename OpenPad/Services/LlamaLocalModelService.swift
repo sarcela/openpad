@@ -465,7 +465,29 @@ final class LlamaLocalModelService {
     ) -> llama_token {
         let clippedTemp = sanitizeTemperature(temperature)
         if clippedTemp <= 0.05 {
-            return pickToken(logits: logits, vocabSize: vocabSize, vocab: vocab)
+            // Keep tool/planner turns deterministic, but still apply a small repetition
+            // penalty so low-temperature decoding doesn't get stuck in micro-loops.
+            var bestToken: llama_token?
+            var bestLogit = -Float.greatestFiniteMagnitude
+
+            for i in 0..<vocabSize {
+                let token = llama_token(i)
+                if isControlLikeToken(token, vocab: vocab) { continue }
+
+                var l = logits[i]
+                guard l.isFinite else { continue }
+                if let repeats = recentTokenCounts[token], repeats > 0 {
+                    let cappedRepeats = min(4, repeats)
+                    l -= 0.55 * Float(cappedRepeats)
+                }
+
+                if l > bestLogit {
+                    bestLogit = l
+                    bestToken = token
+                }
+            }
+
+            return bestToken ?? pickToken(logits: logits, vocabSize: vocabSize, vocab: vocab)
         }
 
         let topK = min(64, vocabSize)
