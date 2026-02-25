@@ -1285,21 +1285,103 @@ final class LlamaLocalModelService {
         let requestedNormalized = normalizeStemForMatch(requestedStem)
         guard !requestedNormalized.isEmpty else { return nil }
 
-        if let exact = available.first(where: {
+        let exactMatches = available.filter {
             normalizeStemForMatch($0.deletingPathExtension().lastPathComponent.lowercased()) == requestedNormalized
-        }) {
+        }
+        if let exact = pickBestModelCandidate(from: exactMatches, requestedStem: requestedStem) {
             return exact
         }
 
         // 2) Relaxed contains match so re-quantized/renamed files still resolve.
-        if let relaxed = available.first(where: {
+        let relaxedMatches = available.filter {
             let candidate = normalizeStemForMatch($0.deletingPathExtension().lastPathComponent.lowercased())
             return candidate.contains(requestedNormalized) || requestedNormalized.contains(candidate)
-        }) {
+        }
+        if let relaxed = pickBestModelCandidate(from: relaxedMatches, requestedStem: requestedStem) {
             return relaxed
         }
 
         return nil
+    }
+
+    private static func pickBestModelCandidate(from candidates: [URL], requestedStem: String) -> URL? {
+        guard !candidates.isEmpty else { return nil }
+
+        let requestedHint = quantizationHint(from: requestedStem)
+
+        return candidates.max { lhs, rhs in
+            let lhsName = lhs.deletingPathExtension().lastPathComponent.lowercased()
+            let rhsName = rhs.deletingPathExtension().lastPathComponent.lowercased()
+
+            let lhsScore = quantizationPreferenceScore(candidate: lhsName, requestedHint: requestedHint)
+            let rhsScore = quantizationPreferenceScore(candidate: rhsName, requestedHint: requestedHint)
+            if lhsScore != rhsScore { return lhsScore < rhsScore }
+
+            let lhsSize = (try? lhs.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+            let rhsSize = (try? rhs.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+            if lhsSize != rhsSize { return lhsSize < rhsSize }
+
+            return lhsName.localizedCaseInsensitiveCompare(rhsName) == .orderedAscending
+        }
+    }
+
+    private static func quantizationPreferenceScore(candidate: String, requestedHint: String?) -> Int {
+        let hint = quantizationHint(from: candidate)
+        var score = quantizationQualityRank(from: hint)
+        if let requestedHint, !requestedHint.isEmpty, hint == requestedHint {
+            score += 1_000
+        }
+        return score
+    }
+
+    private static func quantizationHint(from stem: String) -> String? {
+        let lower = stem.lowercased()
+
+        let explicitHints = ["fp32", "f32", "fp16", "f16", "bf16"]
+        if let hit = explicitHints.first(where: { lower.contains($0) }) {
+            return hit
+        }
+
+        if let regex = try? NSRegularExpression(pattern: #"(?i)\biq\d+"#) {
+            let nsRange = NSRange(lower.startIndex..<lower.endIndex, in: lower)
+            if let match = regex.firstMatch(in: lower, options: [], range: nsRange),
+               let range = Range(match.range, in: lower) {
+                return String(lower[range])
+            }
+        }
+
+        if let regex = try? NSRegularExpression(pattern: #"(?i)\bq\d+"#) {
+            let nsRange = NSRange(lower.startIndex..<lower.endIndex, in: lower)
+            if let match = regex.firstMatch(in: lower, options: [], range: nsRange),
+               let range = Range(match.range, in: lower) {
+                return String(lower[range])
+            }
+        }
+
+        return nil
+    }
+
+    private static func quantizationQualityRank(from hint: String?) -> Int {
+        guard let hint else { return 0 }
+
+        switch hint {
+        case "fp32", "f32": return 160
+        case "fp16", "f16", "bf16": return 150
+        default:
+            if hint.hasPrefix("iq") {
+                let digits = hint.dropFirst(2)
+                if let level = Int(digits) {
+                    return 110 + (level * 10)
+                }
+            }
+            if hint.hasPrefix("q") {
+                let digits = hint.dropFirst(1)
+                if let level = Int(digits) {
+                    return 80 + (level * 10)
+                }
+            }
+            return 0
+        }
     }
 
     private static func normalizeStemForMatch(_ raw: String) -> String {
