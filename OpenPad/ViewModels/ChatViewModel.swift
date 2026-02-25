@@ -488,36 +488,21 @@ final class AppMemoryStore {
             try ensureFile("USER.md", defaultText: "# USER\nName:\nPreferences:\n")
             try ensureFile("TOOLS.md", defaultText: "# TOOLS\nLocal notes and environment-specific details.\n")
             try ensureFile("HEARTBEAT.md", defaultText: "# HEARTBEAT\nKeep checks lightweight and avoid unnecessary background work.\n")
-            try ensureFile("INTERACTIONS_LOG.md", defaultText: "# INTERACTIONS LOG\n")
-            try ensureFile("TOOL_TRACE_LOG.md", defaultText: "# TOOL TRACE LOG\n")
-            try ensureFile("HEARTBEAT_LOG.md", defaultText: "# HEARTBEAT LOG\n")
         } catch {
             // non-fatal
         }
     }
 
     func appendInteraction(user: String, assistant: String) {
-        do {
-            let ts = ISO8601DateFormatter().string(from: Date())
-            let line = "- [\(ts)] user: \(String(user.prefix(180))) | assistant: \(String(assistant.prefix(220)))\n"
-            try append(line, to: "INTERACTIONS_LOG.md")
-        } catch {}
+        // Disabled: avoid noisy per-turn logs.
     }
 
     func appendToolTrace(_ trace: [String]) {
-        guard !trace.isEmpty else { return }
-        do {
-            let ts = ISO8601DateFormatter().string(from: Date())
-            let joined = trace.prefix(6).joined(separator: " | ")
-            try append("- [\(ts)] \(joined)\n", to: "TOOL_TRACE_LOG.md")
-        } catch {}
+        // Disabled: avoid noisy per-turn logs.
     }
 
     func noteHeartbeat(_ text: String) {
-        do {
-            let ts = ISO8601DateFormatter().string(from: Date())
-            try append("- \(ts): \(text)\n", to: "HEARTBEAT_LOG.md")
-        } catch {}
+        // Disabled: avoid noisy heartbeat logs in app memory files.
     }
 
     private func appMemoryDirectory() throws -> URL {
