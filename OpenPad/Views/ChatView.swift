@@ -43,6 +43,7 @@ struct ChatView: View {
     @State private var attachmentStatus = ""
     @State private var autoScrollEnabled = true
     @State private var appThemeMode: AppThemeMode = .system
+    @State private var appAccentColor: AppAccentColor = .blue
 
     private let localConfig = LocalModelConfig.shared
     private let runtimeConfig = LocalRuntimeConfig.shared
@@ -333,6 +334,7 @@ struct ChatView: View {
         .onChange(of: showSettings) { _, presented in
             if !presented {
                 appThemeMode = runtimeConfig.loadAppThemeMode()
+                appAccentColor = runtimeConfig.loadAppAccentColor()
             }
         }
         .confirmationDialog("Attach", isPresented: $showAttachmentOptions, titleVisibility: .visible) {
@@ -362,6 +364,7 @@ struct ChatView: View {
         }
         .onAppear {
             appThemeMode = runtimeConfig.loadAppThemeMode()
+            appAccentColor = runtimeConfig.loadAppAccentColor()
             if openClawLiteConfig.isAutomationLoopEnabled() {
                 cronRunner.start()
             } else {
@@ -382,6 +385,16 @@ struct ChatView: View {
             }
         }
         .preferredColorScheme(resolvedColorScheme)
+        .tint(resolvedAccentColor)
+    }
+
+    private var resolvedAccentColor: Color {
+        switch appAccentColor {
+        case .blue: return .blue
+        case .purple: return .purple
+        case .green: return .green
+        case .orange: return .orange
+        }
     }
 
     private var resolvedColorScheme: ColorScheme? {
@@ -1870,6 +1883,7 @@ private struct SettingsView: View {
     @State private var emergencyMemoryModeEnabled = false
     @State private var autodevEnabled = false
     @State private var appThemeMode: AppThemeMode = .system
+    @State private var appAccentColor: AppAccentColor = .blue
     @State private var qualityGateStrictness = "balanced"
     @State private var selfImprovingAgentEnabled = true
     @State private var offlineStrictModeEnabled = false
@@ -2356,6 +2370,12 @@ private struct SettingsView: View {
                         }
                     }
 
+                    Picker("Color de acento", selection: $appAccentColor) {
+                        ForEach(AppAccentColor.allCases) { color in
+                            Text(color.title).tag(color)
+                        }
+                    }
+
                     Toggle("Self-improving agent", isOn: $selfImprovingAgentEnabled)
                     Toggle("Offline strict mode (never fallback to remote)", isOn: $offlineStrictModeEnabled)
                     Toggle("Force attachment-first answers", isOn: $forceAttachmentFirstEnabled)
@@ -2487,6 +2507,7 @@ private struct SettingsView: View {
                         runtimeConfig.setEmergencyMemoryModeEnabled(emergencyMemoryModeEnabled)
                         runtimeConfig.saveQualityGateStrictness(qualityGateStrictness)
                         runtimeConfig.saveAppThemeMode(appThemeMode)
+                        runtimeConfig.saveAppAccentColor(appAccentColor)
                         runtimeConfig.setSelfImprovingAgentEnabled(selfImprovingAgentEnabled)
                         runtimeConfig.setOfflineStrictModeEnabled(offlineStrictModeEnabled)
                         runtimeConfig.setForceAttachmentFirstEnabled(forceAttachmentFirstEnabled)
@@ -2534,6 +2555,7 @@ private struct SettingsView: View {
                 emergencyMemoryModeEnabled = runtimeConfig.isEmergencyMemoryModeEnabled()
                 qualityGateStrictness = runtimeConfig.loadQualityGateStrictness()
                 appThemeMode = runtimeConfig.loadAppThemeMode()
+                appAccentColor = runtimeConfig.loadAppAccentColor()
                 selfImprovingAgentEnabled = runtimeConfig.isSelfImprovingAgentEnabled()
                 offlineStrictModeEnabled = runtimeConfig.isOfflineStrictModeEnabled()
                 forceAttachmentFirstEnabled = runtimeConfig.isForceAttachmentFirstEnabled()

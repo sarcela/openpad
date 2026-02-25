@@ -65,6 +65,24 @@ enum AppThemeMode: String, CaseIterable, Identifiable {
     }
 }
 
+enum AppAccentColor: String, CaseIterable, Identifiable {
+    case blue
+    case purple
+    case green
+    case orange
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .blue: return "Azul"
+        case .purple: return "Morado"
+        case .green: return "Verde"
+        case .orange: return "Naranja"
+        }
+    }
+}
+
 struct LocalRuntimeConfig {
     static let shared = LocalRuntimeConfig()
 
@@ -103,6 +121,7 @@ struct LocalRuntimeConfig {
         static let modelPresetAppliedAt = "local.model.preset.applied_at"
         static let presetPolicySignals = "local.model.preset.policy.signals"
         static let appThemeMode = "app.theme.mode"
+        static let appAccentColor = "app.accent.color"
     }
 
     func loadProvider() -> LocalRuntimeProvider {
@@ -468,5 +487,14 @@ struct LocalRuntimeConfig {
 
     func saveAppThemeMode(_ mode: AppThemeMode) {
         UserDefaults.standard.set(mode.rawValue, forKey: Keys.appThemeMode)
+    }
+
+    func loadAppAccentColor() -> AppAccentColor {
+        let raw = UserDefaults.standard.string(forKey: Keys.appAccentColor) ?? AppAccentColor.blue.rawValue
+        return AppAccentColor(rawValue: raw) ?? .blue
+    }
+
+    func saveAppAccentColor(_ color: AppAccentColor) {
+        UserDefaults.standard.set(color.rawValue, forKey: Keys.appAccentColor)
     }
 }
