@@ -30,6 +30,22 @@ enum LocalRuntimeProvider: String, CaseIterable, Identifiable {
     }
 }
 
+enum ModelPreset: String, CaseIterable, Identifiable {
+    case ligero
+    case balanceado
+    case calidad
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .ligero: return "Ligero"
+        case .balanceado: return "Balanceado"
+        case .calidad: return "Calidad"
+        }
+    }
+}
+
 struct LocalRuntimeConfig {
     static let shared = LocalRuntimeConfig()
 
@@ -64,6 +80,8 @@ struct LocalRuntimeConfig {
         static let rawMode = "agent.raw_mode.enabled"
         static let debugExecutionMode = "agent.debug_execution.enabled"
         static let debugVerboseMode = "agent.debug_verbose.enabled"
+        static let modelPreset = "local.model.preset"
+        static let modelPresetAppliedAt = "local.model.preset.applied_at"
     }
 
     func loadProvider() -> LocalRuntimeProvider {
@@ -317,5 +335,21 @@ struct LocalRuntimeConfig {
 
     func setDebugVerboseModeEnabled(_ enabled: Bool) {
         UserDefaults.standard.set(enabled, forKey: Keys.debugVerboseMode)
+    }
+
+    func loadModelPreset() -> ModelPreset {
+        let raw = UserDefaults.standard.string(forKey: Keys.modelPreset) ?? ModelPreset.balanceado.rawValue
+        return ModelPreset(rawValue: raw) ?? .balanceado
+    }
+
+    func saveModelPreset(_ preset: ModelPreset) {
+        UserDefaults.standard.set(preset.rawValue, forKey: Keys.modelPreset)
+        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: Keys.modelPresetAppliedAt)
+    }
+
+    func loadModelPresetAppliedAt() -> Date? {
+        let ts = UserDefaults.standard.double(forKey: Keys.modelPresetAppliedAt)
+        guard ts > 0 else { return nil }
+        return Date(timeIntervalSince1970: ts)
     }
 }

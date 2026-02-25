@@ -1791,6 +1791,7 @@ private struct SettingsView: View {
     @State private var importTarget: ImportTarget = .chat
 
     @State private var runtimeProvider: LocalRuntimeProvider = .mlx
+    @State private var selectedModelPreset: ModelPreset = .balanceado
     @State private var localTemperature: Double = 0.2
     @State private var mlxModelName = ""
     @State private var mlxToolsModelName = ""
@@ -1892,6 +1893,23 @@ private struct SettingsView: View {
                                 Text(provider.title).tag(provider)
                             }
                         }
+
+                        Picker("Preset de modelo", selection: $selectedModelPreset) {
+                            ForEach(ModelPreset.allCases) { preset in
+                                Text(preset.title).tag(preset)
+                            }
+                        }
+
+                        Button {
+                            applyModelPreset(selectedModelPreset)
+                        } label: {
+                            Label("Aplicar preset", systemImage: "slider.horizontal.3")
+                        }
+                        .buttonStyle(.bordered)
+
+                        Text("Perfil activo: \(selectedModelPreset.title)")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
 
                         VStack(alignment: .leading, spacing: 6) {
                             HStack {
@@ -2400,6 +2418,7 @@ private struct SettingsView: View {
 
                         remoteConfig.save(provider: remoteProvider, baseURL: baseURL, token: token, model: model, organization: remoteOrganization, project: remoteProject)
                         runtimeConfig.saveProvider(runtimeProvider)
+                        runtimeConfig.saveModelPreset(selectedModelPreset)
                         runtimeConfig.saveLocalTemperature(localTemperature)
                         runtimeConfig.saveLlama(baseURL: persistedLlama.baseURL, model: persistedLlama.model)
                         runtimeConfig.saveMLXModelName(mlxModelName)
@@ -2445,6 +2464,7 @@ private struct SettingsView: View {
                 remoteProject = savedRemote.project
 
                 runtimeProvider = runtimeConfig.loadProvider()
+                selectedModelPreset = runtimeConfig.loadModelPreset()
                 localTemperature = runtimeConfig.loadLocalTemperature()
                 mlxModelName = runtimeConfig.loadMLXModelName()
                 mlxToolsModelName = runtimeConfig.loadMLXToolsModelName()
@@ -2624,6 +2644,80 @@ private struct SettingsView: View {
                     Text("¿Seguro que quieres borrar \(localConfig.displayName(for: embeddingModelToDelete))?")
                 }
             }
+        }
+    }
+
+    private func applyModelPreset(_ preset: ModelPreset) {
+        selectedModelPreset = preset
+
+        switch preset {
+        case .ligero:
+            localTemperature = 0.15
+            runtimeConfig.saveRunProfile(.stable)
+        case .balanceado:
+            localTemperature = 0.20
+            runtimeConfig.saveRunProfile(.balanced)
+        case .calidad:
+            localTemperature = 0.30
+            runtimeConfig.saveRunProfile(.turbo)
+        }
+
+        if runtimeProvider == .mlx {
+            let ranked = rankModelCandidates(mlxDownloadedModels)
+            if let chat = ranked.first {
+                mlxModelName = chat
+            }
+
+            if separateToolsModelEnabled {
+                if let tools = ranked.dropFirst().first ?? ranked.first {
+                    mlxToolsModelName = tools
+                }
+            } else {
+                mlxToolsModelName = mlxModelName
+            }
+        } else {
+            let rankedGGUF = rankModelCandidates(models.map { $0.lastPathComponent.lowercased() })
+            if let selected = rankedGGUF.first,
+               let match = models.first(where: { $0.lastPathComponent.lowercased() == selected }) {
+                selectedModelPath = match.path
+            }
+
+            if let emb = embeddingModels.first {
+                selectedEmbeddingModelPath = emb.path
+            }
+        }
+
+        runtimeConfig.saveModelPreset(preset)
+        importMessage = "model_preset_applied: \(preset.rawValue)"
+    }
+
+    private func rankModelCandidates(_ names: [String]) -> [String] {
+        func score(_ name: String) -> Int {
+            let n = name.lowercased()
+            switch selectedModelPreset {
+            case .ligero:
+                if n.contains("1.5b") || n.contains("2b") || n.contains("mini") || n.contains("small") { return 0 }
+                if n.contains("3b") || n.contains("4b") { return 1 }
+                if n.contains("7b") || n.contains("8b") { return 2 }
+                return 3
+            case .balanceado:
+                if n.contains("3b") || n.contains("4b") { return 0 }
+                if n.contains("1.5b") || n.contains("2b") { return 1 }
+                if n.contains("7b") || n.contains("8b") { return 2 }
+                return 3
+            case .calidad:
+                if n.contains("7b") || n.contains("8b") { return 0 }
+                if n.contains("3b") || n.contains("4b") { return 1 }
+                if n.contains("1.5b") || n.contains("2b") { return 2 }
+                return 3
+            }
+        }
+
+        return names.sorted { lhs, rhs in
+            let ls = score(lhs)
+            let rs = score(rhs)
+            if ls != rs { return ls < rs }
+            return lhs.localizedCaseInsensitiveCompare(rhs) == .orderedAscending
         }
     }
 
