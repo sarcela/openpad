@@ -1766,6 +1766,7 @@ private struct SettingsView: View {
 
     @ObservedObject var vm: ChatViewModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
 
     @State private var remoteProvider: RemoteProvider = .customOpenAICompatible
     @State private var baseURL = ""
@@ -2103,6 +2104,14 @@ private struct SettingsView: View {
                                 showFileImporter = true
                             } label: {
                                 Label("Add .gguf", systemImage: "plus.circle.fill")
+                            }
+
+                            Button {
+                                if let url = URL(string: "https://huggingface.co/models?search=gguf") {
+                                    openURL(url)
+                                }
+                            } label: {
+                                Label("Descargar .gguf", systemImage: "arrow.down.circle")
                             }
 
                             Spacer()
