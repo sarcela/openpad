@@ -332,7 +332,8 @@ final class LlamaLocalModelService {
             base: settings.minTokensBeforeEOS,
             mode: mode,
             promptTokenCount: promptTokens.count,
-            maxNewTokens: maxNewTokens
+            maxNewTokens: maxNewTokens,
+            contextSize: Int(contextParams.n_ctx)
         )
 
         var outputBytes = Data()
@@ -497,12 +498,20 @@ final class LlamaLocalModelService {
     ) -> Int {
         let safeContext = max(contextSize, 1)
         let promptRatio = Double(promptTokenCount) / Double(safeContext)
-        let minTokens = max(48, min(base, 96))
+        let contextHeadroom = max(1, contextSize - promptTokenCount - 8)
+        let modeMin: Int = {
+            switch mode {
+            case .tools: return 20
+            case .chat: return 28
+            }
+        }()
+        let minTokens = min(contextHeadroom, max(8, min(base, modeMin)))
 
         switch mode {
         case .tools:
             // Keep planner/tool generations bounded for deterministic JSON and latency.
-            return max(minTokens, min(base, 128))
+            let target = min(base, 128)
+            return max(1, min(contextHeadroom, max(minTokens, target)))
         case .chat:
             // Short prompts can afford a bit more budget; this reduces clipped answers.
             let boost: Int
@@ -516,9 +525,8 @@ final class LlamaLocalModelService {
                 boost = 0
             }
 
-            let contextHeadroom = max(24, contextSize - promptTokenCount - 8)
             let upperBound = min(240, contextHeadroom)
-            return max(minTokens, min(base + boost, upperBound))
+            return max(1, min(upperBound, max(minTokens, base + boost)))
         }
     }
 
@@ -526,14 +534,18 @@ final class LlamaLocalModelService {
         base: Int,
         mode: LlamaGenerationMode,
         promptTokenCount: Int,
-        maxNewTokens: Int
+        maxNewTokens: Int,
+        contextSize: Int
     ) -> Int {
+        let contextHeadroom = max(1, contextSize - promptTokenCount - 8)
+        let eosCap = max(1, min(maxNewTokens / 2, contextHeadroom / 2))
+
         switch mode {
         case .tools:
-            return min(max(base, 6), max(8, maxNewTokens / 2))
+            return min(max(base, 4), max(4, eosCap))
         case .chat:
-            let floor = promptTokenCount < 180 ? max(base, 14) : max(base, 10)
-            return min(floor, max(10, maxNewTokens / 2))
+            let floor = promptTokenCount < 180 ? max(base, 12) : max(base, 8)
+            return min(floor, max(2, eosCap))
         }
     }
 
