@@ -1082,7 +1082,17 @@ final class LlamaLocalModelService {
         // Keep inline mentions intact so user-requested literal markers/code are preserved.
         cleaned = stripTemplateResidueLines(from: cleaned)
 
-        let normalized = cleaned
+        // Trim leaked end-of-turn markers only when they appear at the end of output.
+        // This avoids clipping legitimate inline examples like XML while still cleaning
+        // common model residue (e.g. trailing </s>).
+        let trimmedTailMarkers = cleaned
+            .replacingOccurrences(
+                of: #"(?is)(?:\s*(?:</s>|<\|im_end\|>|<\|eot_id\|>|<\|eom_id\|>|<end_of_turn>|<\|end_of_text\|>))+\s*$"#,
+                with: "",
+                options: .regularExpression
+            )
+
+        let normalized = trimmedTailMarkers
             .replacingOccurrences(of: #"\n{3,}"#, with: "\n\n", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -1395,8 +1405,7 @@ final class LlamaLocalModelService {
             "<|end_of_text|>",
             "<|im_end|>",
             "<｜end▁of▁sentence｜>",
-            "<end_of_turn>",
-            "</s>"
+            "<end_of_turn>"
         ]
 
         var markers: [String.Index] = []
