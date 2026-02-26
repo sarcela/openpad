@@ -1037,9 +1037,49 @@ final class LlamaLocalModelService {
         // Keep inline mentions intact so user-requested literal markers/code are preserved.
         cleaned = stripTemplateResidueLines(from: cleaned)
 
-        return cleaned
+        let normalized = cleaned
             .replacingOccurrences(of: #"\n{3,}"#, with: "\n\n", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        return collapseConsecutiveLineRepeats(in: normalized)
+    }
+
+    private static func collapseConsecutiveLineRepeats(in text: String, maxRepeats: Int = 2) -> String {
+        guard maxRepeats >= 1 else { return text }
+
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        guard !lines.isEmpty else { return text }
+
+        var collapsed: [String] = []
+        collapsed.reserveCapacity(lines.count)
+
+        var lastComparableLine: String?
+        var runCount = 0
+
+        for line in lines {
+            let comparable = line.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            // Keep blank lines untouched so paragraph structure remains stable.
+            if comparable.isEmpty {
+                collapsed.append(line)
+                lastComparableLine = nil
+                runCount = 0
+                continue
+            }
+
+            if comparable == lastComparableLine {
+                runCount += 1
+                if runCount <= maxRepeats {
+                    collapsed.append(line)
+                }
+            } else {
+                lastComparableLine = comparable
+                runCount = 1
+                collapsed.append(line)
+            }
+        }
+
+        return collapsed.joined(separator: "\n")
     }
 
     private static func stripTemplateResidueLines(from text: String) -> String {
@@ -1307,9 +1347,9 @@ final class LlamaLocalModelService {
         // Keep this strict: broad role-label patterns like `User:` can appear in normal
         // answers and clipping them causes premature truncation/empty outputs.
         let turnLeakPatterns = [
-            #"(?im)^\s*<\|im_start\|>\s*(user|system)\b"#,
-            #"(?im)^\s*<\|start_header_id\|>\s*(user|system)\s*<\|end_header_id\|>"#,
-            #"(?im)^\s*<start_of_turn>\s*(user|system)\b"#,
+            #"(?im)^\s*<\|im_start\|>\s*(user|system|assistant|model)\b"#,
+            #"(?im)^\s*<\|start_header_id\|>\s*(user|system|assistant|model)\s*<\|end_header_id\|>"#,
+            #"(?im)^\s*<start_of_turn>\s*(user|system|assistant|model)\b"#,
             #"(?im)^\s*(###\s*(instruction|user|input)\s*:|\[INST\]|<｜User｜>)"#,
             #"(?im)^\s*</s>\s*$"#
         ]
