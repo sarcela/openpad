@@ -1068,10 +1068,12 @@ final class LlamaLocalModelService {
             #"(?is)<think>.*?</think>"#,
             #"(?is)<thinking>.*?</thinking>"#,
             #"(?is)```(?:thinking|reasoning)\b.*?```"#,
-            // Some local checkpoints truncate before a closing marker; drop the dangling tail.
-            #"(?is)<think>.*$"#,
-            #"(?is)<thinking>.*$"#,
-            #"(?is)```(?:thinking|reasoning)\b.*$"#
+            // Some local checkpoints truncate before a closing marker; drop the dangling tail
+            // only when it starts at the beginning of the response. This avoids deleting
+            // valid user-facing content that may mention tags like <think> mid-answer.
+            #"(?is)^\s*<think>.*$"#,
+            #"(?is)^\s*<thinking>.*$"#,
+            #"(?is)^\s*```(?:thinking|reasoning)\b.*$"#
         ]
 
         for pattern in patterns {
