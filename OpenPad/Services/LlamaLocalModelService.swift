@@ -1420,15 +1420,29 @@ final class LlamaLocalModelService {
         // Avoid broad "|>" checks that can misclassify normal code/math text.
         if let regex = try? NSRegularExpression(pattern: #"<\|[a-z0-9_\-]+\|>"#, options: [.caseInsensitive]) {
             let range = NSRange(lower.startIndex..<lower.endIndex, in: lower)
-            if regex.firstMatch(in: lower, options: [], range: range) != nil {
-                markerHits += 1
+            markerHits += regex.numberOfMatches(in: lower, options: [], range: range)
+        }
+
+        // Strong signal: output starts with chat-template markers/residue.
+        if let startRegex = try? NSRegularExpression(
+            pattern: #"(?is)^\s*(?:<\|[a-z0-9_\-]+\|>|<start_of_turn>|\[inst\]|<<sys>>|###\s*(instruction|response|user)\s*:|<s>|</s>)"#,
+            options: [.caseInsensitive]
+        ) {
+            let range = NSRange(lower.startIndex..<lower.endIndex, in: lower)
+            if startRegex.firstMatch(in: lower, options: [], range: range) != nil {
+                return true
             }
         }
 
-        // If multiple protocol markers leak, output quality is typically unusable.
-        if markerHits >= 2 { return true }
+        // Don't classify rich explanatory text as leakage just because it mentions markers.
+        let wordCount = lower.split { !$0.isLetter && !$0.isNumber }.count
+        let alphaCount = lower.unicodeScalars.filter { CharacterSet.letters.contains($0) }.count
+        let hasRichNaturalLanguage = wordCount >= 8 && alphaCount >= 36
 
-        // Single marker with very short text is usually just framing residue.
+        // If many protocol markers leak and content is sparse, quality is usually unusable.
+        if markerHits >= 3, !hasRichNaturalLanguage { return true }
+
+        // Single marker with very short text is usually framing residue.
         if markerHits == 1, trimmed.count <= 80 { return true }
 
         return false

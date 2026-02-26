@@ -135,9 +135,13 @@ final class LocalModelService {
         out = out.replacingOccurrences(of: #"(?im)^\s*(assistant|asistente)\s*:\s*"#, with: "", options: .regularExpression)
         out = out.replacingOccurrences(of: #"(?im)^\s*(user|usuario|system|sistema)\s*:.*$"#, with: "", options: .regularExpression)
 
-        // If the model starts echoing prompt labels, keep only the useful prefix.
-        if let range = out.range(of: #"(?i)\bmensaje del usuario\s*:"#, options: .regularExpression) {
-            out = String(out[..<range.lowerBound])
+        // If the model leaks "mensaje del usuario:" scaffolding at the very start,
+        // strip only that leading label block instead of truncating any later mention.
+        if let leakedPrefix = out.range(of: #"(?is)^\s*mensaje del usuario\s*:.*?(?:\n\s*\n|\n)"#, options: .regularExpression) {
+            let remainder = String(out[leakedPrefix.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !remainder.isEmpty {
+                out = remainder
+            }
         }
 
         // Normalize runaway blank lines.
