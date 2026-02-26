@@ -1464,21 +1464,29 @@ final class LlamaLocalModelService {
             markerHits += regex.numberOfMatches(in: lower, options: [], range: range)
         }
 
+        // Don't classify rich explanatory text as leakage just because it mentions markers.
+        let wordCount = lower.split { !$0.isLetter && !$0.isNumber }.count
+        let alphaCount = lower.unicodeScalars.filter { CharacterSet.letters.contains($0) }.count
+        let hasRichNaturalLanguage = wordCount >= 8 && alphaCount >= 36
+        let hasExplainerCue = ["means", "token", "marker", "stands", "used", "example", "ejemplo", "significa", "representa"].contains {
+            lower.contains($0)
+        }
+
         // Strong signal: output starts with chat-template markers/residue.
+        // Exception: allow concise explanatory answers like
+        // "<|eot_id|> is an end-of-turn token".
         if let startRegex = try? NSRegularExpression(
             pattern: #"(?is)^\s*(?:<\|[a-z0-9_\-]+\|>|<start_of_turn>|\[inst\]|<<sys>>|###\s*(instruction|response|user)\s*:|<s>|</s>)"#,
             options: [.caseInsensitive]
         ) {
             let range = NSRange(lower.startIndex..<lower.endIndex, in: lower)
             if startRegex.firstMatch(in: lower, options: [], range: range) != nil {
-                return true
+                let isLikelyLiteralExplainer = markerHits == 1 && hasExplainerCue && wordCount >= 4
+                if !isLikelyLiteralExplainer {
+                    return true
+                }
             }
         }
-
-        // Don't classify rich explanatory text as leakage just because it mentions markers.
-        let wordCount = lower.split { !$0.isLetter && !$0.isNumber }.count
-        let alphaCount = lower.unicodeScalars.filter { CharacterSet.letters.contains($0) }.count
-        let hasRichNaturalLanguage = wordCount >= 8 && alphaCount >= 36
 
         // If many protocol markers leak and content is sparse, quality is usually unusable.
         if markerHits >= 3, !hasRichNaturalLanguage { return true }
