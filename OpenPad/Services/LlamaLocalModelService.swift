@@ -1456,9 +1456,9 @@ final class LlamaLocalModelService {
     }
 
     private static func clipAtStopSequence(_ text: String) -> String? {
-        // Hard terminators are generally safe to clip anywhere.
-        // Avoid clipping on start-of-turn markers by default: users can legitimately
-        // ask about tokens like <|im_start|> or [INST], and clipping those harms quality.
+        // Hard terminators are usually safe to clip, but avoid cutting inline mentions
+        // like "the token <|eot_id|> means...". Clip only when markers look like leaked
+        // protocol residue (fresh line / near tail / whitespace boundaries).
         let hardStops = [
             "<|eot_id|>",
             "<|eom_id|>",
@@ -1471,8 +1471,13 @@ final class LlamaLocalModelService {
 
         var markers: [String.Index] = []
         for stop in hardStops {
-            if let range = text.range(of: stop, options: [.caseInsensitive]) {
-                markers.append(range.lowerBound)
+            var searchStart = text.startIndex
+            while searchStart < text.endIndex,
+                  let range = text.range(of: stop, options: [.caseInsensitive], range: searchStart..<text.endIndex) {
+                if isLikelyStopMarkerBoundary(in: text, markerRange: range) {
+                    markers.append(range.lowerBound)
+                }
+                searchStart = text.index(after: range.lowerBound)
             }
         }
 
@@ -1497,6 +1502,31 @@ final class LlamaLocalModelService {
 
         guard let marker = markers.min() else { return nil }
         return String(text[..<marker]).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func isLikelyStopMarkerBoundary(in text: String, markerRange: Range<String.Index>) -> Bool {
+        guard !text.isEmpty else { return false }
+
+        if markerRange.upperBound == text.endIndex { return true }
+
+        let beforeChar: Character? = markerRange.lowerBound > text.startIndex
+            ? text[text.index(before: markerRange.lowerBound)]
+            : nil
+        let afterChar: Character? = markerRange.upperBound < text.endIndex
+            ? text[markerRange.upperBound]
+            : nil
+
+        let startsOnFreshLine = beforeChar == nil || beforeChar == "\n" || beforeChar == "\r"
+
+        let surroundedByWhitespace = {
+            let beforeIsWS = beforeChar?.unicodeScalars.allSatisfy { CharacterSet.whitespacesAndNewlines.contains($0) } ?? true
+            let afterIsWS = afterChar?.unicodeScalars.allSatisfy { CharacterSet.whitespacesAndNewlines.contains($0) } ?? true
+            return beforeIsWS && afterIsWS
+        }()
+
+        let nearTail = text.distance(from: markerRange.upperBound, to: text.endIndex) <= 2
+
+        return startsOnFreshLine || surroundedByWhitespace || nearTail
     }
 
     private static func normalizeModelPath(_ path: String) -> String {
