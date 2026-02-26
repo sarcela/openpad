@@ -1249,23 +1249,57 @@ final class LlamaLocalModelService {
     private static func stripReasoningBlocks(from text: String) -> String {
         var cleaned = text
 
-        let patterns = [
+        // Prefer removing only closed reasoning blocks first.
+        let closedPatterns = [
             #"(?is)<think>.*?</think>"#,
             #"(?is)<thinking>.*?</thinking>"#,
-            #"(?is)```(?:thinking|reasoning)\b.*?```"#,
-            // Some local checkpoints truncate before a closing marker; drop the dangling tail
-            // only when it starts at the beginning of the response. This avoids deleting
-            // valid user-facing content that may mention tags like <think> mid-answer.
-            #"(?is)^\s*<think>.*$"#,
-            #"(?is)^\s*<thinking>.*$"#,
-            #"(?is)^\s*```(?:thinking|reasoning)\b.*$"#
+            #"(?is)```(?:thinking|reasoning)\b.*?```"#
         ]
 
-        for pattern in patterns {
+        for pattern in closedPatterns {
             cleaned = cleaned.replacingOccurrences(of: pattern, with: "", options: .regularExpression)
         }
 
+        // If a model starts with a dangling reasoning marker and never closes it,
+        // salvage any visible answer that follows instead of dropping the entire output.
+        cleaned = stripLeadingDanglingReasoning(from: cleaned)
         return cleaned
+    }
+
+    private static func stripLeadingDanglingReasoning(from text: String) -> String {
+        let value = text
+
+        let startsWithDanglingReasoningTag: Bool = {
+            let patterns = [
+                #"(?is)^\s*<think>"#,
+                #"(?is)^\s*<thinking>"#,
+                #"(?is)^\s*```(?:thinking|reasoning)\b"#
+            ]
+            for pattern in patterns {
+                if value.range(of: pattern, options: .regularExpression) != nil {
+                    return true
+                }
+            }
+            return false
+        }()
+
+        guard startsWithDanglingReasoningTag else { return value }
+
+        if let markerRange = value.range(of: #"\n\s*\n"#, options: .regularExpression) {
+            let tail = String(value[markerRange.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !tail.isEmpty {
+                return tail
+            }
+        }
+
+        if let newline = value.firstIndex(of: "\n") {
+            let tail = String(value[value.index(after: newline)...]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !tail.isEmpty {
+                return tail
+            }
+        }
+
+        return ""
     }
 
     private static func stripPromptEcho(from output: String, userPrompt: String) -> String {
