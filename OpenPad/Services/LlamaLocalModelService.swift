@@ -369,7 +369,14 @@ final class LlamaLocalModelService {
 
         for _ in 0..<maxNewTokens {
             try throwIfCancelled()
-            if Date() >= deadline { throw LlamaServiceError.generationTimedOut }
+            if Date() >= deadline {
+                // Return best-effort text instead of hard-failing when we already have
+                // a usable partial answer near timeout.
+                if output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    throw LlamaServiceError.generationTimedOut
+                }
+                break
+            }
             if currentPos >= contextLimit { break }
             guard let logits = llama_get_logits_ith(context, batch.n_tokens - 1) else { break }
             let vocabSize = Int(llama_vocab_n_tokens(vocab))
