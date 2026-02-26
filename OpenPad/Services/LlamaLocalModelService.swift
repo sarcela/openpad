@@ -1154,6 +1154,11 @@ final class LlamaLocalModelService {
             .replacingOccurrences(of: #"(?im)^\s*(assistant|asistente|model|modelo)\s*$"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"(?im)^\s*(user|usuario|system|sistema)\s*:.*$"#, with: "", options: .regularExpression)
 
+        // Some checkpoints leak assistant header tags at the beginning of output
+        // (e.g. "<|im_start|>assistant" / "<|start_header_id|>assistant...").
+        // Strip only leading variants so inline marker explanations remain intact.
+        cleaned = stripLeadingAssistantHeaderLeaks(from: cleaned)
+
         // Strip leaked prompt-template residue only when it appears as standalone lines.
         // Keep inline mentions intact so user-requested literal markers/code are preserved.
         cleaned = stripTemplateResidueLines(from: cleaned)
@@ -1228,6 +1233,23 @@ final class LlamaLocalModelService {
         let range = NSRange(text.startIndex..<text.endIndex, in: text)
         let collapsed = regex.stringByReplacingMatches(in: text, options: [], range: range, withTemplate: "$1 $1")
         return collapsed.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func stripLeadingAssistantHeaderLeaks(from text: String) -> String {
+        var cleaned = text
+
+        // Remove repeated leaked assistant-header prefixes at the start only.
+        let leadingHeaderPatterns = [
+            #"(?is)^\s*(?:<\|im_start\|>\s*assistant\s*)+"#,
+            #"(?is)^\s*(?:<\|start_header_id\|>\s*assistant\s*<\|end_header_id\|>\s*)+"#,
+            #"(?is)^\s*(?:<start_of_turn>\s*(?:assistant|model)\s*)+"#
+        ]
+
+        for pattern in leadingHeaderPatterns {
+            cleaned = cleaned.replacingOccurrences(of: pattern, with: "", options: .regularExpression)
+        }
+
+        return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private static func stripTemplateResidueLines(from text: String) -> String {
