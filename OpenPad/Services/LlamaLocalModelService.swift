@@ -91,19 +91,29 @@ final class LlamaLocalModelService {
         let timeoutSeconds: Double = LlamaLocalModelService.runtimeConfig.isEmergencyMemoryModeEnabled() ? 90 : 180
         let deadline = Date().addingTimeInterval(timeoutSeconds)
 
-        do {
-            return try await Task(priority: .userInitiated) {
+        let runAttempt = {
+            try await Task(priority: .userInitiated) {
                 try Self.runSyncWithTemplateFallback(prompt: prompt, modelPath: resolvedModelPath, mode: mode, deadline: deadline)
             }.value
+        }
+
+        do {
+            return try await runAttempt()
         } catch LlamaServiceError.backendBusyTimeout {
-            // A previous generation can hold the backend lock briefly; retry once with a
-            // short backoff to avoid surfacing transient busy errors to the UI.
-            if Date().addingTimeInterval(0.55) < deadline {
-                try await Task.sleep(nanoseconds: 550_000_000)
+            // A previous generation can hold the backend lock briefly. Retry with a
+            // bounded exponential backoff so short lock contention does not surface as
+            // a user-visible error.
+            var delaySeconds = 0.35
+            for retry in 1...2 {
+                guard Date().addingTimeInterval(delaySeconds + 0.12) < deadline else { break }
+                try await Task.sleep(nanoseconds: UInt64(delaySeconds * 1_000_000_000))
                 do {
-                    return try await Task(priority: .userInitiated) {
-                        try Self.runSyncWithTemplateFallback(prompt: prompt, modelPath: resolvedModelPath, mode: mode, deadline: deadline)
-                    }.value
+                    let recovered = try await runAttempt()
+                    print("[LLAMA] recovered_from_backend_busy retry=\(retry)")
+                    return recovered
+                } catch LlamaServiceError.backendBusyTimeout {
+                    delaySeconds *= 2
+                    continue
                 } catch is CancellationError {
                     throw LlamaServiceError.cancelled
                 }
@@ -1198,7 +1208,7 @@ final class LlamaLocalModelService {
         // common model residue (e.g. trailing </s>).
         let trimmedTailMarkers = cleaned
             .replacingOccurrences(
-                of: #"(?is)(?:\s*(?:</s>|<\|im_end\|>|<\|eot_id\|>|<\|eom_id\|>|<end_of_turn>|<\|end_of_text\|>))+\s*$"#,
+                of: #"(?is)(?:\s*(?:</s>|<\|im_end\|>|<\|eot_id\|>|<\|eot\|>|<\|eom_id\|>|<\|end_of_turn\|>|<end_of_turn>|<\|end_of_text\|>|<eot>|<｜end▁of▁turn｜>))+\s*$"#,
                 with: "",
                 options: .regularExpression
             )
@@ -1286,7 +1296,9 @@ final class LlamaLocalModelService {
         let linePatterns = [
             #"^\s*<\|begin_of_text\|>\s*$"#,
             #"^\s*<\|eot_id\|>\s*$"#,
+            #"^\s*<\|eot\|>\s*$"#,
             #"^\s*<\|eom_id\|>\s*$"#,
+            #"^\s*<\|end_of_turn\|>\s*$"#,
             #"^\s*<\|end\|>\s*$"#,
             #"^\s*<\|end_of_text\|>\s*$"#,
             #"^\s*<\|im_end\|>\s*$"#,
@@ -1294,10 +1306,12 @@ final class LlamaLocalModelService {
             #"^\s*<\|start_header_id\|>\s*$"#,
             #"^\s*<\|end_header_id\|>\s*$"#,
             #"^\s*<｜end▁of▁sentence｜>\s*$"#,
+            #"^\s*<｜end▁of▁turn｜>\s*$"#,
             #"^\s*<｜user｜>\s*$"#,
             #"^\s*<｜assistant｜>\s*$"#,
             #"^\s*<start_of_turn>\s*$"#,
             #"^\s*<end_of_turn>\s*$"#,
+            #"^\s*<eot>\s*$"#,
             #"^\s*<s>\s*$"#,
             #"^\s*</s>\s*$"#,
             #"^\s*\[inst\]\s*$"#,
@@ -1648,12 +1662,16 @@ final class LlamaLocalModelService {
         // protocol residue (fresh line / near tail / whitespace boundaries).
         let hardStops = [
             "<|eot_id|>",
+            "<|eot|>",
             "<|eom_id|>",
             "<|end|>",
+            "<|end_of_turn|>",
             "<|end_of_text|>",
             "<|im_end|>",
             "<｜end▁of▁sentence｜>",
-            "<end_of_turn>"
+            "<｜end▁of▁turn｜>",
+            "<end_of_turn>",
+            "<eot>"
         ]
 
         var markers: [String.Index] = []
