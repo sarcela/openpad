@@ -589,6 +589,7 @@ final class LlamaLocalModelService {
         var bestLogit = -Float.greatestFiniteMagnitude
         var fallback = llama_token(0)
         var fallbackLogit = -Float.greatestFiniteMagnitude
+        let eosToken = vocab.map { llama_vocab_eos($0) }
 
         for i in 0..<vocabSize {
             let token = llama_token(i)
@@ -600,16 +601,13 @@ final class LlamaLocalModelService {
                 fallbackLogit = logit
             }
 
-            let filteredOut = isControlLikeTokenCached(token, vocab: vocab, cache: &controlTokenCache)
+            let isEOS = eosToken == token
+            let filteredOut = !isEOS && isControlLikeTokenCached(token, vocab: vocab, cache: &controlTokenCache)
 
             if !filteredOut, logit > bestLogit {
                 best = token
                 bestLogit = logit
             }
-        }
-
-        if let vocab, best == llama_vocab_eos(vocab), fallback != best {
-            return fallback
         }
 
         if bestLogit > -Float.greatestFiniteMagnitude / 2 {
@@ -637,6 +635,7 @@ final class LlamaLocalModelService {
     ) -> llama_token? {
         var bestToken: llama_token?
         var bestLogit = -Float.greatestFiniteMagnitude
+        let eosToken = vocab.map { llama_vocab_eos($0) }
 
         for i in 0..<vocabSize {
             let token = llama_token(i)
@@ -644,7 +643,10 @@ final class LlamaLocalModelService {
 
             let logit = logits[i]
             guard logit.isFinite else { continue }
-            if !allowControlTokens, isControlLikeTokenCached(token, vocab: vocab, cache: &controlTokenCache) { continue }
+            if !allowControlTokens {
+                let isEOS = eosToken == token
+                if !isEOS && isControlLikeTokenCached(token, vocab: vocab, cache: &controlTokenCache) { continue }
+            }
 
             if logit > bestLogit {
                 bestLogit = logit
@@ -774,6 +776,7 @@ final class LlamaLocalModelService {
         controlTokenCache: inout [llama_token: Bool]
     ) -> llama_token {
         let clippedTemp = sanitizeTemperature(temperature)
+        let eosToken = vocab.map { llama_vocab_eos($0) }
         if clippedTemp <= 0.05 {
             // Keep tool/planner turns deterministic, but still apply a small repetition
             // penalty so low-temperature decoding doesn't get stuck in micro-loops.
@@ -782,7 +785,8 @@ final class LlamaLocalModelService {
 
             for i in 0..<vocabSize {
                 let token = llama_token(i)
-                if isControlLikeTokenCached(token, vocab: vocab, cache: &controlTokenCache) { continue }
+                let isEOS = eosToken == token
+                if !isEOS && isControlLikeTokenCached(token, vocab: vocab, cache: &controlTokenCache) { continue }
 
                 var l = logits[i]
                 guard l.isFinite else { continue }
@@ -806,7 +810,8 @@ final class LlamaLocalModelService {
 
         for i in 0..<vocabSize {
             let token = llama_token(i)
-            if isControlLikeTokenCached(token, vocab: vocab, cache: &controlTokenCache) { continue }
+            let isEOS = eosToken == token
+            if !isEOS && isControlLikeTokenCached(token, vocab: vocab, cache: &controlTokenCache) { continue }
 
             var l = logits[i]
             guard l.isFinite else { continue }
