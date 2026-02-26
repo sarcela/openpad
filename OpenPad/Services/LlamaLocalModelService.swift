@@ -375,9 +375,22 @@ final class LlamaLocalModelService {
         var recentTokens: [llama_token] = []
         var controlTokenCache: [llama_token: Bool] = [:]
         var blockedEarlyStopTokens: Set<llama_token> = []
+        var blockedEarlyStopOrder: [llama_token] = []
+        let blockedEarlyStopCapacity = 12
         let repeatWindowSize = 64
         var staleDecodeSteps = 0
         let staleDecodeLimit = max(10, min(24, maxNewTokens / 3))
+
+        func rememberBlockedEarlyStopToken(_ token: llama_token) {
+            if blockedEarlyStopTokens.insert(token).inserted {
+                blockedEarlyStopOrder.append(token)
+            }
+
+            while blockedEarlyStopOrder.count > blockedEarlyStopCapacity {
+                let evicted = blockedEarlyStopOrder.removeFirst()
+                blockedEarlyStopTokens.remove(evicted)
+            }
+        }
 
         for _ in 0..<maxNewTokens {
             try throwIfCancelled()
@@ -489,11 +502,7 @@ final class LlamaLocalModelService {
                         // Ignore that marker and continue sampling instead of ending empty.
                         // Also drop accumulated bytes so future decode attempts don't keep
                         // re-emitting the same clipped marker prefix.
-                        blockedEarlyStopTokens.insert(nextToken)
-                        if blockedEarlyStopTokens.count > 12 {
-                            blockedEarlyStopTokens.removeAll(keepingCapacity: true)
-                            blockedEarlyStopTokens.insert(nextToken)
-                        }
+                        rememberBlockedEarlyStopToken(nextToken)
                         output = ""
                         outputBytes.removeAll(keepingCapacity: true)
                     } else {
