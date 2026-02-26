@@ -100,11 +100,17 @@ final class LlamaLocalModelService {
             // short backoff to avoid surfacing transient busy errors to the UI.
             if Date().addingTimeInterval(0.55) < deadline {
                 try await Task.sleep(nanoseconds: 550_000_000)
-                return try await Task(priority: .userInitiated) {
-                    try Self.runSyncWithTemplateFallback(prompt: prompt, modelPath: resolvedModelPath, mode: mode, deadline: deadline)
-                }.value
+                do {
+                    return try await Task(priority: .userInitiated) {
+                        try Self.runSyncWithTemplateFallback(prompt: prompt, modelPath: resolvedModelPath, mode: mode, deadline: deadline)
+                    }.value
+                } catch is CancellationError {
+                    throw LlamaServiceError.cancelled
+                }
             }
             throw LlamaServiceError.backendBusyTimeout
+        } catch is CancellationError {
+            throw LlamaServiceError.cancelled
         }
         #else
         throw LlamaServiceError.nativeBackendUnavailable
