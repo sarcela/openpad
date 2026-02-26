@@ -1074,7 +1074,8 @@ final class LlamaLocalModelService {
             .replacingOccurrences(of: #"\n{3,}"#, with: "\n\n", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
-        return collapseConsecutiveLineRepeats(in: normalized)
+        let dedupedLines = collapseConsecutiveLineRepeats(in: normalized)
+        return collapseConsecutiveSentenceRepeats(in: dedupedLines)
     }
 
     private static func collapseConsecutiveLineRepeats(in text: String, maxRepeats: Int = 2) -> String {
@@ -1113,6 +1114,22 @@ final class LlamaLocalModelService {
         }
 
         return collapsed.joined(separator: "\n")
+    }
+
+    private static func collapseConsecutiveSentenceRepeats(in text: String, maxRepeats: Int = 2) -> String {
+        // Local checkpoints sometimes emit the same sentence 3+ times in a row in a
+        // single paragraph. Collapse those loops while preserving intentional short
+        // repetitions (e.g. "ha ha").
+        guard maxRepeats >= 1, text.count >= 40 else { return text }
+
+        let pattern = #"([^.!?\n]{18,}[.!?])(?:\s+\1){2,}"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+            return text
+        }
+
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        let collapsed = regex.stringByReplacingMatches(in: text, options: [], range: range, withTemplate: "$1 $1")
+        return collapsed.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private static func stripTemplateResidueLines(from text: String) -> String {
