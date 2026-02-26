@@ -62,7 +62,15 @@ final class LocalModelService {
             } catch LlamaServiceError.backendBusyTimeout {
                 return "llama.swift is still finishing a previous response. Please retry in a few seconds."
             } catch LlamaServiceError.generationTimedOut {
-                return "The local llama.swift model took too long to answer (timeout raised to 180s). Try a shorter prompt or use a smaller GGUF if this keeps happening."
+                // One compact retry often succeeds on constrained devices where the
+                // first attempt spends most of the budget processing long context.
+                let compactPrompt = String(prompt.suffix(1600))
+                let retryPrompt = "Answer directly and concisely in at most 6 sentences:\n\n\(compactPrompt)"
+                if let retry = try? await llama.runLocal(prompt: retryPrompt, mode: llamaMode) {
+                    let sanitized = sanitizeModelOutput(retry)
+                    if !sanitized.isEmpty { return sanitized }
+                }
+                return "The local llama.swift model timed out before completing an answer. I retried with a compact prompt but it still timed out. Try a shorter message or switch to stable profile."
             } catch LlamaServiceError.cancelled {
                 return "Cancelled local llama.swift generation. You can retry with a shorter prompt."
             } catch LlamaServiceError.nativeBackendUnavailable {
