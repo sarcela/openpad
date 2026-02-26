@@ -374,6 +374,7 @@ final class LlamaLocalModelService {
         var generatedCount = 0
         var recentTokens: [llama_token] = []
         var controlTokenCache: [llama_token: Bool] = [:]
+        var blockedEarlyStopTokens: Set<llama_token> = []
         let repeatWindowSize = 64
         var staleDecodeSteps = 0
         let staleDecodeLimit = max(10, min(24, maxNewTokens / 3))
@@ -402,6 +403,17 @@ final class LlamaLocalModelService {
                 recentTokenCounts: recentTokenCounts,
                 controlTokenCache: &controlTokenCache
             )
+            if blockedEarlyStopTokens.contains(nextToken),
+               let replacement = bestTokenExcluding(
+                logits: logits,
+                vocabSize: vocabSize,
+                vocab: vocab,
+                excluded: blockedEarlyStopTokens,
+                allowControlTokens: false,
+                controlTokenCache: &controlTokenCache
+               ) {
+                nextToken = replacement
+            }
             if isControlLikeTokenCached(nextToken, vocab: vocab, cache: &controlTokenCache) {
                 if let replacement = bestTokenExcluding(
                     logits: logits,
@@ -477,6 +489,11 @@ final class LlamaLocalModelService {
                         // Ignore that marker and continue sampling instead of ending empty.
                         // Also drop accumulated bytes so future decode attempts don't keep
                         // re-emitting the same clipped marker prefix.
+                        blockedEarlyStopTokens.insert(nextToken)
+                        if blockedEarlyStopTokens.count > 12 {
+                            blockedEarlyStopTokens.removeAll(keepingCapacity: true)
+                            blockedEarlyStopTokens.insert(nextToken)
+                        }
                         output = ""
                         outputBytes.removeAll(keepingCapacity: true)
                     } else {
