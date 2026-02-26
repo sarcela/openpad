@@ -697,14 +697,10 @@ final class LlamaLocalModelService {
         let lossyPiece = String(decoding: bytes, as: UTF8.self)
         if isSpecialMarkerToken(lossyPiece) { return true }
 
-        // When decoding fails hard, some runtimes surface replacement-only glyphs.
-        // Treat those as control-like to keep visible output quality stable.
-        let trimmed = lossyPiece.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmed.isEmpty {
-            let onlyReplacementScalars = trimmed.unicodeScalars.allSatisfy { $0.value == 0xFFFD }
-            if onlyReplacementScalars { return true }
-        }
-
+        // Do not blanket-filter replacement-only glyphs here: many GGUF vocabularies
+        // emit byte-fallback pieces that decode lossily as "�" in isolation but are
+        // still required to build valid multi-byte UTF-8 text over subsequent tokens.
+        // We already reject empty pieces and explicit marker tokens above.
         return false
     }
 
