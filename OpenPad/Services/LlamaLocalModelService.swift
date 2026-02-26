@@ -1169,7 +1169,11 @@ final class LlamaLocalModelService {
         var cleaned = stripReasoningBlocks(from: text)
             .replacingOccurrences(of: #"(?im)^\s*(assistant|asistente|model|modelo)\s*:\s*"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"(?im)^\s*(assistant|asistente|model|modelo)\s*$"#, with: "", options: .regularExpression)
-            .replacingOccurrences(of: #"(?im)^\s*(user|usuario|system|sistema)\s*:.*$"#, with: "", options: .regularExpression)
+
+        // Strip leaked role scaffolding conservatively at boundaries only.
+        // Removing role-like lines globally can eat legitimate content such as
+        // "System: requirements" in technical answers.
+        cleaned = stripBoundaryRoleLeakLines(from: cleaned)
 
         // Some checkpoints leak assistant header tags at the beginning of output
         // (e.g. "<|im_start|>assistant" / "<|start_header_id|>assistant...").
@@ -1309,6 +1313,46 @@ final class LlamaLocalModelService {
         }
         while let last = lines.last, isResidueLine(last) {
             lines.removeLast()
+        }
+
+        return lines.joined(separator: "\n")
+    }
+
+    private static func stripBoundaryRoleLeakLines(from text: String) -> String {
+        var lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        guard !lines.isEmpty else { return text }
+
+        func isRoleLeakLine(_ line: String) -> Bool {
+            line.range(
+                of: #"(?i)^\s*(?:user|usuario|system|sistema)\s*:\s*.*$"#,
+                options: .regularExpression
+            ) != nil
+        }
+
+        while let first = lines.first {
+            let trimmed = first.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty {
+                lines.removeFirst()
+                continue
+            }
+            if isRoleLeakLine(first) {
+                lines.removeFirst()
+                continue
+            }
+            break
+        }
+
+        while let last = lines.last {
+            let trimmed = last.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty {
+                lines.removeLast()
+                continue
+            }
+            if isRoleLeakLine(last) {
+                lines.removeLast()
+                continue
+            }
+            break
         }
 
         return lines.joined(separator: "\n")
