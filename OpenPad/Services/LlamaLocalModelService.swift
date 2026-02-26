@@ -1898,17 +1898,11 @@ final class LlamaLocalModelService {
         case "fp32", "f32": return 320
         case "fp16", "f16", "bf16": return 160
         default:
-            if hint.hasPrefix("iq") {
-                let digits = hint.dropFirst(2)
-                if let level = Int(digits) {
-                    return max(20, level * 10)
-                }
+            if hint.hasPrefix("iq"), let level = quantizationLevel(from: hint, prefixLength: 2) {
+                return max(20, level * 10)
             }
-            if hint.hasPrefix("q") {
-                let digits = hint.dropFirst(1)
-                if let level = Int(digits) {
-                    return max(20, level * 10)
-                }
+            if hint.hasPrefix("q"), let level = quantizationLevel(from: hint, prefixLength: 1) {
+                return max(20, level * 10)
             }
             return 140
         }
@@ -1922,17 +1916,15 @@ final class LlamaLocalModelService {
             return hit
         }
 
-        if let regex = try? NSRegularExpression(pattern: #"(?i)\biq\d+"#) {
-            let nsRange = NSRange(lower.startIndex..<lower.endIndex, in: lower)
-            if let match = regex.firstMatch(in: lower, options: [], range: nsRange),
-               let range = Range(match.range, in: lower) {
-                return String(lower[range])
-            }
-        }
+        let patterns = [
+            #"(?i)\biq\d+(?:_[a-z0-9]+)*"#,
+            #"(?i)\bq\d+(?:_[a-z0-9]+)*"#
+        ]
 
-        if let regex = try? NSRegularExpression(pattern: #"(?i)\bq\d+"#) {
-            let nsRange = NSRange(lower.startIndex..<lower.endIndex, in: lower)
-            if let match = regex.firstMatch(in: lower, options: [], range: nsRange),
+        let nsRange = NSRange(lower.startIndex..<lower.endIndex, in: lower)
+        for pattern in patterns {
+            if let regex = try? NSRegularExpression(pattern: pattern),
+               let match = regex.firstMatch(in: lower, options: [], range: nsRange),
                let range = Range(match.range, in: lower) {
                 return String(lower[range])
             }
@@ -1948,20 +1940,22 @@ final class LlamaLocalModelService {
         case "fp32", "f32": return 160
         case "fp16", "f16", "bf16": return 150
         default:
-            if hint.hasPrefix("iq") {
-                let digits = hint.dropFirst(2)
-                if let level = Int(digits) {
-                    return 110 + (level * 10)
-                }
+            if hint.hasPrefix("iq"), let level = quantizationLevel(from: hint, prefixLength: 2) {
+                return 110 + (level * 10)
             }
-            if hint.hasPrefix("q") {
-                let digits = hint.dropFirst(1)
-                if let level = Int(digits) {
-                    return 80 + (level * 10)
-                }
+            if hint.hasPrefix("q"), let level = quantizationLevel(from: hint, prefixLength: 1) {
+                return 80 + (level * 10)
             }
             return 0
         }
+    }
+
+    private static func quantizationLevel(from hint: String, prefixLength: Int) -> Int? {
+        guard hint.count > prefixLength else { return nil }
+
+        let digits = hint.dropFirst(prefixLength).prefix { $0.isNumber }
+        guard !digits.isEmpty else { return nil }
+        return Int(digits)
     }
 
     private static func normalizeStemForMatch(_ raw: String) -> String {
