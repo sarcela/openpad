@@ -56,7 +56,16 @@ final class LocalModelService {
                 }
                 return "The local llama.swift backend hit a decode limit. Try a shorter message or switch to stable profile."
             } catch LlamaServiceError.tokenizationFailed {
-                return "The prompt could not be tokenized by the local llama.swift model. Try removing unusual symbols and retry."
+                // Recover once with a compact, control-char-stripped prompt. This helps
+                // on native GGUF checkpoints that fail tokenization on very long or
+                // noisy pasted content.
+                let retryPrompt = buildTokenizationSafeRetryPrompt(from: prompt)
+                if retryPrompt != prompt,
+                   let retry = try? await llama.runLocal(prompt: retryPrompt, mode: llamaMode) {
+                    let sanitized = sanitizeModelOutput(retry)
+                    if !sanitized.isEmpty { return sanitized }
+                }
+                return "The prompt could not be tokenized by the local llama.swift model. I retried with a compact/sanitized prompt, but it still failed. Try removing unusual symbols and retry."
             } catch LlamaServiceError.vocabularyUnavailable {
                 return "The selected llama.swift model did not expose a usable vocabulary. Re-select a valid GGUF and retry."
             } catch LlamaServiceError.backendBusyTimeout {
@@ -130,6 +139,25 @@ final class LocalModelService {
             if out.count >= 12 { break }
         }
         return out
+    }
+
+    private func buildTokenizationSafeRetryPrompt(from prompt: String) -> String {
+        let suffix = String(prompt.suffix(1800))
+
+        // Keep printable text plus common whitespace; drop control scalars that can
+        // break tokenization on some native GGUF vocabularies.
+        let cleanedScalars = suffix.unicodeScalars.filter { scalar in
+            if scalar == "\n" || scalar == "\r" || scalar == "\t" { return true }
+            return !CharacterSet.controlCharacters.contains(scalar)
+        }
+        let cleaned = String(String.UnicodeScalarView(cleanedScalars))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !cleaned.isEmpty else {
+            return "Answer directly in one short paragraph."
+        }
+
+        return "Answer directly and concisely based on this compact prompt:\n\n\(cleaned)"
     }
 
     private func sanitizeModelOutput(_ text: String) -> String {
