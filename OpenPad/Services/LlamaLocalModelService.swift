@@ -1917,8 +1917,8 @@ final class LlamaLocalModelService {
         }
 
         let patterns = [
-            #"(?i)\biq\d+(?:_[a-z0-9]+)*"#,
-            #"(?i)\bq\d+(?:_[a-z0-9]+)*"#
+            #"(?i)\biq\d+(?:[_.-][a-z0-9]+)*"#,
+            #"(?i)\bq\d+(?:[_.-][a-z0-9]+)*"#
         ]
 
         let nsRange = NSRange(lower.startIndex..<lower.endIndex, in: lower)
@@ -1926,11 +1926,19 @@ final class LlamaLocalModelService {
             if let regex = try? NSRegularExpression(pattern: pattern),
                let match = regex.firstMatch(in: lower, options: [], range: nsRange),
                let range = Range(match.range, in: lower) {
-                return String(lower[range])
+                return canonicalizeQuantizationHint(String(lower[range]))
             }
         }
 
         return nil
+    }
+
+    private static func canonicalizeQuantizationHint(_ raw: String) -> String {
+        raw
+            .lowercased()
+            .replacingOccurrences(of: #"[.-]+"#, with: "_", options: .regularExpression)
+            .replacingOccurrences(of: #"_+"#, with: "_", options: .regularExpression)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "_"))
     }
 
     private static func quantizationQualityRank(from hint: String?) -> Int {
@@ -1960,8 +1968,8 @@ final class LlamaLocalModelService {
 
     private static func normalizeStemForMatch(_ raw: String) -> String {
         raw
-            .replacingOccurrences(of: #"[-_ ]q\d+([_.-]k[_.-]?[msl])?"#, with: "", options: .regularExpression)
-            .replacingOccurrences(of: #"[-_ ](iq\d+|fp16|f16|f32|bf16|int4|int8|instruct|chat|gguf)"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"[-_ .](?:i?q\d+(?:[_.-][a-z0-9]+)*)"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"[-_ ](fp16|f16|f32|bf16|int4|int8|instruct|chat|gguf)"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"[^a-z0-9]+"#, with: "", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
