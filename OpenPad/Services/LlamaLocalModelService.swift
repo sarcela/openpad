@@ -69,7 +69,7 @@ final class LlamaLocalModelService {
         guard !clean.isEmpty else { throw LlamaServiceError.modelNotConfigured }
 
         let resolved = try Self.resolveExistingModelPath(from: clean)
-        guard FileManager.default.fileExists(atPath: resolved) else {
+        guard Self.isUsableModelFile(at: resolved) else {
             throw LlamaServiceError.modelFileNotFound(resolved)
         }
         modelPath = resolved
@@ -79,7 +79,7 @@ final class LlamaLocalModelService {
     func runLocal(prompt: String, mode: LlamaGenerationMode = .chat) async throws -> String {
         guard let configuredModelPath = modelPath else { throw LlamaServiceError.modelNotConfigured }
         let resolvedModelPath = try Self.resolveExistingModelPath(from: configuredModelPath)
-        guard FileManager.default.fileExists(atPath: resolvedModelPath) else {
+        guard Self.isUsableModelFile(at: resolvedModelPath) else {
             throw LlamaServiceError.modelFileNotFound(resolvedModelPath)
         }
         if resolvedModelPath != configuredModelPath {
@@ -181,7 +181,7 @@ final class LlamaLocalModelService {
         forceDeterministicSampling: Bool
     ) throws -> String {
         try throwIfCancelled()
-        guard FileManager.default.fileExists(atPath: modelPath) else {
+        guard isUsableModelFile(at: modelPath) else {
             throw LlamaServiceError.modelFileNotFound(modelPath)
         }
 
@@ -1644,13 +1644,13 @@ final class LlamaLocalModelService {
     }
 
     private static func resolveExistingModelPath(from normalizedPath: String) throws -> String {
-        if FileManager.default.fileExists(atPath: normalizedPath) {
+        if isUsableModelFile(at: normalizedPath) {
             return normalizedPath
         }
 
         // iOS can persist bookmarks with /private/var/... while runtime paths resolve to /var/... (or vice versa).
         for variant in privatePathVariants(for: normalizedPath) {
-            if FileManager.default.fileExists(atPath: variant) {
+            if isUsableModelFile(at: variant) {
                 return variant
             }
         }
@@ -1668,7 +1668,7 @@ final class LlamaLocalModelService {
                 let candidate = modelsDir
                     .appendingPathComponent(candidateName, isDirectory: false)
                     .standardizedFileURL
-                if FileManager.default.fileExists(atPath: candidate.path) {
+                if isUsableModelFile(at: candidate.path) {
                     return candidate.path
                 }
             }
@@ -1887,6 +1887,19 @@ final class LlamaLocalModelService {
             return String(raw.dropFirst().dropLast())
         }
         return raw
+    }
+
+    private static func isUsableModelFile(at path: String) -> Bool {
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory), !isDirectory.boolValue else {
+            return false
+        }
+
+        let `extension` = URL(fileURLWithPath: path).pathExtension.lowercased()
+        // GGUF is the only format supported by the native llama.swift path here.
+        guard `extension` == "gguf" else { return false }
+
+        return FileManager.default.isReadableFile(atPath: path)
     }
 
     private static func privatePathVariants(for path: String) -> [String] {
