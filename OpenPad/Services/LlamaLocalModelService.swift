@@ -1028,37 +1028,52 @@ final class LlamaLocalModelService {
     }
 
     private static func sanitizeDecodedOutput(_ text: String) -> String {
-        stripReasoningBlocks(from: text)
+        var cleaned = stripReasoningBlocks(from: text)
             .replacingOccurrences(of: #"(?im)^\s*(assistant|asistente|model|modelo)\s*:\s*"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"(?im)^\s*(assistant|asistente|model|modelo)\s*$"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"(?im)^\s*(user|usuario|system|sistema)\s*:.*$"#, with: "", options: .regularExpression)
-            .replacingOccurrences(of: "<|begin_of_text|>", with: "")
-            .replacingOccurrences(of: "<|eot_id|>", with: "")
-            .replacingOccurrences(of: "<|eom_id|>", with: "")
-            .replacingOccurrences(of: "<|end|>", with: "")
-            .replacingOccurrences(of: "<|end_of_text|>", with: "")
-            .replacingOccurrences(of: "<|im_end|>", with: "")
-            .replacingOccurrences(of: "<|im_start|>", with: "")
-            .replacingOccurrences(of: "<|start_header_id|>", with: "")
-            .replacingOccurrences(of: "<|end_header_id|>", with: "")
-            .replacingOccurrences(of: "<｜end▁of▁sentence｜>", with: "")
-            .replacingOccurrences(of: "<｜User｜>", with: "")
-            .replacingOccurrences(of: "<｜Assistant｜>", with: "")
-            .replacingOccurrences(of: "<start_of_turn>", with: "")
-            .replacingOccurrences(of: "<end_of_turn>", with: "")
-            // Strip sentence markers only when they are standalone residue lines.
-            // Avoid deleting literal XML/HTML snippets users might ask about.
-            .replacingOccurrences(of: #"(?im)^\s*<s>\s*$"#, with: "", options: .regularExpression)
-            .replacingOccurrences(of: #"(?im)^\s*</s>\s*$"#, with: "", options: .regularExpression)
-            .replacingOccurrences(of: "[INST]", with: "")
-            .replacingOccurrences(of: "[/INST]", with: "")
-            .replacingOccurrences(of: "<<SYS>>", with: "")
-            .replacingOccurrences(of: "<</SYS>>", with: "")
-            .replacingOccurrences(of: "### Instruction:", with: "")
-            .replacingOccurrences(of: "### Response:", with: "")
-            .replacingOccurrences(of: "### User:", with: "")
+
+        // Strip leaked prompt-template residue only when it appears as standalone lines.
+        // Keep inline mentions intact so user-requested literal markers/code are preserved.
+        cleaned = stripTemplateResidueLines(from: cleaned)
+
+        return cleaned
             .replacingOccurrences(of: #"\n{3,}"#, with: "\n\n", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func stripTemplateResidueLines(from text: String) -> String {
+        var cleaned = text
+
+        let linePatterns = [
+            #"(?im)^\s*<\|begin_of_text\|>\s*$"#,
+            #"(?im)^\s*<\|eot_id\|>\s*$"#,
+            #"(?im)^\s*<\|eom_id\|>\s*$"#,
+            #"(?im)^\s*<\|end\|>\s*$"#,
+            #"(?im)^\s*<\|end_of_text\|>\s*$"#,
+            #"(?im)^\s*<\|im_end\|>\s*$"#,
+            #"(?im)^\s*<\|im_start\|>\s*$"#,
+            #"(?im)^\s*<\|start_header_id\|>\s*$"#,
+            #"(?im)^\s*<\|end_header_id\|>\s*$"#,
+            #"(?im)^\s*<｜end▁of▁sentence｜>\s*$"#,
+            #"(?im)^\s*<｜user｜>\s*$"#,
+            #"(?im)^\s*<｜assistant｜>\s*$"#,
+            #"(?im)^\s*<start_of_turn>\s*$"#,
+            #"(?im)^\s*<end_of_turn>\s*$"#,
+            #"(?im)^\s*<s>\s*$"#,
+            #"(?im)^\s*</s>\s*$"#,
+            #"(?im)^\s*\[inst\]\s*$"#,
+            #"(?im)^\s*\[/inst\]\s*$"#,
+            #"(?im)^\s*<<sys>>\s*$"#,
+            #"(?im)^\s*<</sys>>\s*$"#,
+            #"(?im)^\s*###\s*(instruction|response|user)\s*:\s*$"#
+        ]
+
+        for pattern in linePatterns {
+            cleaned = cleaned.replacingOccurrences(of: pattern, with: "", options: .regularExpression)
+        }
+
+        return cleaned
     }
 
     private static func stripReasoningBlocks(from text: String) -> String {
