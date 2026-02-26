@@ -1477,8 +1477,32 @@ final class LlamaLocalModelService {
         // If many protocol markers leak and content is sparse, quality is usually unusable.
         if markerHits >= 3, !hasRichNaturalLanguage { return true }
 
-        // Single marker with very short text is usually framing residue.
-        if markerHits == 1, trimmed.count <= 80 { return true }
+        // Single marker with very short text is often framing residue, but allow
+        // concise explanatory answers like "<|eot_id|> is an end-of-turn token".
+        if markerHits == 1, trimmed.count <= 80 {
+            if looksLikeTemplateResidue(trimmed, lowercased: lower) {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    private static func looksLikeTemplateResidue(_ text: String, lowercased: String) -> Bool {
+        let words = lowercased.split { !$0.isLetter && !$0.isNumber }
+        let hasExplainerCue = ["means", "token", "marker", "stands", "used", "example", "ejemplo", "significa", "representa"].contains {
+            lowercased.contains($0)
+        }
+
+        if lowercased.hasPrefix("<|"), lowercased.contains("|>") {
+            // Raw marker-prefixed outputs are usually leaked protocol scaffolding.
+            return !hasExplainerCue
+        }
+
+        let alnumCount = text.unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }.count
+        if words.count <= 4 && alnumCount < 24 && !hasExplainerCue {
+            return true
+        }
 
         return false
     }
