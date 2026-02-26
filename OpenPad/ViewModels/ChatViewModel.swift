@@ -159,6 +159,16 @@ final class ChatViewModel: ObservableObject {
         startPrompt(prompt)
     }
 
+    func cancelActiveGeneration() {
+        guard isLoading else { return }
+        activeTask?.cancel()
+        activeTask = nil
+        isLoading = false
+        inFlightPrompt = nil
+        liveDebugTrace = []
+        backgroundStatus = "Generation cancelled."
+    }
+
     private func startPrompt(_ prompt: String) {
         inputText = ""
         messages.append(ChatMessage(role: "user", text: prompt))

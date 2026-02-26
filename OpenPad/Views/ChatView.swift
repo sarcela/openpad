@@ -294,15 +294,19 @@ struct ChatView: View {
                                 .frame(minHeight: 38, maxHeight: 120)
 
                                 Button {
-                                    autoScrollEnabled = true
-                                    vm.send()
+                                    if vm.isLoading {
+                                        vm.cancelActiveGeneration()
+                                    } else {
+                                        autoScrollEnabled = true
+                                        vm.send()
+                                    }
                                 } label: {
-                                    Image(systemName: vm.isLoading ? "hourglass" : "paperplane.fill")
+                                    Image(systemName: vm.isLoading ? "stop.fill" : "paperplane.fill")
                                         .font(.headline)
                                         .frame(width: 36, height: 36)
                                 }
                                 .buttonStyle(.borderedProminent)
-                                .disabled(vm.isLoading || vm.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                                .disabled(!vm.isLoading && vm.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                             }
                             .padding(.horizontal)
                             .padding(.top, 8)
