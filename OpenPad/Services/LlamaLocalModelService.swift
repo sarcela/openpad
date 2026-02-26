@@ -379,26 +379,40 @@ final class LlamaLocalModelService {
                 controlTokenCache: &controlTokenCache
             )
             if isControlLikeTokenCached(nextToken, vocab: vocab, cache: &controlTokenCache) {
-                nextToken = bestTokenExcluding(
+                if let replacement = bestTokenExcluding(
                     logits: logits,
                     vocabSize: vocabSize,
                     vocab: vocab,
                     excluded: Set([nextToken]),
                     allowControlTokens: false,
                     controlTokenCache: &controlTokenCache
-                ) ?? pickToken(logits: logits, vocabSize: vocabSize, vocab: vocab, controlTokenCache: &controlTokenCache)
+                ) {
+                    nextToken = replacement
+                } else {
+                    if output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        throw LlamaServiceError.emptyResponse
+                    }
+                    break
+                }
             }
             if nextToken == llama_vocab_eos(vocab), generatedCount < minTokensBeforeEOS {
-                nextToken = bestTokenExcluding(
+                if let replacement = bestTokenExcluding(
                     logits: logits,
                     vocabSize: vocabSize,
                     vocab: vocab,
                     excluded: Set([llama_vocab_eos(vocab)]),
                     allowControlTokens: false,
                     controlTokenCache: &controlTokenCache
-                ) ?? nextToken
+                ) {
+                    nextToken = replacement
+                }
             }
-            if nextToken == llama_vocab_eos(vocab) { break }
+            if nextToken == llama_vocab_eos(vocab) {
+                if output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    throw LlamaServiceError.emptyResponse
+                }
+                break
+            }
 
             if let lastToken, lastToken == nextToken {
                 repeatCount += 1
