@@ -1046,8 +1046,10 @@ final class LlamaLocalModelService {
             .replacingOccurrences(of: "<｜Assistant｜>", with: "")
             .replacingOccurrences(of: "<start_of_turn>", with: "")
             .replacingOccurrences(of: "<end_of_turn>", with: "")
-            .replacingOccurrences(of: "<s>", with: "")
-            .replacingOccurrences(of: "</s>", with: "")
+            // Strip sentence markers only when they are standalone residue lines.
+            // Avoid deleting literal XML/HTML snippets users might ask about.
+            .replacingOccurrences(of: #"(?im)^\s*<s>\s*$"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"(?im)^\s*</s>\s*$"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: "[INST]", with: "")
             .replacingOccurrences(of: "[/INST]", with: "")
             .replacingOccurrences(of: "<<SYS>>", with: "")
@@ -1263,7 +1265,6 @@ final class LlamaLocalModelService {
             "<|end_of_text|>",
             "<|im_end|>",
             "<｜end▁of▁sentence｜>",
-            "</s>",
             "<end_of_turn>"
         ]
 
@@ -1281,7 +1282,8 @@ final class LlamaLocalModelService {
             #"(?im)^\s*<\|im_start\|>\s*(user|system)\b"#,
             #"(?im)^\s*<\|start_header_id\|>\s*(user|system)\s*<\|end_header_id\|>"#,
             #"(?im)^\s*<start_of_turn>\s*(user|system)\b"#,
-            #"(?im)^\s*(###\s*(instruction|user|input)\s*:|\[INST\]|<｜User｜>)"#
+            #"(?im)^\s*(###\s*(instruction|user|input)\s*:|\[INST\]|<｜User｜>)"#,
+            #"(?im)^\s*</s>\s*$"#
         ]
         let nsRange = NSRange(text.startIndex..<text.endIndex, in: text)
         for pattern in turnLeakPatterns {
