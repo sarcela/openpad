@@ -414,6 +414,22 @@ final class LlamaLocalModelService {
                 break
             }
 
+            // Break short token loops early (e.g. ABAB / XYZXYZ) that waste decode
+            // budget and often degrade native output quality.
+            if createsRecentNGramLoop(recentTokens: recentTokens, candidate: nextToken, n: 2) ||
+                createsRecentNGramLoop(recentTokens: recentTokens, candidate: nextToken, n: 3) {
+                if let replacement = bestTokenExcluding(
+                    logits: logits,
+                    vocabSize: vocabSize,
+                    vocab: vocab,
+                    excluded: Set([nextToken]),
+                    allowControlTokens: false,
+                    controlTokenCache: &controlTokenCache
+                ) {
+                    nextToken = replacement
+                }
+            }
+
             if let lastToken, lastToken == nextToken {
                 repeatCount += 1
             } else {
@@ -637,6 +653,27 @@ final class LlamaLocalModelService {
         }
 
         return bestToken
+    }
+
+    private static func createsRecentNGramLoop(
+        recentTokens: [llama_token],
+        candidate: llama_token,
+        n: Int
+    ) -> Bool {
+        guard n >= 2 else { return false }
+
+        // Need two full windows: previous n-gram + candidate-completed n-gram.
+        let required = (2 * n) - 1
+        guard recentTokens.count >= required else { return false }
+
+        let previousStart = recentTokens.count - required
+        let previousEnd = previousStart + n
+        let previous = Array(recentTokens[previousStart..<previousEnd])
+
+        let recentPrefix = Array(recentTokens.suffix(n - 1))
+        let current = recentPrefix + [candidate]
+
+        return previous == current
     }
 
     private static func isControlLikeTokenCached(
