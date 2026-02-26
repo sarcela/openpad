@@ -238,12 +238,18 @@ final class LlamaLocalModelService {
         var tokens: [llama_token] = []
         var tokenCount: Int32 = 0
         var tokenized = false
+        // Keep tokenization allocations proportional to context size. Huge temporary
+        // buffers increase memory pressure and can destabilize native runs on-device.
+        let tokenCapacityCeiling = max(2_048, min(65_536, Int(contextParams.n_ctx) * 6))
 
         // Some checkpoints return a larger negative "needed tokens" value multiple times
         // while prompt size/capacity shifts. Retry with bounded growth and stronger
         // prompt truncation so we fail less often on the native path under memory pressure.
         for attempt in 0..<4 {
-            var tokenCapacity = max(512, min(32_768, promptForTokenization.utf8.count + 64))
+            try throwIfCancelled()
+            if Date() >= deadline { throw LlamaServiceError.generationTimedOut }
+
+            var tokenCapacity = max(512, min(tokenCapacityCeiling, promptForTokenization.utf8.count + 64))
             tokens = [llama_token](repeating: 0, count: tokenCapacity)
             tokenCount = promptForTokenization.withCString { cText in
                 llama_tokenize(vocab, cText, Int32(strlen(cText)), &tokens, Int32(tokens.count), true, true)
@@ -251,8 +257,13 @@ final class LlamaLocalModelService {
 
             var resizeAttempts = 0
             while tokenCount < 0, resizeAttempts < 3 {
+                try throwIfCancelled()
+                if Date() >= deadline { throw LlamaServiceError.generationTimedOut }
+
                 let needed = Int(-tokenCount) + 8
-                tokenCapacity = min(131_072, max(needed, tokenCapacity * 2))
+                let nextCapacity = min(tokenCapacityCeiling, max(needed, tokenCapacity * 2))
+                if nextCapacity <= tokenCapacity { break }
+                tokenCapacity = nextCapacity
                 tokens = [llama_token](repeating: 0, count: tokenCapacity)
                 tokenCount = promptForTokenization.withCString { cText in
                     llama_tokenize(vocab, cText, Int32(strlen(cText)), &tokens, Int32(tokens.count), true, true)
