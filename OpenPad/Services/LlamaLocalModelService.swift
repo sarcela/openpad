@@ -651,6 +651,12 @@ final class LlamaLocalModelService {
 
         let lower = trimmed.lowercased()
 
+        // Common standalone control tokens leaked by GGUF chat/instruct checkpoints.
+        // Keep this exact-match only so regular XML/HTML-like content is unaffected.
+        if ["<s>", "</s>", "<bos>", "<eos>", "<unk>", "<pad>"].contains(lower) {
+            return true
+        }
+
         // Be strict here: broad checks like "|>" can incorrectly filter valid code/math
         // tokens and hurt output quality.
         if lower.hasPrefix("<｜") || lower.hasSuffix("｜>") { return true }
@@ -1360,7 +1366,8 @@ final class LlamaLocalModelService {
             "<|end_of_text|>",
             "<|im_end|>",
             "<｜end▁of▁sentence｜>",
-            "<end_of_turn>"
+            "<end_of_turn>",
+            "</s>"
         ]
 
         var markers: [String.Index] = []
