@@ -223,27 +223,54 @@ final class LlamaLocalModelService {
         // trim by context window. Pre-trim middle context at char-level first to keep
         // native path stable on-device while preserving instruction prefix + recent tail.
         let approxMaxPromptChars = max(1_024, Int(contextParams.n_ctx) * 8)
-        let promptForTokenization = truncateMiddlePreservingEnds(
+        var promptForTokenization = truncateMiddlePreservingEnds(
             framedPrompt,
             maxChars: approxMaxPromptChars,
             headChars: max(320, approxMaxPromptChars / 6)
         )
 
-        var tokenCapacity = max(512, min(8_192, promptForTokenization.utf8.count + 32))
-        var tokens = [llama_token](repeating: 0, count: tokenCapacity)
-        var tokenCount = promptForTokenization.withCString { cText in
-            llama_tokenize(vocab, cText, Int32(strlen(cText)), &tokens, Int32(tokens.count), true, true)
-        }
+        var tokens: [llama_token] = []
+        var tokenCount: Int32 = 0
+        var tokenized = false
 
-        if tokenCount < 0 {
-            tokenCapacity = max(tokenCapacity * 2, Int(-tokenCount) + 8)
+        // Some checkpoints return a larger negative "needed tokens" value multiple times
+        // while prompt size/capacity shifts. Retry with bounded growth and stronger
+        // prompt truncation so we fail less often on the native path under memory pressure.
+        for attempt in 0..<4 {
+            var tokenCapacity = max(512, min(32_768, promptForTokenization.utf8.count + 64))
             tokens = [llama_token](repeating: 0, count: tokenCapacity)
             tokenCount = promptForTokenization.withCString { cText in
                 llama_tokenize(vocab, cText, Int32(strlen(cText)), &tokens, Int32(tokens.count), true, true)
             }
+
+            var resizeAttempts = 0
+            while tokenCount < 0, resizeAttempts < 3 {
+                let needed = Int(-tokenCount) + 8
+                tokenCapacity = min(131_072, max(needed, tokenCapacity * 2))
+                tokens = [llama_token](repeating: 0, count: tokenCapacity)
+                tokenCount = promptForTokenization.withCString { cText in
+                    llama_tokenize(vocab, cText, Int32(strlen(cText)), &tokens, Int32(tokens.count), true, true)
+                }
+                resizeAttempts += 1
+            }
+
+            if tokenCount > 0 {
+                tokenized = true
+                break
+            }
+
+            guard attempt < 3 else { break }
+            let reducedChars = max(1_024, Int(Double(promptForTokenization.count) * 0.78))
+            if reducedChars >= promptForTokenization.count { break }
+            promptForTokenization = truncateMiddlePreservingEnds(
+                promptForTokenization,
+                maxChars: reducedChars,
+                headChars: max(256, reducedChars / 5)
+            )
+            print("[LLAMA] tokenization_retry attempt=\(attempt + 2) reduced_chars=\(reducedChars)")
         }
 
-        guard tokenCount > 0 else { throw LlamaServiceError.tokenizationFailed }
+        guard tokenized, tokenCount > 0 else { throw LlamaServiceError.tokenizationFailed }
         let reservedForGeneration = min(
             max(96, settings.maxNewTokens),
             max(32, Int(contextParams.n_ctx) / 3)
