@@ -1043,37 +1043,48 @@ final class LlamaLocalModelService {
     }
 
     private static func stripTemplateResidueLines(from text: String) -> String {
-        var cleaned = text
-
         let linePatterns = [
-            #"(?im)^\s*<\|begin_of_text\|>\s*$"#,
-            #"(?im)^\s*<\|eot_id\|>\s*$"#,
-            #"(?im)^\s*<\|eom_id\|>\s*$"#,
-            #"(?im)^\s*<\|end\|>\s*$"#,
-            #"(?im)^\s*<\|end_of_text\|>\s*$"#,
-            #"(?im)^\s*<\|im_end\|>\s*$"#,
-            #"(?im)^\s*<\|im_start\|>\s*$"#,
-            #"(?im)^\s*<\|start_header_id\|>\s*$"#,
-            #"(?im)^\s*<\|end_header_id\|>\s*$"#,
-            #"(?im)^\s*<｜end▁of▁sentence｜>\s*$"#,
-            #"(?im)^\s*<｜user｜>\s*$"#,
-            #"(?im)^\s*<｜assistant｜>\s*$"#,
-            #"(?im)^\s*<start_of_turn>\s*$"#,
-            #"(?im)^\s*<end_of_turn>\s*$"#,
-            #"(?im)^\s*<s>\s*$"#,
-            #"(?im)^\s*</s>\s*$"#,
-            #"(?im)^\s*\[inst\]\s*$"#,
-            #"(?im)^\s*\[/inst\]\s*$"#,
-            #"(?im)^\s*<<sys>>\s*$"#,
-            #"(?im)^\s*<</sys>>\s*$"#,
-            #"(?im)^\s*###\s*(instruction|response|user)\s*:\s*$"#
+            #"^\s*<\|begin_of_text\|>\s*$"#,
+            #"^\s*<\|eot_id\|>\s*$"#,
+            #"^\s*<\|eom_id\|>\s*$"#,
+            #"^\s*<\|end\|>\s*$"#,
+            #"^\s*<\|end_of_text\|>\s*$"#,
+            #"^\s*<\|im_end\|>\s*$"#,
+            #"^\s*<\|im_start\|>\s*$"#,
+            #"^\s*<\|start_header_id\|>\s*$"#,
+            #"^\s*<\|end_header_id\|>\s*$"#,
+            #"^\s*<｜end▁of▁sentence｜>\s*$"#,
+            #"^\s*<｜user｜>\s*$"#,
+            #"^\s*<｜assistant｜>\s*$"#,
+            #"^\s*<start_of_turn>\s*$"#,
+            #"^\s*<end_of_turn>\s*$"#,
+            #"^\s*<s>\s*$"#,
+            #"^\s*</s>\s*$"#,
+            #"^\s*\[inst\]\s*$"#,
+            #"^\s*\[/inst\]\s*$"#,
+            #"^\s*<<sys>>\s*$"#,
+            #"^\s*<</sys>>\s*$"#,
+            #"^\s*###\s*(instruction|response|user)\s*:\s*$"#
         ]
+        let regexes = linePatterns.compactMap { try? NSRegularExpression(pattern: $0, options: [.caseInsensitive]) }
 
-        for pattern in linePatterns {
-            cleaned = cleaned.replacingOccurrences(of: pattern, with: "", options: .regularExpression)
+        func isResidueLine(_ line: String) -> Bool {
+            let range = NSRange(line.startIndex..<line.endIndex, in: line)
+            return regexes.contains { $0.firstMatch(in: line, options: [], range: range) != nil }
         }
 
-        return cleaned
+        // Remove leaked prompt-template marker lines only at the boundaries.
+        // Keeping interior lines avoids deleting user-requested literal marker examples.
+        var lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+
+        while let first = lines.first, isResidueLine(first) {
+            lines.removeFirst()
+        }
+        while let last = lines.last, isResidueLine(last) {
+            lines.removeLast()
+        }
+
+        return lines.joined(separator: "\n")
     }
 
     private static func stripReasoningBlocks(from text: String) -> String {
