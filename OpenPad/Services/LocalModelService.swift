@@ -186,7 +186,7 @@ final class LocalModelService {
 
         // Strip common role/header artifacts that leak from prompts.
         out = out.replacingOccurrences(of: #"(?im)^\s*(assistant|asistente)\s*:\s*"#, with: "", options: .regularExpression)
-        out = out.replacingOccurrences(of: #"(?im)^\s*(user|usuario|system|sistema)\s*:.*$"#, with: "", options: .regularExpression)
+        out = stripLeadingRoleLeakPreamble(out)
 
         // If the model leaks "mensaje del usuario:" scaffolding at the very start,
         // strip only that leading label block instead of truncating any later mention.
@@ -205,6 +205,36 @@ final class LocalModelService {
             return "I processed your request, but the model returned an internal reasoning block only. Please retry."
         }
         return out
+    }
+
+    private func stripLeadingRoleLeakPreamble(_ text: String) -> String {
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        guard !lines.isEmpty else { return text }
+
+        func isLeakedRoleLine(_ line: String) -> Bool {
+            line.range(
+                of: #"(?i)^\s*(user|usuario|system|sistema)\s*:\s*.*$"#,
+                options: .regularExpression
+            ) != nil
+        }
+
+        var idx = 0
+        while idx < lines.count {
+            let trimmed = lines[idx].trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty {
+                idx += 1
+                continue
+            }
+            if isLeakedRoleLine(lines[idx]) {
+                idx += 1
+                continue
+            }
+            break
+        }
+
+        if idx == 0 || idx >= lines.count { return text }
+        let remainder = lines[idx...].joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        return remainder.isEmpty ? text : remainder
     }
 
     private func autoConfigureModelIfPresent() throws {
