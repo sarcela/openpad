@@ -107,10 +107,22 @@ struct LocalModelConfig {
 
     private func availableGGUF(in directory: URL) -> [URL] {
         let fm = FileManager.default
-        let contents = (try? fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles])) ?? []
+        let contents = (try? fm.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.isRegularFileKey, .isReadableKey, .fileSizeKey],
+            options: [.skipsHiddenFiles]
+        )) ?? []
 
         return contents
             .filter { $0.pathExtension.lowercased() == "gguf" }
+            .filter {
+                guard let values = try? $0.resourceValues(forKeys: [.isRegularFileKey, .isReadableKey, .fileSizeKey]) else {
+                    return false
+                }
+                guard values.isRegularFile == true, values.isReadable == true else { return false }
+                // Hide tiny placeholder files caused by interrupted imports/downloads.
+                return (values.fileSize ?? 0) >= 4_096
+            }
             .sorted { $0.lastPathComponent.localizedCaseInsensitiveCompare($1.lastPathComponent) == .orderedAscending }
     }
 

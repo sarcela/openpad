@@ -1976,16 +1976,27 @@ final class LlamaLocalModelService {
     }
 
     private static func isUsableModelFile(at path: String) -> Bool {
-        var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory), !isDirectory.boolValue else {
-            return false
-        }
-
-        let `extension` = URL(fileURLWithPath: path).pathExtension.lowercased()
+        let fileURL = URL(fileURLWithPath: path)
+        let `extension` = fileURL.pathExtension.lowercased()
         // GGUF is the only format supported by the native llama.swift path here.
         guard `extension` == "gguf" else { return false }
 
-        return FileManager.default.isReadableFile(atPath: path)
+        let fm = FileManager.default
+        var isDirectory: ObjCBool = false
+        guard fm.fileExists(atPath: path, isDirectory: &isDirectory), !isDirectory.boolValue else {
+            return false
+        }
+        guard fm.isReadableFile(atPath: path) else { return false }
+
+        // Filter empty/truncated placeholder files early. These can appear when imports
+        // are interrupted and otherwise surface as opaque native backend failures.
+        if let values = try? fileURL.resourceValues(forKeys: [.fileSizeKey]),
+           let byteCount = values.fileSize,
+           byteCount < 4_096 {
+            return false
+        }
+
+        return true
     }
 
     private static func privatePathVariants(for path: String) -> [String] {
