@@ -39,27 +39,25 @@ final class LocalModelService {
             } catch LlamaServiceError.modelFileNotFound(_) {
                 return "The selected llama.swift model file is missing. Re-select a .gguf in Settings."
             } catch LlamaServiceError.emptyResponse {
-                let retryPrompt = "Answer directly in one short paragraph:\n\n\(String(prompt.suffix(1400)))"
+                let retryPrompt = buildLlamaRetryPrompt(from: prompt, purpose: purpose, reason: .emptyResponse)
                 if let retry = try? await llama.runLocal(prompt: retryPrompt, mode: llamaMode) {
                     let sanitized = sanitizeModelOutput(retry)
                     if !sanitized.isEmpty { return sanitized }
                 }
                 return "The local llama.swift model returned an empty answer. Please retry with a shorter prompt."
             } catch LlamaServiceError.decodeFailed(_) {
-                let compactPrompt = String(prompt.suffix(1800))
-                if compactPrompt != prompt {
-                    let retryPrompt = "Answer concisely and directly:\n\n\(compactPrompt)"
-                    if let retry = try? await llama.runLocal(prompt: retryPrompt, mode: llamaMode) {
-                        let sanitized = sanitizeModelOutput(retry)
-                        if !sanitized.isEmpty { return sanitized }
-                    }
+                let retryPrompt = buildLlamaRetryPrompt(from: prompt, purpose: purpose, reason: .decodeFailed)
+                if retryPrompt != prompt,
+                   let retry = try? await llama.runLocal(prompt: retryPrompt, mode: llamaMode) {
+                    let sanitized = sanitizeModelOutput(retry)
+                    if !sanitized.isEmpty { return sanitized }
                 }
                 return "The local llama.swift backend hit a decode limit. Try a shorter message or switch to stable profile."
             } catch LlamaServiceError.tokenizationFailed {
                 // Recover once with a compact, control-char-stripped prompt. This helps
                 // on native GGUF checkpoints that fail tokenization on very long or
                 // noisy pasted content.
-                let retryPrompt = buildTokenizationSafeRetryPrompt(from: prompt)
+                let retryPrompt = buildLlamaRetryPrompt(from: prompt, purpose: purpose, reason: .tokenizationFailed)
                 if retryPrompt != prompt,
                    let retry = try? await llama.runLocal(prompt: retryPrompt, mode: llamaMode) {
                     let sanitized = sanitizeModelOutput(retry)
@@ -73,8 +71,7 @@ final class LocalModelService {
             } catch LlamaServiceError.generationTimedOut {
                 // One compact retry often succeeds on constrained devices where the
                 // first attempt spends most of the budget processing long context.
-                let compactPrompt = String(prompt.suffix(1600))
-                let retryPrompt = "Answer directly and concisely in at most 6 sentences:\n\n\(compactPrompt)"
+                let retryPrompt = buildLlamaRetryPrompt(from: prompt, purpose: purpose, reason: .generationTimedOut)
                 if let retry = try? await llama.runLocal(prompt: retryPrompt, mode: llamaMode) {
                     let sanitized = sanitizeModelOutput(retry)
                     if !sanitized.isEmpty { return sanitized }
@@ -141,8 +138,16 @@ final class LocalModelService {
         return out
     }
 
-    private func buildTokenizationSafeRetryPrompt(from prompt: String) -> String {
-        let suffix = String(prompt.suffix(1800))
+    private enum LlamaRetryReason {
+        case emptyResponse
+        case decodeFailed
+        case tokenizationFailed
+        case generationTimedOut
+    }
+
+    private func buildLlamaRetryPrompt(from prompt: String, purpose: LocalInferencePurpose, reason: LlamaRetryReason) -> String {
+        let compactLimit: Int = (reason == .generationTimedOut) ? 1600 : 1800
+        let suffix = String(prompt.suffix(compactLimit))
 
         // Keep printable text plus common whitespace; drop control scalars that can
         // break tokenization on some native GGUF vocabularies.
@@ -153,11 +158,23 @@ final class LocalModelService {
         let cleaned = String(String.UnicodeScalarView(cleanedScalars))
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
-        guard !cleaned.isEmpty else {
-            return "Answer directly in one short paragraph."
-        }
+        let payload = cleaned.isEmpty ? String(prompt.suffix(1200)).trimmingCharacters(in: .whitespacesAndNewlines) : cleaned
 
-        return "Answer directly and concisely based on this compact prompt:\n\n\(cleaned)"
+        switch purpose {
+        case .chat:
+            switch reason {
+            case .emptyResponse:
+                return "Answer directly in one short paragraph:\n\n\(payload)"
+            case .generationTimedOut:
+                return "Answer directly and concisely in at most 6 sentences:\n\n\(payload)"
+            case .decodeFailed, .tokenizationFailed:
+                return "Answer directly and concisely based on this compact prompt:\n\n\(payload)"
+            }
+        case .tools:
+            // Preserve deterministic tool/planner behavior: keep JSON-oriented guidance
+            // even during retries so we don't regress into prose answers.
+            return "Return only valid JSON with no markdown or explanations. Use an empty JSON object {} if uncertain.\n\n\(payload)"
+        }
     }
 
     private func sanitizeModelOutput(_ text: String) -> String {
