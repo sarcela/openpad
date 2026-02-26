@@ -1519,17 +1519,16 @@ final class LlamaLocalModelService {
             ? text[markerRange.upperBound]
             : nil
 
+        // Treat hard stop markers as terminators only when they look like leaked protocol
+        // residue (standalone line / near tail). Do not clip inline mentions like
+        // "the token <|eot_id|> means..." because that hurts answer quality.
         let startsOnFreshLine = beforeChar == nil || beforeChar == "\n" || beforeChar == "\r"
-
-        let surroundedByWhitespace = {
-            let beforeIsWS = beforeChar?.unicodeScalars.allSatisfy { CharacterSet.whitespacesAndNewlines.contains($0) } ?? true
-            let afterIsWS = afterChar?.unicodeScalars.allSatisfy { CharacterSet.whitespacesAndNewlines.contains($0) } ?? true
-            return beforeIsWS && afterIsWS
-        }()
+        let endsOnLineBoundary = afterChar == nil || afterChar == "\n" || afterChar == "\r"
+        let isolatedMarkerLine = startsOnFreshLine && endsOnLineBoundary
 
         let nearTail = text.distance(from: markerRange.upperBound, to: text.endIndex) <= 2
 
-        return startsOnFreshLine || surroundedByWhitespace || nearTail
+        return isolatedMarkerLine || nearTail
     }
 
     private static func normalizeModelPath(_ path: String) -> String {
