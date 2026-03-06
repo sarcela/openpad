@@ -601,6 +601,11 @@ final class LlamaLocalModelService {
         if isLowSignalResponse(withoutSystemEcho, mode: mode) {
             throw LlamaServiceError.emptyResponse
         }
+        if isLikelyGarbledResponse(withoutSystemEcho) {
+            // Retry through deterministic sampling / alternate templates when the output
+            // is dominated by replacement chars or non-text glyph noise.
+            throw LlamaServiceError.emptyResponse
+        }
         if mode == .chat, isTemplateLeakResponse(withoutSystemEcho) {
             // Treat template/marker-heavy emissions as a failed attempt so the caller
             // can retry with the next prompt family instead of returning noisy output.
@@ -1675,6 +1680,47 @@ final class LlamaLocalModelService {
 
         // Treat punctuation-only / marker-only emissions as low-quality so callers can retry.
         return true
+    }
+
+    private static func isLikelyGarbledResponse(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 18 else { return false }
+
+        let scalars = Array(trimmed.unicodeScalars)
+        guard !scalars.isEmpty else { return false }
+
+        let replacementCount = scalars.reduce(into: 0) { count, scalar in
+            if scalar == "\u{FFFD}" { count += 1 }
+        }
+
+        // Common garbled-native signal: replacement glyphs dominate the stream.
+        if replacementCount >= 3 {
+            let replacementRatio = Double(replacementCount) / Double(scalars.count)
+            if replacementRatio >= 0.06 {
+                return true
+            }
+        }
+
+        // Also catch symbol-heavy junk responses with almost no natural language.
+        let alnumCount = scalars.reduce(into: 0) { count, scalar in
+            if CharacterSet.alphanumerics.contains(scalar) { count += 1 }
+        }
+        let symbolCount = scalars.reduce(into: 0) { count, scalar in
+            if !CharacterSet.whitespacesAndNewlines.contains(scalar) &&
+                !CharacterSet.alphanumerics.contains(scalar) &&
+                !CharacterSet.punctuationCharacters.contains(scalar) {
+                count += 1
+            }
+        }
+
+        if symbolCount >= 10 {
+            let symbolRatio = Double(symbolCount) / Double(max(1, scalars.count))
+            if symbolRatio >= 0.35 && alnumCount < 10 {
+                return true
+            }
+        }
+
+        return false
     }
 
     private static func isTemplateLeakResponse(_ text: String) -> Bool {
