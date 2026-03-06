@@ -540,6 +540,14 @@ final class LlamaLocalModelService {
                     }
                 } else if !output.isEmpty {
                     suppressedLeadingStopCount = 0
+                    if !blockedEarlyStopOrder.isEmpty {
+                        // Leading-stop suppression is a bootstrap guard only. Once
+                        // visible text starts, forget those temporary exclusions so
+                        // later sampling can still emit literal marker tokens when
+                        // the user explicitly asks about them.
+                        blockedEarlyStopOrder.removeAll(keepingCapacity: true)
+                        blockedEarlyStopTokens.removeAll(keepingCapacity: true)
+                    }
                 }
             }
 
