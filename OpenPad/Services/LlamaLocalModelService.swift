@@ -619,7 +619,7 @@ final class LlamaLocalModelService {
             }
         }
 
-        let clean = sanitizeDecodedOutput(output)
+        let clean = sanitizeDecodedOutput(output, userPrompt: prompt)
         let deEchoed = stripPromptEcho(from: clean, userPrompt: prompt)
         let withoutSystemEcho = stripSystemPromptEcho(from: deEchoed)
 
@@ -1257,7 +1257,7 @@ final class LlamaLocalModelService {
         return regex.firstMatch(in: lower, options: [], range: range) != nil
     }
 
-    private static func sanitizeDecodedOutput(_ text: String) -> String {
+    private static func sanitizeDecodedOutput(_ text: String, userPrompt: String? = nil) -> String {
         var cleaned = stripReasoningBlocks(from: text)
             .replacingOccurrences(of: #"(?im)^\s*(assistant|asistente|model|modelo)\s*:\s*"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"(?im)^\s*(assistant|asistente|model|modelo)\s*$"#, with: "", options: .regularExpression)
@@ -1296,7 +1296,21 @@ final class LlamaLocalModelService {
 
         let dedupedLines = collapseConsecutiveLineRepeats(in: normalized)
         let dedupedParagraphs = collapseConsecutiveParagraphRepeats(in: dedupedLines)
-        return collapseConsecutiveSentenceRepeats(in: dedupedParagraphs)
+        let finalized = collapseConsecutiveSentenceRepeats(in: dedupedParagraphs)
+
+        if !finalized.isEmpty {
+            return finalized
+        }
+
+        // If the user explicitly asked for a literal protocol marker/token,
+        // avoid over-cleaning marker-only outputs into empty strings.
+        if let userPrompt,
+           isLikelyLiteralMarkerPrompt(userPrompt),
+           let marker = extractLiteralMarkerSample(from: text) {
+            return marker
+        }
+
+        return finalized
     }
 
     private static func collapseConsecutiveLineRepeats(in text: String, maxRepeats: Int = 2) -> String {
@@ -1858,6 +1872,34 @@ final class LlamaLocalModelService {
             "token", "marker", "means", "what does", "example", "ejemplo", "significa", "representa"
         ]
         return literalCues.contains { lower.contains($0) }
+    }
+
+    private static func extractLiteralMarkerSample(from text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let patterns = [
+            #"<\|[a-z0-9_\-]+\|>"#,
+            #"<｜[^｜\n]{1,64}｜>"#,
+            #"(?i)</?s>"#,
+            #"(?i)\[(?:/?inst)\]"#,
+            #"(?i)<<\/?sys>>"#,
+            #"(?i)<(?:start_of_turn|end_of_turn|eot)>"#
+        ]
+
+        for pattern in patterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+            let range = NSRange(trimmed.startIndex..<trimmed.endIndex, in: trimmed)
+            if let match = regex.firstMatch(in: trimmed, options: [], range: range),
+               let matchRange = Range(match.range, in: trimmed) {
+                let marker = String(trimmed[matchRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !marker.isEmpty {
+                    return marker
+                }
+            }
+        }
+
+        return nil
     }
 
     private static func looksLikeTemplateResidue(_ text: String, lowercased: String) -> Bool {
