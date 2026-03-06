@@ -32,7 +32,7 @@ final class LocalModelService {
             do {
                 try autoConfigureModelIfPresent()
                 let out = try await llama.runLocal(prompt: prompt, mode: llamaMode)
-                return sanitizeModelOutput(out)
+                return sanitizeModelOutput(out, purpose: purpose)
             } catch LlamaServiceError.modelNotConfigured {
                 try await Task.sleep(nanoseconds: 300_000_000)
                 return "No llama.swift model selected. Add a .gguf in Models and select it in Settings."
@@ -41,7 +41,7 @@ final class LocalModelService {
             } catch LlamaServiceError.emptyResponse {
                 let retryPrompt = buildLlamaRetryPrompt(from: prompt, purpose: purpose, reason: .emptyResponse)
                 if let retry = try? await llama.runLocal(prompt: retryPrompt, mode: llamaMode) {
-                    let sanitized = sanitizeModelOutput(retry)
+                    let sanitized = sanitizeModelOutput(retry, purpose: purpose)
                     if !sanitized.isEmpty { return sanitized }
                 }
                 return "The local llama.swift model returned an empty answer. Please retry with a shorter prompt."
@@ -49,7 +49,7 @@ final class LocalModelService {
                 let retryPrompt = buildLlamaRetryPrompt(from: prompt, purpose: purpose, reason: .decodeFailed)
                 if retryPrompt != prompt,
                    let retry = try? await llama.runLocal(prompt: retryPrompt, mode: llamaMode) {
-                    let sanitized = sanitizeModelOutput(retry)
+                    let sanitized = sanitizeModelOutput(retry, purpose: purpose)
                     if !sanitized.isEmpty { return sanitized }
                 }
                 return "The local llama.swift backend hit a decode limit. Try a shorter message or switch to stable profile."
@@ -60,7 +60,7 @@ final class LocalModelService {
                 let retryPrompt = buildLlamaRetryPrompt(from: prompt, purpose: purpose, reason: .tokenizationFailed)
                 if retryPrompt != prompt,
                    let retry = try? await llama.runLocal(prompt: retryPrompt, mode: llamaMode) {
-                    let sanitized = sanitizeModelOutput(retry)
+                    let sanitized = sanitizeModelOutput(retry, purpose: purpose)
                     if !sanitized.isEmpty { return sanitized }
                 }
                 return "The prompt could not be tokenized by the local llama.swift model. I retried with a compact/sanitized prompt, but it still failed. Try removing unusual symbols and retry."
@@ -73,7 +73,7 @@ final class LocalModelService {
                 // first attempt spends most of the budget processing long context.
                 let retryPrompt = buildLlamaRetryPrompt(from: prompt, purpose: purpose, reason: .generationTimedOut)
                 if let retry = try? await llama.runLocal(prompt: retryPrompt, mode: llamaMode) {
-                    let sanitized = sanitizeModelOutput(retry)
+                    let sanitized = sanitizeModelOutput(retry, purpose: purpose)
                     if !sanitized.isEmpty { return sanitized }
                 }
                 return "The local llama.swift model timed out before completing an answer. I retried with a compact prompt but it still timed out. Try a shorter message or switch to stable profile."
@@ -101,7 +101,7 @@ final class LocalModelService {
                 }
             }
             let out = try await mlx.runLocal(prompt: prompt, modelIdOverride: chosenModel)
-            return sanitizeModelOutput(out)
+            return sanitizeModelOutput(out, purpose: purpose)
         }
     }
 
@@ -177,7 +177,11 @@ final class LocalModelService {
         }
     }
 
-    private func sanitizeModelOutput(_ text: String) -> String {
+    private func sanitizeModelOutput(_ text: String, purpose: LocalInferencePurpose) -> String {
+        if purpose == .tools {
+            return sanitizeToolsModelOutput(text)
+        }
+
         var out = text
 
         // Remove chain-of-thought blocks emitted by some reasoning models.
@@ -205,6 +209,62 @@ final class LocalModelService {
             return "I processed your request, but the model returned an internal reasoning block only. Please retry."
         }
         return out
+    }
+
+    private func sanitizeToolsModelOutput(_ text: String) -> String {
+        var out = text
+
+        // Remove hidden reasoning wrappers and markdown fences that commonly break
+        // planner JSON parsing on local checkpoints.
+        out = out.replacingOccurrences(of: #"(?is)<think>.*?</think>"#, with: "", options: .regularExpression)
+        out = out.replacingOccurrences(of: #"(?is)```(?:json)?\s*([\s\S]*?)```"#, with: "$1", options: .regularExpression)
+        out = out.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if let object = extractFirstJSONObject(from: out) {
+            return object
+        }
+
+        // Tool-mode callers expect structured output. Return a safe empty object
+        // instead of prose fallback strings when local output is malformed.
+        return "{}"
+    }
+
+    private func extractFirstJSONObject(from text: String) -> String? {
+        guard let start = text.firstIndex(of: "{") else { return nil }
+
+        var depth = 0
+        var inString = false
+        var escaping = false
+
+        var idx = start
+        while idx < text.endIndex {
+            let ch = text[idx]
+
+            if inString {
+                if escaping {
+                    escaping = false
+                } else if ch == "\\" {
+                    escaping = true
+                } else if ch == "\"" {
+                    inString = false
+                }
+            } else {
+                if ch == "\"" {
+                    inString = true
+                } else if ch == "{" {
+                    depth += 1
+                } else if ch == "}" {
+                    depth -= 1
+                    if depth == 0 {
+                        return String(text[start...idx])
+                    }
+                }
+            }
+
+            idx = text.index(after: idx)
+        }
+
+        return nil
     }
 
     private func stripLeadingRoleLeakPreamble(_ text: String) -> String {
