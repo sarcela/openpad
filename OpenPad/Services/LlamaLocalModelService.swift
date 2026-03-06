@@ -510,6 +510,7 @@ final class LlamaLocalModelService {
 
             let previousOutput = output
             let previousByteCount = outputBytes.count
+            var suppressedLeadingStopThisStep = false
             if let pieceBytes = tokenPieceBytes(nextToken, vocab: vocab) {
                 outputBytes.append(contentsOf: pieceBytes)
                 output = decodeUTF8Prefix(outputBytes, previous: output)
@@ -521,9 +522,11 @@ final class LlamaLocalModelService {
                         // re-emitting the same clipped marker prefix.
                         rememberBlockedEarlyStopToken(nextToken)
                         suppressedLeadingStopCount += 1
+                        suppressedLeadingStopThisStep = true
                         output = ""
                         outputBytes.removeAll(keepingCapacity: true)
                         bytesSinceVisibleProgress = 0
+                        staleDecodeSteps = 0
 
                         if suppressedLeadingStopCount >= maxSuppressedLeadingStops {
                             // If we keep suppressing leading stop markers without visible
@@ -540,7 +543,10 @@ final class LlamaLocalModelService {
                 }
             }
 
-            if output == previousOutput {
+            if suppressedLeadingStopThisStep {
+                staleDecodeSteps = 0
+                bytesSinceVisibleProgress = 0
+            } else if output == previousOutput {
                 // If text did not advance but byte buffer did, we're likely in the middle of
                 // an incomplete UTF-8 sequence. Allow a small byte budget for that case,
                 // then start counting stale steps so permanently undecodable streams don't
