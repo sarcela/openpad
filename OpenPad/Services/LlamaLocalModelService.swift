@@ -391,6 +391,8 @@ final class LlamaLocalModelService {
         var blockedEarlyStopTokens: Set<llama_token> = []
         var blockedEarlyStopOrder: [llama_token] = []
         let blockedEarlyStopCapacity = 12
+        var suppressedLeadingStopCount = 0
+        let maxSuppressedLeadingStops = 4
         let repeatWindowSize = 64
         var staleDecodeSteps = 0
         var bytesSinceVisibleProgress = 0
@@ -518,13 +520,23 @@ final class LlamaLocalModelService {
                         // Also drop accumulated bytes so future decode attempts don't keep
                         // re-emitting the same clipped marker prefix.
                         rememberBlockedEarlyStopToken(nextToken)
+                        suppressedLeadingStopCount += 1
                         output = ""
                         outputBytes.removeAll(keepingCapacity: true)
                         bytesSinceVisibleProgress = 0
+
+                        if suppressedLeadingStopCount >= maxSuppressedLeadingStops {
+                            // If we keep suppressing leading stop markers without visible
+                            // text, fail fast so caller can retry with deterministic
+                            // sampling / alternate prompt family instead of burning budget.
+                            throw LlamaServiceError.emptyResponse
+                        }
                     } else {
                         output = clipped
                         break
                     }
+                } else if !output.isEmpty {
+                    suppressedLeadingStopCount = 0
                 }
             }
 
