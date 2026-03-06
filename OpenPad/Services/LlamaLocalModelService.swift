@@ -1435,7 +1435,9 @@ final class LlamaLocalModelService {
         let leadingHeaderPatterns = [
             #"(?is)^\s*(?:<\|im_start\|>\s*assistant\s*)+"#,
             #"(?is)^\s*(?:<\|start_header_id\|>\s*assistant\s*<\|end_header_id\|>\s*)+"#,
-            #"(?is)^\s*(?:<start_of_turn>\s*(?:assistant|model)\s*)+"#
+            #"(?is)^\s*(?:<start_of_turn>\s*(?:assistant|model)\s*)+"#,
+            #"(?is)^\s*(?:<\|assistant\|>\s*)+"#,
+            #"(?is)^\s*(?:<｜assistant｜>\s*)+"#
         ]
 
         for pattern in leadingHeaderPatterns {
@@ -1984,6 +1986,8 @@ final class LlamaLocalModelService {
             #"(?im)^\s*<\|im_start\|>\s*(user|system|assistant|model)\b"#,
             #"(?im)^\s*<\|start_header_id\|>\s*(user|system|assistant|model)\s*<\|end_header_id\|>"#,
             #"(?im)^\s*<start_of_turn>\s*(user|system|assistant|model)\b"#,
+            #"(?im)^\s*<\|(user|system|assistant|model)\|>\s*$"#,
+            #"(?im)^\s*<｜(?:user|system|assistant|model)｜>\s*$"#,
             // Keep legacy tags, but only as standalone marker lines. Broad matches like
             // "### User: ..." can appear in legitimate markdown output and should not
             // prematurely clip the response.
