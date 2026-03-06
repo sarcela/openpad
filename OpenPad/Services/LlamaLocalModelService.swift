@@ -106,7 +106,11 @@ final class LlamaLocalModelService {
             var delaySeconds = 0.35
             for retry in 1...2 {
                 guard Date().addingTimeInterval(delaySeconds + 0.12) < deadline else { break }
-                try await Task.sleep(nanoseconds: UInt64(delaySeconds * 1_000_000_000))
+                do {
+                    try await Task.sleep(nanoseconds: UInt64(delaySeconds * 1_000_000_000))
+                } catch is CancellationError {
+                    throw LlamaServiceError.cancelled
+                }
                 do {
                     let recovered = try await runAttempt()
                     print("[LLAMA] recovered_from_backend_busy retry=\(retry)")
