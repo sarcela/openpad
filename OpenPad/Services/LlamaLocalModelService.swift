@@ -1455,13 +1455,35 @@ final class LlamaLocalModelService {
 
         // Remove leaked prompt-template marker lines only at the boundaries.
         // Keeping interior lines avoids deleting user-requested literal marker examples.
+        // Also tolerate blank spacer lines around leaked markers (common in native output),
+        // so sequences like "\n<|eot_id|>\n" are trimmed reliably.
         var lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
 
-        while let first = lines.first, isResidueLine(first) {
-            lines.removeFirst()
+        func isBlank(_ line: String) -> Bool {
+            line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
-        while let last = lines.last, isResidueLine(last) {
-            lines.removeLast()
+
+        var changed = true
+        while changed, !lines.isEmpty {
+            changed = false
+
+            while let first = lines.first, isBlank(first) {
+                lines.removeFirst()
+                changed = true
+            }
+            while let first = lines.first, isResidueLine(first) {
+                lines.removeFirst()
+                changed = true
+            }
+
+            while let last = lines.last, isBlank(last) {
+                lines.removeLast()
+                changed = true
+            }
+            while let last = lines.last, isResidueLine(last) {
+                lines.removeLast()
+                changed = true
+            }
         }
 
         return lines.joined(separator: "\n")
