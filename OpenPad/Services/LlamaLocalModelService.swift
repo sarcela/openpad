@@ -1772,14 +1772,25 @@ final class LlamaLocalModelService {
     private static func isLikelyStopMarkerBoundary(in text: String, markerRange: Range<String.Index>) -> Bool {
         guard !text.isEmpty else { return false }
 
-        if markerRange.upperBound == text.endIndex { return true }
-
         let beforeChar: Character? = markerRange.lowerBound > text.startIndex
             ? text[text.index(before: markerRange.lowerBound)]
             : nil
         let afterChar: Character? = markerRange.upperBound < text.endIndex
             ? text[markerRange.upperBound]
             : nil
+
+        // Detect sentence-inline marker mentions (e.g. "the token <|eot_id|>") so we
+        // don't clip legitimate explanatory text when the marker happens to be near tail.
+        let prefix = text[..<markerRange.lowerBound]
+        let nearestVisiblePrefixChar = prefix.reversed().first { !$0.isWhitespace }
+        let hasInlineSentencePrefix = {
+            guard let nearestVisiblePrefixChar else { return false }
+            return nearestVisiblePrefixChar.isLetter || nearestVisiblePrefixChar.isNumber
+        }()
+
+        if markerRange.upperBound == text.endIndex {
+            return !hasInlineSentencePrefix
+        }
 
         // Treat hard stop markers as terminators only when they look like leaked protocol
         // residue (standalone line / near tail). Do not clip inline mentions like
@@ -1796,7 +1807,7 @@ final class LlamaLocalModelService {
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .allSatisfy { ".,!?;:'\"”’)]}".contains($0) }
         let hasBoundaryBefore = beforeChar == nil || beforeChar!.isWhitespace || "([{'\"“‘".contains(beforeChar!)
-        let nearTailBoundary = text.distance(from: markerRange.upperBound, to: text.endIndex) <= 3 && tailIsOnlyClosers && hasBoundaryBefore
+        let nearTailBoundary = text.distance(from: markerRange.upperBound, to: text.endIndex) <= 3 && tailIsOnlyClosers && hasBoundaryBefore && !hasInlineSentencePrefix
 
         return isolatedMarkerLine || nearTailBoundary
     }
