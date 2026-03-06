@@ -1229,6 +1229,10 @@ final class LlamaLocalModelService {
         // Strip only leading variants so inline marker explanations remain intact.
         cleaned = stripLeadingAssistantHeaderLeaks(from: cleaned)
 
+        // Some native runs emit one or more terminal stop markers before real text
+        // (e.g. "<|eot_id|>Sure..."). Trim those prefixes only when content remains.
+        cleaned = stripLeadingStopTokenResidue(from: cleaned)
+
         // Strip leaked prompt-template residue only when it appears as standalone lines.
         // Keep inline mentions intact so user-requested literal markers/code are preserved.
         cleaned = stripTemplateResidueLines(from: cleaned)
@@ -1367,6 +1371,28 @@ final class LlamaLocalModelService {
         }
 
         return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func stripLeadingStopTokenResidue(from text: String) -> String {
+        let pattern = #"(?is)^\s*(?:(?:</s>|<\|im_end\|>|<\|eot_id\|>|<\|eot\|>|<\|eom_id\|>|<\|end_of_turn\|>|<\|end_of_text\|>|<end_of_turn>|<eot>|<｜end▁of▁turn｜>|<｜end▁of▁sentence｜>)\s*)+"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else {
+            return text.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        guard let match = regex.firstMatch(in: text, options: [], range: range),
+              match.range.location != NSNotFound,
+              let markerRange = Range(match.range, in: text) else {
+            return text.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        let remainder = String(text[markerRange.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        if remainder.isEmpty {
+            // Keep literal marker-only outputs intact (useful for explicit token questions).
+            return text.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        return remainder
     }
 
     private static func stripTemplateResidueLines(from text: String) -> String {
