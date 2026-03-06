@@ -2414,8 +2414,7 @@ final class LlamaLocalModelService {
             }
         }
 
-        guard let data = try? handle.read(upToCount: expectedMagic.count),
-              let header = data,
+        guard let header = try? handle.read(upToCount: expectedMagic.count),
               header.count == expectedMagic.count else {
             return false
         }
