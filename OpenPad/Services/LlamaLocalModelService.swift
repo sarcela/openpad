@@ -528,7 +528,24 @@ final class LlamaLocalModelService {
             } else {
                 repeatCount = 0
             }
-            if repeatCount >= settings.maxRepeats { break }
+            if repeatCount >= settings.maxRepeats {
+                // Instead of hard-stopping on repeated-token loops, try one alternate
+                // candidate first. This keeps native runs from truncating otherwise
+                // healthy answers when logits momentarily collapse onto whitespace/pad.
+                if let replacement = bestTokenExcluding(
+                    logits: logits,
+                    vocabSize: vocabSize,
+                    vocab: vocab,
+                    excluded: Set([nextToken]),
+                    allowControlTokens: false,
+                    controlTokenCache: &controlTokenCache
+                ) {
+                    nextToken = replacement
+                    repeatCount = 0
+                } else {
+                    break
+                }
+            }
             lastToken = nextToken
             recentTokens.append(nextToken)
             if recentTokens.count > repeatWindowSize {
