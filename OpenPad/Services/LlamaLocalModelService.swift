@@ -632,7 +632,7 @@ final class LlamaLocalModelService {
             // is dominated by replacement chars or non-text glyph noise.
             throw LlamaServiceError.emptyResponse
         }
-        if mode == .chat, isTemplateLeakResponse(withoutSystemEcho) {
+        if mode == .chat, isTemplateLeakResponse(withoutSystemEcho, userPrompt: prompt) {
             // Treat template/marker-heavy emissions as a failed attempt so the caller
             // can retry with the next prompt family instead of returning noisy output.
             throw LlamaServiceError.emptyResponse
@@ -1771,9 +1771,10 @@ final class LlamaLocalModelService {
         return false
     }
 
-    private static func isTemplateLeakResponse(_ text: String) -> Bool {
+    private static func isTemplateLeakResponse(_ text: String, userPrompt: String?) -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return true }
+        let allowLiteralMarkerOutput = userPrompt.map(isLikelyLiteralMarkerPrompt) ?? false
 
         let markers = [
             "<start_of_turn>", "<end_of_turn>",
@@ -1815,24 +1816,48 @@ final class LlamaLocalModelService {
             let range = NSRange(lower.startIndex..<lower.endIndex, in: lower)
             if startRegex.firstMatch(in: lower, options: [], range: range) != nil {
                 let isLikelyLiteralExplainer = markerHits == 1 && hasExplainerCue && wordCount >= 4
-                if !isLikelyLiteralExplainer {
+                let allowLiteralMarkerSample = allowLiteralMarkerOutput && markerHits <= 2 && wordCount <= 20
+                if !isLikelyLiteralExplainer && !allowLiteralMarkerSample {
                     return true
                 }
             }
         }
 
         // If many protocol markers leak and content is sparse, quality is usually unusable.
-        if markerHits >= 3, !hasRichNaturalLanguage { return true }
+        if markerHits >= 3, !hasRichNaturalLanguage, !allowLiteralMarkerOutput { return true }
 
         // Single marker with very short text is often framing residue, but allow
         // concise explanatory answers like "<|eot_id|> is an end-of-turn token".
-        if markerHits == 1, trimmed.count <= 80 {
+        if markerHits == 1, trimmed.count <= 80, !allowLiteralMarkerOutput {
             if looksLikeTemplateResidue(trimmed, lowercased: lower) {
                 return true
             }
         }
 
         return false
+    }
+
+    private static func isLikelyLiteralMarkerPrompt(_ prompt: String) -> Bool {
+        let lower = prompt.lowercased()
+
+        let mentionsTemplateToken =
+            lower.contains("<|") ||
+            lower.contains("|>") ||
+            lower.contains("eot_id") ||
+            lower.contains("im_start") ||
+            lower.contains("im_end") ||
+            lower.contains("start_of_turn") ||
+            lower.contains("end_of_turn") ||
+            lower.contains("[inst]") ||
+            lower.contains("<<sys>>")
+
+        guard mentionsTemplateToken else { return false }
+
+        let literalCues = [
+            "literal", "verbatim", "exactly", "print", "output", "show", "write",
+            "token", "marker", "means", "what does", "example", "ejemplo", "significa", "representa"
+        ]
+        return literalCues.contains { lower.contains($0) }
     }
 
     private static func looksLikeTemplateResidue(_ text: String, lowercased: String) -> Bool {
