@@ -149,6 +149,18 @@ final class LlamaLocalModelService {
         let attempts = promptFamilyFallbackOrder(preferred: preferred)
         var lastRecoverableError: LlamaServiceError?
 
+        func canTryAnotherFamily(after error: LlamaServiceError) -> Bool {
+            switch error {
+            case .generationTimedOut:
+                // If one template stalls near budget limits, another family can still
+                // recover quickly (especially with compact prompts) as long as there is
+                // a small amount of time left.
+                return deadline.timeIntervalSinceNow > 0.35
+            default:
+                return true
+            }
+        }
+
         for family in attempts {
             do {
                 let result = try runSync(
@@ -165,7 +177,7 @@ final class LlamaLocalModelService {
                 return result
             } catch let error as LlamaServiceError {
                 switch error {
-                case .emptyResponse, .decodeFailed(_), .tokenizationFailed:
+                case .emptyResponse, .decodeFailed(_), .tokenizationFailed, .generationTimedOut:
                     // Retry once with near-greedy sampling before changing prompt template.
                     // This improves stability on small/quantized checkpoints that can emit
                     // low-signal garbage under higher temperatures.
@@ -182,9 +194,12 @@ final class LlamaLocalModelService {
                         return deterministic
                     } catch let retryError as LlamaServiceError {
                         switch retryError {
-                        case .emptyResponse, .decodeFailed(_), .tokenizationFailed:
-                            lastRecoverableError = retryError
-                            continue
+                        case .emptyResponse, .decodeFailed(_), .tokenizationFailed, .generationTimedOut:
+                            if canTryAnotherFamily(after: retryError) {
+                                lastRecoverableError = retryError
+                                continue
+                            }
+                            throw retryError
                         default:
                             throw retryError
                         }
