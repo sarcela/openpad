@@ -2174,12 +2174,6 @@ private struct SettingsView: View {
                     }
 
                     if runtimeProvider == .llamaCpp {
-                        Section("Backend llama.swift") {
-                            Text("Native llama.swift backend enabled. Server fallback settings were removed.")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-
                     Section {
                         if models.isEmpty {
                             Text("No hay modelos locales para chat")
@@ -2580,22 +2574,7 @@ private struct SettingsView: View {
                 mlxDownloadedModels = openClawLiteConfig.loadDownloadedMLXModels()
 
                 refreshModels()
-
-                if selectedModelPath.isEmpty,
-                   let selected = localConfig.loadSelectedModelPath() {
-                    selectedModelPath = selected
-                }
-                if selectedModelPath.isEmpty {
-                    selectedModelPath = models.first?.path ?? ""
-                }
-
-                if selectedEmbeddingModelPath.isEmpty,
-                   let selectedEmbedding = localConfig.loadSelectedEmbeddingModelPath() {
-                    selectedEmbeddingModelPath = selectedEmbedding
-                }
-                if selectedEmbeddingModelPath.isEmpty {
-                    selectedEmbeddingModelPath = embeddingModels.first?.path ?? ""
-                }
+                reconcileSelectedLocalModels()
             }
             .sheet(isPresented: $showMemoryManager) {
                 MemoryManagerView()
@@ -2836,6 +2815,61 @@ private struct SettingsView: View {
             embeddingModels = []
             importMessage = "No pude leer modelos: \(error.localizedDescription)"
         }
+    }
+
+    private func reconcileSelectedLocalModels() {
+        selectedModelPath = reconcileSelectionPath(
+            currentSelection: selectedModelPath,
+            savedSelection: localConfig.loadSelectedModelPath(),
+            available: models
+        )
+        localConfig.saveSelectedModelPath(selectedModelPath.isEmpty ? nil : selectedModelPath)
+
+        selectedEmbeddingModelPath = reconcileSelectionPath(
+            currentSelection: selectedEmbeddingModelPath,
+            savedSelection: localConfig.loadSelectedEmbeddingModelPath(),
+            available: embeddingModels
+        )
+        localConfig.saveSelectedEmbeddingModelPath(selectedEmbeddingModelPath.isEmpty ? nil : selectedEmbeddingModelPath)
+    }
+
+    private func reconcileSelectionPath(currentSelection: String, savedSelection: String?, available: [URL]) -> String {
+        let options = available.map(\.path)
+        guard !options.isEmpty else { return "" }
+
+        for candidate in [currentSelection, savedSelection ?? ""] {
+            let resolved = resolveModelSelection(candidate, options: options)
+            if !resolved.isEmpty { return resolved }
+        }
+
+        return options[0]
+    }
+
+    private func resolveModelSelection(_ candidate: String, options: [String]) -> String {
+        let normalizedCandidate = normalizeModelPathForSelection(candidate)
+        guard !normalizedCandidate.isEmpty else { return "" }
+
+        if let exact = options.first(where: { normalizeModelPathForSelection($0) == normalizedCandidate }) {
+            return exact
+        }
+
+        let candidateName = URL(fileURLWithPath: normalizedCandidate).lastPathComponent.lowercased()
+        if let byName = options.first(where: { URL(fileURLWithPath: normalizeModelPathForSelection($0)).lastPathComponent.lowercased() == candidateName }) {
+            return byName
+        }
+
+        return ""
+    }
+
+    private func normalizeModelPathForSelection(_ path: String) -> String {
+        let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+
+        let expanded = (trimmed as NSString).expandingTildeInPath
+        if expanded.hasPrefix("/private/") {
+            return String(expanded.dropFirst("/private".count))
+        }
+        return expanded
     }
 
     private func resolvedGGUFDownloadURL(from spec: String) async -> URL? {
