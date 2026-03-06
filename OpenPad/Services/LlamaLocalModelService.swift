@@ -393,6 +393,7 @@ final class LlamaLocalModelService {
         let blockedEarlyStopCapacity = 12
         let repeatWindowSize = 64
         var staleDecodeSteps = 0
+        var bytesSinceVisibleProgress = 0
         let staleDecodeLimit = max(10, min(24, maxNewTokens / 3))
 
         func rememberBlockedEarlyStopToken(_ token: llama_token) {
@@ -519,6 +520,7 @@ final class LlamaLocalModelService {
                         rememberBlockedEarlyStopToken(nextToken)
                         output = ""
                         outputBytes.removeAll(keepingCapacity: true)
+                        bytesSinceVisibleProgress = 0
                     } else {
                         output = clipped
                         break
@@ -528,14 +530,27 @@ final class LlamaLocalModelService {
 
             if output == previousOutput {
                 // If text did not advance but byte buffer did, we're likely in the middle of
-                // an incomplete UTF-8 sequence. Don't count that as a stale decode step.
+                // an incomplete UTF-8 sequence. Allow a small byte budget for that case,
+                // then start counting stale steps so permanently undecodable streams don't
+                // loop until token budget exhaustion.
                 if outputBytes.count > previousByteCount {
-                    staleDecodeSteps = 0
+                    bytesSinceVisibleProgress += (outputBytes.count - previousByteCount)
+                    if bytesSinceVisibleProgress <= 24 {
+                        staleDecodeSteps = 0
+                    } else {
+                        staleDecodeSteps += 1
+                        // Bound retained undecodable bytes to avoid unnecessary growth.
+                        if outputBytes.count > 256 {
+                            outputBytes = Data(outputBytes.suffix(128))
+                            bytesSinceVisibleProgress = min(bytesSinceVisibleProgress, 128)
+                        }
+                    }
                 } else {
                     staleDecodeSteps += 1
                 }
             } else {
                 staleDecodeSteps = 0
+                bytesSinceVisibleProgress = 0
             }
 
             if staleDecodeSteps >= staleDecodeLimit {
