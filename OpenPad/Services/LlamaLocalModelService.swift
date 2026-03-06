@@ -1951,6 +1951,35 @@ final class LlamaLocalModelService {
         }()
 
         if markerRange.upperBound == text.endIndex {
+            let prefixText = String(prefix).trimmingCharacters(in: .whitespacesAndNewlines)
+            if prefixText.isEmpty {
+                // Keep bootstrap behavior: a leading marker-only emission should be
+                // treated as terminal so caller can retry with suppression logic.
+                return true
+            }
+
+            // Avoid clipping legitimate marker explanations or verbatim/literal requests
+            // at the end of the answer (e.g. "the token <|eot_id|>").
+            let explanationTail = prefixText
+                .suffix(64)
+                .lowercased()
+            let hasExplanationCue = [
+                "token", "marker", "means", "stands", "literal", "verbatim", "exactly",
+                "example", "ejemplo", "significa", "representa"
+            ].contains { explanationTail.contains($0) }
+            if hasExplanationCue {
+                return false
+            }
+
+            // Common native leak shape: normal sentence text immediately followed by a
+            // terminal marker with no trailing chars. Clip those to improve output quality.
+            let visiblePrefixCount = prefixText.unicodeScalars.reduce(into: 0) { count, scalar in
+                if CharacterSet.alphanumerics.contains(scalar) { count += 1 }
+            }
+            if hasInlineSentencePrefix, visiblePrefixCount >= 6 {
+                return true
+            }
+
             return !hasInlineSentencePrefix
         }
 
