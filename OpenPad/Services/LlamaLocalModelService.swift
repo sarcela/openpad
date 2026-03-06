@@ -1913,6 +1913,16 @@ final class LlamaLocalModelService {
             if let regex = try? NSRegularExpression(pattern: pattern),
                let match = regex.firstMatch(in: text, options: [], range: nsRange),
                let swiftRange = Range(match.range, in: text) {
+                let prefix = String(text[..<swiftRange.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+                // Do not clip marker mentions at the very beginning (e.g. when user asks
+                // to explain a token like "[INST]"). Require some visible content first
+                // so we only trim leaked next-turn scaffolding.
+                let visiblePrefixCount = prefix.unicodeScalars.reduce(into: 0) { count, scalar in
+                    if CharacterSet.alphanumerics.contains(scalar) { count += 1 }
+                }
+                if visiblePrefixCount < 6 {
+                    continue
+                }
                 markers.append(swiftRange.lowerBound)
             }
         }
