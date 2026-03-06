@@ -1114,8 +1114,9 @@ final class LlamaLocalModelService {
             return .mistralInstruct
         }
 
-        // Llama 3/3.1/3.2/4 and derivatives generally expect header-id chat templates.
-        // Normalize separators so names like "Llama_3.2" still map correctly.
+        // Llama 3/4 families and minor variants (3.1/3.2/3.3..., 4.x) generally
+        // expect header-id chat templates. Use a regex fallback so new minor releases
+        // don't silently regress to [INST] framing.
         let llamaHeaderTemplateHints = [
             "llama-3", "llama3", "meta-llama-3", "meta-llama3",
             // Common variants after normalization (e.g. "Llama-3.1" -> "llama-3-1").
@@ -1125,7 +1126,12 @@ final class LlamaLocalModelService {
             // chat-header style framing; avoid misclassifying them as [INST].
             "llama-4", "llama4", "meta-llama-4", "meta-llama4"
         ]
-        if llamaHeaderTemplateHints.contains(where: { modelSignature.contains($0) }) {
+        let hasLlamaHeaderHint = llamaHeaderTemplateHints.contains(where: { modelSignature.contains($0) })
+        let hasLlamaHeaderRegexHint = modelSignature.range(
+            of: #"(?:^|[^a-z0-9])(?:meta-)?llama-?(?:3|4)(?:-[0-9]+)*(?:$|[^a-z0-9])"#,
+            options: .regularExpression
+        ) != nil
+        if hasLlamaHeaderHint || hasLlamaHeaderRegexHint {
             return .llama3
         }
 
