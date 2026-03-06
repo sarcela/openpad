@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AF271D012F552345002730B7 /* LlamaSwift in Frameworks */ = {isa = PBXBuildFile; productRef = AF271D002F552345002730B7 /* LlamaSwift */; };
 		AFEA528E2F4BB7010035BB62 /* MLX in Frameworks */ = {isa = PBXBuildFile; productRef = AFEA528D2F4BB7010035BB62 /* MLX */; };
 		AFEA52902F4BB7010035BB62 /* MLXNN in Frameworks */ = {isa = PBXBuildFile; productRef = AFEA528F2F4BB7010035BB62 /* MLXNN */; };
 		AFEA52932F4BC0B40035BB62 /* MLXLLM in Frameworks */ = {isa = PBXBuildFile; productRef = AFEA52922F4BC0B40035BB62 /* MLXLLM */; };
@@ -43,6 +44,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AF271D012F552345002730B7 /* LlamaSwift in Frameworks */,
 				AFEA52932F4BC0B40035BB62 /* MLXLLM in Frameworks */,
 				AFEA52902F4BB7010035BB62 /* MLXNN in Frameworks */,
 				AFEA52952F4BC0B40035BB62 /* MLXLMCommon in Frameworks */,
@@ -93,6 +95,7 @@
 				AFEA528F2F4BB7010035BB62 /* MLXNN */,
 				AFEA52922F4BC0B40035BB62 /* MLXLLM */,
 				AFEA52942F4BC0B40035BB62 /* MLXLMCommon */,
+				AF271D002F552345002730B7 /* LlamaSwift */,
 			);
 			productName = OpenPad;
 			productReference = AF0B3E0B2F456DF400864998 /* OpenPad.app */;
@@ -125,6 +128,7 @@
 			packageReferences = (
 				AFEA528C2F4BB7010035BB62 /* XCRemoteSwiftPackageReference "mlx-swift" */,
 				AFEA52912F4BC0B40035BB62 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */,
+				AF271CFF2F552345002730B7 /* XCRemoteSwiftPackageReference "llama" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = AF0B3E0C2F456DF400864998 /* Products */;
@@ -272,6 +276,7 @@
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				VALIDATE_PRODUCT = YES;
@@ -382,6 +387,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		AF271CFF2F552345002730B7 /* XCRemoteSwiftPackageReference "llama" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/mattt/llama.swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.8184.0;
+			};
+		};
 		AFEA528C2F4BB7010035BB62 /* XCRemoteSwiftPackageReference "mlx-swift" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/ml-explore/mlx-swift";
@@ -401,6 +414,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		AF271D002F552345002730B7 /* LlamaSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AF271CFF2F552345002730B7 /* XCRemoteSwiftPackageReference "llama" */;
+			productName = LlamaSwift;
+		};
 		AFEA528D2F4BB7010035BB62 /* MLX */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = AFEA528C2F4BB7010035BB62 /* XCRemoteSwiftPackageReference "mlx-swift" */;
