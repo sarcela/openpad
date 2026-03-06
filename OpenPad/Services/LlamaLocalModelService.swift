@@ -1782,9 +1782,17 @@ final class LlamaLocalModelService {
         let endsOnLineBoundary = afterChar == nil || afterChar == "\n" || afterChar == "\r"
         let isolatedMarkerLine = startsOnFreshLine && endsOnLineBoundary
 
-        let nearTail = text.distance(from: markerRange.upperBound, to: text.endIndex) <= 2
+        // Some checkpoints append stop tokens right before final punctuation/quotes
+        // (e.g. "...<|eot_id|>." or "...<|im_end|>\""). Treat that as terminal only
+        // when the marker is boundary-separated, otherwise keep inline literals intact.
+        let trailingTail = String(text[markerRange.upperBound...])
+        let tailIsOnlyClosers = trailingTail
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .allSatisfy { ".,!?;:'\"”’)]}".contains($0) }
+        let hasBoundaryBefore = beforeChar == nil || beforeChar!.isWhitespace || "([{'\"“‘".contains(beforeChar!)
+        let nearTailBoundary = text.distance(from: markerRange.upperBound, to: text.endIndex) <= 3 && tailIsOnlyClosers && hasBoundaryBefore
 
-        return isolatedMarkerLine || nearTail
+        return isolatedMarkerLine || nearTailBoundary
     }
 
     private static func normalizeModelPath(_ path: String) -> String {
