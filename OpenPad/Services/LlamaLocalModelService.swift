@@ -100,28 +100,34 @@ final class LlamaLocalModelService {
         do {
             return try await runAttempt()
         } catch LlamaServiceError.backendBusyTimeout {
-            // A previous generation can hold the backend lock briefly. Retry with a
-            // bounded exponential backoff so short lock contention does not surface as
-            // a user-visible error.
+            // A previous generation can hold the backend lock for several seconds,
+            // especially on slower devices / larger checkpoints. Keep retrying with a
+            // bounded backoff until we're close to deadline so transient overlap does
+            // not surface as a user-visible "backend busy" failure.
             var delaySeconds = 0.35
-            for retry in 1...2 {
-                guard Date().addingTimeInterval(delaySeconds + 0.12) < deadline else { break }
+            var retries = 0
+            while Date().addingTimeInterval(delaySeconds + 0.12) < deadline {
+                retries += 1
                 do {
                     try await Task.sleep(nanoseconds: UInt64(delaySeconds * 1_000_000_000))
                 } catch is CancellationError {
                     throw LlamaServiceError.cancelled
                 }
+
                 do {
                     let recovered = try await runAttempt()
-                    print("[LLAMA] recovered_from_backend_busy retry=\(retry)")
+                    print("[LLAMA] recovered_from_backend_busy retry=\(retries)")
                     return recovered
                 } catch LlamaServiceError.backendBusyTimeout {
-                    delaySeconds *= 2
+                    // Gradually increase wait up to a modest cap so we avoid tight
+                    // contention loops while still staying responsive.
+                    delaySeconds = min(delaySeconds * 1.7, 2.25)
                     continue
                 } catch is CancellationError {
                     throw LlamaServiceError.cancelled
                 }
             }
+            print("[LLAMA] backend_busy_exhausted retries=\(retries)")
             throw LlamaServiceError.backendBusyTimeout
         } catch is CancellationError {
             throw LlamaServiceError.cancelled
