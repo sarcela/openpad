@@ -1158,9 +1158,14 @@ final class LlamaLocalModelService {
         }
 
         // Qwen/Phi/DeepSeek and similar instruct variants usually expect ChatML markers.
+        // Include ChatGLM/GLM and MiniCPM families as they also perform better with
+        // role-tag framing than plain "User/Assistant" prompts.
         // Use token-aware hint matching to avoid substring false positives (e.g. "yi"
         // inside "community"/"tiny") that can degrade output quality via wrong templates.
-        let chatMLHints = ["qwen", "qwq", "phi", "deepseek", "yi", "internlm", "smollm", "granite"]
+        let chatMLHints = [
+            "qwen", "qwq", "phi", "deepseek", "yi", "internlm", "smollm", "granite",
+            "chatglm", "glm", "minicpm"
+        ]
         if containsAnyModelHint(chatMLHints, in: modelSignature) {
             return .chatML
         }
