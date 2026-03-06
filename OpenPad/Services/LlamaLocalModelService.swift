@@ -128,6 +128,12 @@ final class LlamaLocalModelService {
                 }
             }
             print("[LLAMA] backend_busy_exhausted retries=\(retries)")
+            // If contention consumed the whole budget, surface timeout so callers
+            // can trigger compact-prompt recovery paths instead of a misleading
+            // "backend busy" message.
+            if Date() >= deadline {
+                throw LlamaServiceError.generationTimedOut
+            }
             throw LlamaServiceError.backendBusyTimeout
         } catch is CancellationError {
             throw LlamaServiceError.cancelled
