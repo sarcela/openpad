@@ -1218,7 +1218,8 @@ final class LlamaLocalModelService {
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
         let dedupedLines = collapseConsecutiveLineRepeats(in: normalized)
-        return collapseConsecutiveSentenceRepeats(in: dedupedLines)
+        let dedupedParagraphs = collapseConsecutiveParagraphRepeats(in: dedupedLines)
+        return collapseConsecutiveSentenceRepeats(in: dedupedParagraphs)
     }
 
     private static func collapseConsecutiveLineRepeats(in text: String, maxRepeats: Int = 2) -> String {
@@ -1259,19 +1260,65 @@ final class LlamaLocalModelService {
         return collapsed.joined(separator: "\n")
     }
 
+    private static func collapseConsecutiveParagraphRepeats(in text: String, maxRepeats: Int = 1) -> String {
+        guard maxRepeats >= 1 else { return text }
+
+        let paragraphs = text
+            .split(separator: "\n\n", omittingEmptySubsequences: false)
+            .map(String.init)
+        guard !paragraphs.isEmpty else { return text }
+
+        var collapsed: [String] = []
+        collapsed.reserveCapacity(paragraphs.count)
+
+        var lastComparableParagraph: String?
+        var runCount = 0
+
+        for paragraph in paragraphs {
+            let comparable = paragraph
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+
+            if comparable.isEmpty {
+                collapsed.append(paragraph)
+                lastComparableParagraph = nil
+                runCount = 0
+                continue
+            }
+
+            if comparable == lastComparableParagraph {
+                runCount += 1
+                if runCount <= maxRepeats {
+                    collapsed.append(paragraph)
+                }
+            } else {
+                lastComparableParagraph = comparable
+                runCount = 1
+                collapsed.append(paragraph)
+            }
+        }
+
+        return collapsed.joined(separator: "\n\n")
+    }
+
     private static func collapseConsecutiveSentenceRepeats(in text: String, maxRepeats: Int = 2) -> String {
-        // Local checkpoints sometimes emit the same sentence 3+ times in a row in a
-        // single paragraph. Collapse those loops while preserving intentional short
-        // repetitions (e.g. "ha ha").
+        // Local checkpoints sometimes emit the same sentence many times in a row.
+        // Collapse those loops while preserving intentional short repetitions.
         guard maxRepeats >= 1, text.count >= 40 else { return text }
 
-        let pattern = #"([^.!?\n]{18,}[.!?])(?:\s+\1){2,}"#
+        let threshold = maxRepeats + 1
+        let pattern = #"([^.!?\n]{18,}[.!?])(?:\s+\1){\#(threshold - 1),}"#
         guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
             return text
         }
 
+        var replacement = "$1"
+        if maxRepeats > 1 {
+            replacement = Array(repeating: "$1", count: maxRepeats).joined(separator: " ")
+        }
+
         let range = NSRange(text.startIndex..<text.endIndex, in: text)
-        let collapsed = regex.stringByReplacingMatches(in: text, options: [], range: range, withTemplate: "$1 $1")
+        let collapsed = regex.stringByReplacingMatches(in: text, options: [], range: range, withTemplate: replacement)
         return collapsed.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
