@@ -2392,7 +2392,35 @@ final class LlamaLocalModelService {
             return false
         }
 
+        // Extra guard for stability: only accept files that look like real GGUF payloads.
+        // A wrong extension or partially downloaded file can otherwise fail later with
+        // non-actionable native errors.
+        guard hasGGUFHeader(at: path) else { return false }
+
         return true
+    }
+
+    private static func hasGGUFHeader(at path: String) -> Bool {
+        let expectedMagic: [UInt8] = [0x47, 0x47, 0x55, 0x46] // "GGUF"
+
+        guard let handle = try? FileHandle(forReadingFrom: URL(fileURLWithPath: path)) else {
+            return false
+        }
+        defer {
+            if #available(iOS 13.0, macOS 10.15, *) {
+                try? handle.close()
+            } else {
+                handle.closeFile()
+            }
+        }
+
+        guard let data = try? handle.read(upToCount: expectedMagic.count),
+              let header = data,
+              header.count == expectedMagic.count else {
+            return false
+        }
+
+        return Array(header) == expectedMagic
     }
 
     private static func privatePathVariants(for path: String) -> [String] {
